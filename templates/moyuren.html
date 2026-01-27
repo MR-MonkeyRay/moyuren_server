@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>摸鱼日历 {{ date.year_month }} - 杂志风格版</title>
+    <style>
+        :root {
+            /* 莫兰迪/杂志风配色 */
+            --bg-body: #E0E5EC;
+            --bg-paper: #F7F9F9;
+
+            --text-dark: #2C3E50;
+            --text-grey: #7F8C8D;
+            --text-light: #95A5A6;
+
+            --accent-blue: #D6EAF8;
+            --accent-blue-text: #2E86C1;
+
+            --accent-green: #D5F5E3;
+            --accent-green-text: #27AE60;
+
+            --accent-pink: #FADBD8;
+            --accent-pink-text: #C0392B;
+
+            --card-radius: 16px;
+            --spacing: 16px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background-color: var(--bg-body);
+            font-family: 'PingFang SC', 'Helvetica Neue', sans-serif;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden; /* 禁止滚动条 */
+        }
+
+        /* 核心容器：锁定A4比例，高度自适应屏幕 */
+        .poster {
+            aspect-ratio: 210 / 297;
+            height: 92vh; /* 留出一点边距 */
+            background-color: var(--bg-paper);
+            border-radius: 8px;
+            box-shadow: 20px 20px 60px #bebebe, -20px -20px 60px #ffffff;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing);
+            color: var(--text-dark);
+        }
+
+        /* 通用卡片风格 */
+        .box {
+            background: #FFFFFF;
+            border-radius: var(--card-radius);
+            padding: 20px;
+            /* 柔和的投影让卡片浮起来 */
+            box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+            border: 1px solid rgba(0,0,0,0.02);
+        }
+
+        h2 {
+            font-size: 1.8vh;
+            color: var(--text-grey);
+            font-weight: 600;
+            margin-bottom: 12px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* --- 第一排：头部 (固定高度) --- */
+        .row-header {
+            height: 16%;
+            display: flex;
+            gap: var(--spacing);
+        }
+
+        .title-card {
+            flex: 0.35;
+            background-color: var(--text-dark);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        .moyu-text { font-size: 4vh; font-weight: 900; line-height: 1.1; letter-spacing: 4px; }
+        .moyu-sub { font-size: 1.2vh; font-weight: 300; opacity: 0.8; margin-top: 8px; letter-spacing: 2px; }
+
+        .date-card {
+            flex: 0.65;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 30px;
+        }
+        .date-left { display: flex; flex-direction: column; }
+        .big-day { font-size: 7vh; font-weight: 800; color: var(--text-dark); line-height: 1; }
+        .ym-text { font-size: 2vh; color: var(--text-grey); font-weight: 500; }
+
+        .date-right { text-align: right; }
+        .week-pill {
+            background: var(--accent-blue); color: var(--accent-blue-text);
+            padding: 6px 16px; border-radius: 20px; font-weight: bold; font-size: 1.6vh;
+            display: inline-block; margin-bottom: 8px;
+        }
+        .lunar-text { font-size: 1.4vh; color: var(--text-grey); }
+
+        /* --- 第二排：信息 (弹性) --- */
+        .row-info {
+            height: 20%;
+            display: flex;
+            gap: var(--spacing);
+        }
+
+        .term-card {
+            flex: 0.4;
+            background: linear-gradient(135deg, #ffffff 0%, #fcfdfc 100%);
+            display: flex;
+            flex-direction: column;
+        }
+        .countdown-wrap { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .days-num { font-size: 5vh; font-weight: 800; color: var(--accent-green-text); line-height: 1; }
+        .days-label { font-size: 1.4vh; color: var(--text-grey); margin-top: 4px; }
+
+        .yi-ji-row {
+            display: flex; gap: 10px; font-size: 1.2vh; border-top: 1px dashed #eee; padding-top: 10px;
+        }
+        .tag { padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-right: 4px; }
+        .tag.yi { background: #E8F8F5; color: #1ABC9C; }
+        .tag.ji { background: #FDEDEC; color: #E74C3C; }
+
+        .history-card {
+            flex: 0.6;
+            display: flex;
+            flex-direction: column;
+        }
+        .history-content {
+            flex: 1;
+            font-size: 1.5vh;
+            line-height: 1.6;
+            color: #555;
+            display: flex;
+            align-items: center;
+            text-align: justify;
+        }
+        .joke-tag { font-size: 1.2vh; color: #aaa; margin-top: auto; text-align: right; font-style: italic; }
+
+        /* --- 第三排：主要内容 (占据剩余所有空间) --- */
+        .row-main {
+            flex: 1; /* 关键：自动填充剩余高度 */
+            display: flex;
+            gap: var(--spacing);
+            min-height: 0; /* 防止溢出 */
+        }
+
+        .news-card {
+            flex: 0.6;
+            display: flex;
+            flex-direction: column;
+        }
+        .news-list {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between; /* 均匀分布 */
+            list-style: none;
+        }
+        .news-item {
+            font-size: 1.3vh;
+            padding-bottom: 8px;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: flex-start;
+        }
+        .news-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .news-num {
+            color: var(--accent-blue-text); font-size: 1.2vh; width: 1.5em; flex-shrink: 0; font-weight: 800;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        .news-text {
+            color: #444;
+            /* 取消截断，显示完整内容 */
+            line-height: 1.4;
+        }
+
+        .holiday-card {
+            flex: 0.4;
+            background-color: #FFF8F8; /* 极淡的粉色背景 */
+            display: flex;
+            flex-direction: column;
+        }
+        .holiday-list {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px; /* 减小间距 */
+            overflow-y: auto; /* 内容过多时滚动，虽然打印不需要 */
+        }
+        .holiday-item {
+            background: #fff;
+            padding: 8px 12px; /* 减小内边距 */
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.02);
+            /* flex: 1;  取消自动拉伸，更紧凑 */
+        }
+        .h-info { display: flex; flex-direction: column; justify-content: center; }
+        .h-name { font-size: 1.4vh; font-weight: 700; color: #333; }
+        .h-date { font-size: 1vh; color: #999; margin-top: 2px; }
+
+        .h-count-wrap { text-align: right; }
+        .h-num { font-size: 2.4vh; font-weight: 800; color: var(--accent-pink-text); }
+        .h-unit { font-size: 0.8vh; color: var(--text-light); }
+
+        /* 打印样式 */
+        @media print {
+            body { background: white; height: auto; overflow: visible; }
+            .poster {
+                width: 100%; height: 100%;
+                box-shadow: none; padding: 0;
+                aspect-ratio: auto;
+            }
+            .box { border: 1px solid #ddd; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="poster">
+
+        <!-- 第一排：标题与日期 -->
+        <div class="row-header">
+            <div class="box title-card">
+                <div class="moyu-text">摸鱼<br>日历</div>
+                <div class="moyu-sub">MOYU CALENDAR</div>
+            </div>
+            <div class="box date-card">
+                <div class="date-left">
+                    <div class="ym-text">{{ date.year_month }}</div>
+                    <div class="big-day">{{ date.day }}</div>
+                </div>
+                <div class="date-right">
+                    <div class="week-pill">{{ date.week_cn }} · {{ date.week_en }}</div>
+                    <div class="lunar-text">农历 {{ date.lunar_year }}</div>
+                    <div class="lunar-text">{{ date.lunar_date }}</div>
+                    <div style="margin-top:6px; font-size:1.2vh; color:#E67E22; font-weight:bold;">
+                        ⏳ 距周末还有 {{ weekend.days_left }} 天
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 第二排：节气与宜忌 -->
+        <div class="row-info">
+            <div class="box term-card">
+                <h2>🌿 下个节气</h2>
+                <div class="countdown-wrap">
+                    <div class="days-num">{{ solar_term.days_left }}</div>
+                    <div class="days-label">天后 · {{ solar_term.name }} ({{ solar_term.name_en }})</div>
+                </div>
+                <div class="yi-ji-row">
+                    <div><span class="tag yi">宜</span>{% for item in guide.yi %}{{ item }} {% endfor %}</div>
+                    <div><span class="tag ji">忌</span>{% for item in guide.ji %}{{ item }} {% endfor %}</div>
+                </div>
+            </div>
+            <div class="box history-card">
+                <h2>📜 历史上的今天</h2>
+                <div class="history-content">
+                    {{ history.content }}
+                </div>
+                <div class="joke-tag">—— 摸鱼办宣</div>
+            </div>
+        </div>
+
+        <!-- 第三排：新闻与假期 -->
+        <div class="row-main">
+            <div class="box news-card">
+                <h2>📰 每日 60s 速览</h2>
+                <ul class="news-list" id="news-list">
+                    {% for item in news_list %}
+                    <li class="news-item"><span class="news-num">{{ item.num }}</span><span class="news-text">{{ item.text }}</span></li>
+                    {% endfor %}
+                </ul>
+            </div>
+
+            <div class="box holiday-card">
+                <h2>🏖️ 假期盼头</h2>
+                <div class="holiday-list">
+                    {% for holiday in holidays %}
+                    <div class="holiday-item">
+                        <div class="h-info">
+                            <div class="h-name">{{ holiday.name }}</div>
+                            <div class="h-date">{{ holiday.date }}</div>
+                        </div>
+                        <div class="h-count-wrap">
+                            <div class="h-num"{% if holiday.color %} style="color:{{ holiday.color }}"{% endif %}>{{ holiday.days_left }}</div>
+                            <div class="h-unit">DAYS</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>

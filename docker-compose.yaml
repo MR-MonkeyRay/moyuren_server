@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  moyuren-api:
+    build:
+      context: .
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    container_name: moyuren-api
+    ports:
+      - "${SERVER_PORT:-8000}:${SERVER_PORT:-8000}"
+    volumes:
+      - ./static:/app/static
+      - ./state:/app/state
+    environment:
+      # Server configuration
+      SERVER_HOST: ${SERVER_HOST:-0.0.0.0}
+      SERVER_PORT: ${SERVER_PORT:-8000}
+      SERVER_BASE_DOMAIN: ${SERVER_BASE_DOMAIN:-http://localhost:8000}
+
+      # Scheduler configuration
+      SCHEDULER_TIMEZONE: ${SCHEDULER_TIMEZONE:-Asia/Shanghai}
+      SCHEDULER_DAILY_TIME: ${SCHEDULER_DAILY_TIME:-06:00}
+
+      # Cache configuration
+      CACHE_TTL_HOURS: ${CACHE_TTL_HOURS:-24}
+
+      # Logging configuration (default: stdout only)
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # LOG_FILE: ${LOG_FILE:-}  # 设置此变量可启用文件日志
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:${SERVER_PORT:-8000}/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

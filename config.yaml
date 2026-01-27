@@ -1,0 +1,35 @@
+server:
+  host: "0.0.0.0"
+  port: 8000
+  base_domain: "http://localhost:8000"
+
+paths:
+  static_dir: "static" # 图片输出目录（可配置）
+  template_path: "templates/moyuren.html"
+  state_path: "state/latest.json"
+
+scheduler:
+  timezone: "Asia/Shanghai"
+  daily_time: "06:00"
+
+cache:
+  ttl_hours: 24
+
+fetch:
+  api_endpoints:
+  - name: "news"
+    url: "https://api.example.com/news"
+    timeout_sec: 10
+  - name: "holiday"
+    url: "https://api.example.com/holiday"
+    timeout_sec: 10
+
+render:
+  viewport_width: 794
+  viewport_height: 1123
+  device_scale_factor: 2
+  jpeg_quality: 100
+
+logging:
+  level: "INFO"
+  file: "logs/app.log"  # 容器中默认为空（仅标准输出），可通过 LOG_FILE 环境变量覆盖
