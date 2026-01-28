@@ -20,7 +20,6 @@ services:
       SERVER_BASE_DOMAIN: ${SERVER_BASE_DOMAIN:-http://localhost:8000}
 
       # Scheduler configuration
-      SCHEDULER_TIMEZONE: ${SCHEDULER_TIMEZONE:-Asia/Shanghai}
       SCHEDULER_DAILY_TIME: ${SCHEDULER_DAILY_TIME:-06:00}
 
       # Cache configuration

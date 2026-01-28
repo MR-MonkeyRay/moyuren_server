@@ -23,15 +23,7 @@ class PathsConfig(BaseModel):
 
 class SchedulerConfig(BaseModel):
     """Scheduler configuration."""
-    timezone: str = "Asia/Shanghai"
     daily_time: str = "06:00"
-
-    @field_validator("timezone")
-    @classmethod
-    def validate_timezone(cls, v: str) -> str:
-        if not v:
-            raise ValueError("timezone cannot be empty")
-        return v
 
 
 class CacheConfig(BaseModel):
@@ -133,8 +125,6 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
 
     # Scheduler configuration
     if "scheduler" in data:
-        if timezone := os.getenv("SCHEDULER_TIMEZONE"):
-            data["scheduler"]["timezone"] = timezone
         if daily_time := os.getenv("SCHEDULER_DAILY_TIME"):
             data["scheduler"]["daily_time"] = daily_time
 

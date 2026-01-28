@@ -1,9 +1,8 @@
 """Task scheduler module using APScheduler."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Callable
-from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -19,14 +18,14 @@ class TaskScheduler:
         """Initialize the task scheduler.
 
         Args:
-            config: Scheduler configuration including timezone and default times.
+            config: Scheduler configuration including default times.
             logger: Logger instance for logging scheduler events.
         """
         self.config = config
         self.logger = logger
 
-        # Initialize AsyncIOScheduler with configured timezone
-        self.scheduler = AsyncIOScheduler(timezone=config.timezone)
+        # Initialize AsyncIOScheduler with local timezone
+        self.scheduler = AsyncIOScheduler()
 
     def add_daily_job(
         self,
@@ -60,7 +59,7 @@ class TaskScheduler:
                 minute = minute if minute is not None else 0
 
         # Create cron trigger for daily execution
-        trigger = CronTrigger(hour=hour, minute=minute, timezone=self.config.timezone)
+        trigger = CronTrigger(hour=hour, minute=minute)
 
         # Add job to scheduler
         self.scheduler.add_job(
@@ -71,10 +70,7 @@ class TaskScheduler:
             replace_existing=True,
         )
 
-        self.logger.info(
-            f"Added daily job '{job_id}' at {hour:02d}:{minute:02d} "
-            f"({self.config.timezone})"
-        )
+        self.logger.info(f"Added daily job '{job_id}' at {hour:02d}:{minute:02d}")
 
     def start(self) -> None:
         """Start the scheduler."""
@@ -107,11 +103,10 @@ class TaskScheduler:
                 self.logger.error(f"Job '{job_id}' not found")
                 return
 
-            # Add a one-time job that runs immediately (use scheduler timezone)
-            tz = ZoneInfo(self.config.timezone)
+            # Add a one-time job that runs immediately
             self.scheduler.add_job(
                 job.func,
-                trigger=DateTrigger(run_date=datetime.now(tz)),
+                trigger=DateTrigger(run_date=datetime.now()),
                 id=f"{job_id}_immediate",
                 name=f"{job_id}_immediate",
                 replace_existing=True,

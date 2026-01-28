@@ -9,7 +9,6 @@ paths:
   state_path: "state/latest.json"
 
 scheduler:
-  timezone: "Asia/Shanghai"
   daily_time: "06:00"
 
 cache:

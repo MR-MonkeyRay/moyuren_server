@@ -107,7 +107,6 @@ paths:
   state_path: "state/latest.json"   # 状态文件路径
 
 scheduler:
-  timezone: "Asia/Shanghai"  # 时区
   daily_time: "06:00"        # 每日生成时间
 
 cache:
@@ -139,7 +138,6 @@ logging:
 | `SERVER_HOST` | `server.host` | 服务监听地址 |
 | `SERVER_PORT` | `server.port` | 服务端口 |
 | `SERVER_BASE_DOMAIN` | `server.base_domain` | 服务域名 |
-| `SCHEDULER_TIMEZONE` | `scheduler.timezone` | 时区 |
 | `SCHEDULER_DAILY_TIME` | `scheduler.daily_time` | 每日生成时间 |
 | `CACHE_TTL_HOURS` | `cache.ttl_hours` | 缓存有效期 |
 | `RENDER_VIEWPORT_WIDTH` | `render.viewport_width` | 视口宽度 |
