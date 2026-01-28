@@ -9,7 +9,8 @@ paths:
   state_path: "state/latest.json"
 
 scheduler:
-  daily_time: "06:00"
+  daily_times:
+  - "06:00"
 
 cache:
   ttl_hours: 24
@@ -26,9 +27,9 @@ fetch:
 render:
   viewport_width: 794
   viewport_height: 1123
-  device_scale_factor: 2
+  device_scale_factor: 3
   jpeg_quality: 100
 
 logging:
   level: "INFO"
-  file: "logs/app.log"  # 容器中默认为空（仅标准输出），可通过 LOG_FILE 环境变量覆盖
+  file: "logs/app.log"

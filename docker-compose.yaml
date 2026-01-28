@@ -19,8 +19,8 @@ services:
       SERVER_PORT: ${SERVER_PORT:-8000}
       SERVER_BASE_DOMAIN: ${SERVER_BASE_DOMAIN:-http://localhost:8000}
 
-      # Scheduler configuration
-      SCHEDULER_DAILY_TIME: ${SCHEDULER_DAILY_TIME:-06:00}
+      # Scheduler configuration (comma-separated for multiple times)
+      SCHEDULER_DAILY_TIMES: ${SCHEDULER_DAILY_TIMES:-06:00}
 
       # Cache configuration
       CACHE_TTL_HOURS: ${CACHE_TTL_HOURS:-24}

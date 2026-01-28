@@ -39,21 +39,19 @@ class TaskScheduler:
         Args:
             job_id: Unique identifier for the job.
             func: Async function to execute.
-            hour: Hour of day (0-23). If None, uses config.default_time.
-            minute: Minute of hour (0-59). If None, uses config.default_time.
+            hour: Hour of day (0-23). If None, uses first time from config.daily_times.
+            minute: Minute of hour (0-59). If None, uses first time from config.daily_times.
         """
         # Parse default time from config if not specified
         if hour is None or minute is None:
             try:
-                default_hour, default_minute = map(
-                    int, self.config.daily_time.split(":")
-                )
+                default_time = self.config.daily_times[0] if self.config.daily_times else "06:00"
+                default_hour, default_minute = map(int, default_time.split(":"))
                 hour = hour if hour is not None else default_hour
                 minute = minute if minute is not None else default_minute
-            except (ValueError, AttributeError) as e:
+            except (ValueError, AttributeError, IndexError) as e:
                 self.logger.warning(
-                    f"Invalid daily_time format '{self.config.daily_time}', "
-                    f"using 06:00: {e}"
+                    f"Invalid daily_times config, using 06:00: {e}"
                 )
                 hour = hour if hour is not None else 6
                 minute = minute if minute is not None else 0

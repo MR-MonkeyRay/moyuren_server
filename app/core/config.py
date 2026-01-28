@@ -23,7 +23,22 @@ class PathsConfig(BaseModel):
 
 class SchedulerConfig(BaseModel):
     """Scheduler configuration."""
-    daily_time: str = "06:00"
+    daily_times: list[str] = ["06:00"]
+
+    @field_validator("daily_times")
+    @classmethod
+    def validate_daily_times(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("daily_times cannot be empty")
+        import re
+        time_pattern = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
+        result = []
+        for time_str in v:
+            time_str = time_str.strip()
+            if not time_pattern.match(time_str):
+                raise ValueError(f"Invalid time format: {time_str}, expected HH:MM")
+            result.append(time_str)
+        return result
 
 
 class CacheConfig(BaseModel):
@@ -125,8 +140,11 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
 
     # Scheduler configuration
     if "scheduler" in data:
-        if daily_time := os.getenv("SCHEDULER_DAILY_TIME"):
-            data["scheduler"]["daily_time"] = daily_time
+        if daily_times := os.getenv("SCHEDULER_DAILY_TIMES"):
+            # Support comma-separated times: "06:00,12:00,18:00"
+            times = [t.strip() for t in daily_times.split(",") if t.strip()]
+            if times:
+                data["scheduler"]["daily_times"] = times
 
     # Cache configuration
     if "cache" in data:

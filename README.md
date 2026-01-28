@@ -107,7 +107,9 @@ paths:
   state_path: "state/latest.json"   # 状态文件路径
 
 scheduler:
-  daily_time: "06:00"        # 每日生成时间
+  daily_times:               # 每日生成时间列表（支持多个时间点）
+    - "06:00"
+    - "18:00"
 
 cache:
   ttl_hours: 24              # 缓存有效期（小时）
@@ -121,8 +123,8 @@ fetch:
 render:
   viewport_width: 794        # 视口宽度
   viewport_height: 1123      # 视口高度
-  device_scale_factor: 2     # 设备缩放因子
-  jpeg_quality: 90           # JPEG 质量
+  device_scale_factor: 3     # 设备缩放因子
+  jpeg_quality: 100           # JPEG 质量
 
 logging:
   level: "INFO"              # 日志级别
@@ -138,7 +140,7 @@ logging:
 | `SERVER_HOST` | `server.host` | 服务监听地址 |
 | `SERVER_PORT` | `server.port` | 服务端口 |
 | `SERVER_BASE_DOMAIN` | `server.base_domain` | 服务域名 |
-| `SCHEDULER_DAILY_TIME` | `scheduler.daily_time` | 每日生成时间 |
+| `SCHEDULER_DAILY_TIMES` | `scheduler.daily_times` | 每日生成时间（逗号分隔，如 `06:00,18:00`） |
 | `CACHE_TTL_HOURS` | `cache.ttl_hours` | 缓存有效期 |
 | `RENDER_VIEWPORT_WIDTH` | `render.viewport_width` | 视口宽度 |
 | `RENDER_VIEWPORT_HEIGHT` | `render.viewport_height` | 视口高度 |
