@@ -315,7 +315,12 @@
                     <div class="holiday-item">
                         <div class="h-info">
                             <div class="h-name">{{ holiday.name }}</div>
-                            <div class="h-date">{{ holiday.date }}</div>
+                            <div class="h-date">
+                                {{ holiday.start_date }}
+                                {% if holiday.duration > 1 %}
+                                ~ {{ holiday.end_date }} ({{ holiday.duration }}天)
+                                {% endif %}
+                            </div>
                         </div>
                         <div class="h-count-wrap">
                             <div class="h-num"{% if holiday.color %} style="color:{{ holiday.color }}"{% endif %}>{{ holiday.days_left }}</div>

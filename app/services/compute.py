@@ -1,7 +1,12 @@
 """Business computation service module."""
 
-import datetime
+import logging
+from datetime import datetime
 from typing import Any
+
+from app.services.calendar import CalendarService
+
+logger = logging.getLogger(__name__)
 
 
 class DataComputer:
@@ -26,42 +31,72 @@ class DataComputer:
         {"num": 5, "text": "工作中遇到困难时，深呼吸，放轻松。"},
     ]
 
-    def compute(self, raw_data: dict[str, dict[str, Any] | None]) -> dict[str, Any]:
+    def compute(self, raw_data: dict[str, Any]) -> dict[str, Any]:
         """Transform raw API data into template context.
 
         Args:
             raw_data: Dictionary mapping endpoint names to their fetched data.
+                      Values can be dict, list, or None depending on endpoint.
 
         Returns:
             A complete template context dictionary with all required variables.
         """
-        now = datetime.datetime.now()
+        now = CalendarService.now_shanghai()
 
         return {
             "date": self._compute_date(now),
             "weekend": self._compute_weekend(now),
-            "solar_term": self._compute_solar_term(),
-            "guide": self._compute_guide(),
+            "solar_term": self._compute_solar_term(now),
+            "guide": self._compute_guide(now),
             "history": self._compute_history(raw_data),
             "news_list": self._compute_news_list(raw_data),
             "news_meta": self._compute_news_meta(raw_data),
             "holidays": self._compute_holidays(raw_data),
         }
 
-    def _compute_date(self, now: datetime.datetime) -> dict[str, str]:
-        """Compute date information."""
+    def _compute_date(self, now: datetime) -> dict[str, Any]:
+        """Compute date information including lunar calendar data.
+
+        Args:
+            now: Current datetime in Shanghai timezone.
+
+        Returns:
+            Date information dictionary with both gregorian and lunar data.
+        """
         weekday = now.weekday()
+        today = now.date()
+
+        # Get lunar calendar info from CalendarService
+        lunar_info = CalendarService.get_lunar_info(today)
+        festivals = CalendarService.get_festivals(today)
+
         return {
+            # Existing fields (backwards compatible)
             "year_month": now.strftime("%Y.%m"),
             "day": str(now.day),
             "week_cn": self._WEEK_CN[weekday],
             "week_en": self._WEEK_EN[weekday],
-            "lunar_year": "乙巳年",
-            "lunar_date": "腊月初九",
+            "lunar_year": lunar_info["lunar_year"],
+            "lunar_date": lunar_info["lunar_date"],
+            # New fields
+            "zodiac": lunar_info["zodiac"],
+            "constellation": CalendarService.get_constellation(today),
+            "moon_phase": CalendarService.get_moon_phase(today),
+            "festival_solar": festivals["festival_solar"],
+            "festival_lunar": festivals["festival_lunar"],
+            "legal_holiday": festivals["legal_holiday"],
+            "is_holiday": CalendarService.is_holiday(today),
         }
 
-    def _compute_weekend(self, now: datetime.datetime) -> dict[str, int]:
-        """Compute days until weekend."""
+    def _compute_weekend(self, now: datetime) -> dict[str, int]:
+        """Compute days until weekend.
+
+        Args:
+            now: Current datetime.
+
+        Returns:
+            Dictionary with days_left until weekend.
+        """
         weekday = now.weekday()
         # Saturday = 5, Sunday = 6
         if weekday >= 5:
@@ -70,32 +105,57 @@ class DataComputer:
             days_left = 5 - weekday
         return {"days_left": days_left}
 
-    def _compute_solar_term(self) -> dict[str, Any]:
-        """Compute next solar term (placeholder)."""
-        return {
-            "name": "立春",
-            "name_en": "Start of Spring",
-            "days_left": 9,
-        }
+    def _compute_solar_term(self, now: datetime) -> dict[str, Any]:
+        """Compute next solar term using CalendarService.
 
-    def _compute_guide(self) -> dict[str, list[str]]:
-        """Compute yi/ji guide (random selection from defaults)."""
-        # For simplicity, use fixed values. Could use random.sample() for variety.
-        return {
-            "yi": self._DEFAULT_GUIDE_YI[:2],
-            "ji": self._DEFAULT_GUIDE_JI[:2],
-        }
+        Args:
+            now: Current datetime.
 
-    def _compute_history(self, raw_data: dict[str, dict[str, Any] | None]) -> dict[str, str]:
-        """Extract or generate history content."""
-        # Try to get from raw_data, otherwise use placeholder
+        Returns:
+            Solar term information dictionary.
+        """
+        return CalendarService.get_solar_term_info(now.date())
+
+    def _compute_guide(self, now: datetime) -> dict[str, list[str]]:
+        """Compute yi/ji guide using CalendarService.
+
+        Args:
+            now: Current datetime.
+
+        Returns:
+            Dictionary with yi and ji lists.
+        """
+        yi_ji = CalendarService.get_yi_ji(now.date())
+
+        # Use CalendarService data if available, otherwise fall back to defaults
+        yi = yi_ji["yi"][:4] if yi_ji["yi"] else self._DEFAULT_GUIDE_YI[:2]
+        ji = yi_ji["ji"][:4] if yi_ji["ji"] else self._DEFAULT_GUIDE_JI[:2]
+
+        return {"yi": yi, "ji": ji}
+
+    def _compute_history(self, raw_data: dict[str, Any]) -> dict[str, str]:
+        """Extract or generate history content.
+
+        Args:
+            raw_data: Raw API data dictionary.
+
+        Returns:
+            History content dictionary.
+        """
         history_data = raw_data.get("history")
         if history_data and "content" in history_data:
             return {"content": history_data["content"]}
         return {"content": self._DEFAULT_HISTORY}
 
-    def _compute_news_list(self, raw_data: dict[str, dict[str, Any] | None]) -> list[dict[str, Any]]:
-        """Extract or generate news list."""
+    def _compute_news_list(self, raw_data: dict[str, Any]) -> list[dict[str, Any]]:
+        """Extract or generate news list.
+
+        Args:
+            raw_data: Raw API data dictionary.
+
+        Returns:
+            List of news items.
+        """
         news_data = raw_data.get("news")
         # Handle new API format: { code, data: { news: [...] } }
         if isinstance(news_data, dict):
@@ -110,13 +170,23 @@ class DataComputer:
         # Handle legacy format: [{ text: "..." }, ...]
         if news_data and isinstance(news_data, list):
             return [
-                {"num": i + 1, "text": item.get("text", "") if isinstance(item, dict) else str(item)}
+                {
+                    "num": i + 1,
+                    "text": item.get("text", "") if isinstance(item, dict) else str(item),
+                }
                 for i, item in enumerate(news_data)
             ]
         return self._DEFAULT_NEWS
 
-    def _compute_news_meta(self, raw_data: dict[str, dict[str, Any] | None]) -> dict[str, Any]:
-        """Extract news API metadata."""
+    def _compute_news_meta(self, raw_data: dict[str, Any]) -> dict[str, Any]:
+        """Extract news API metadata.
+
+        Args:
+            raw_data: Raw API data dictionary.
+
+        Returns:
+            News metadata dictionary.
+        """
         news_data = raw_data.get("news")
         if isinstance(news_data, dict):
             data = news_data.get("data")
@@ -128,25 +198,27 @@ class DataComputer:
                 }
         return {}
 
-    def _compute_holidays(self, raw_data: dict[str, dict[str, Any] | None]) -> list[dict[str, Any]]:
-        """Extract or generate holiday list."""
+    def _compute_holidays(self, raw_data: dict[str, Any]) -> list[dict[str, Any]]:
+        """Extract or generate holiday list.
+
+        Args:
+            raw_data: Raw API data dictionary, expects "holidays" key from HolidayService.
+
+        Returns:
+            List of holiday dictionaries with start_date, end_date, duration, days_left.
+        """
         holidays_data = raw_data.get("holidays")
         if holidays_data and isinstance(holidays_data, list):
             return [
                 {
                     "name": item.get("name", ""),
-                    "date": item.get("date", ""),
+                    "start_date": item.get("start_date", ""),
+                    "end_date": item.get("end_date", ""),
+                    "duration": item.get("duration", 1),
                     "days_left": item.get("days_left", 0),
                     "color": item.get("color"),
                 }
                 for item in holidays_data
             ]
-        # Default placeholder holidays
-        return [
-            {
-                "name": "春节假期",
-                "date": "2026-02-17",
-                "days_left": 22,
-                "color": None,
-            }
-        ]
+        # Default placeholder when no data available
+        return []

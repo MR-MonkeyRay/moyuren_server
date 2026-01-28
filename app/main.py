@@ -20,6 +20,7 @@ from app.core.scheduler import TaskScheduler
 from app.services.cache import CacheCleaner
 from app.services.compute import DataComputer
 from app.services.fetcher import DataFetcher
+from app.services.holiday import HolidayService
 from app.services.renderer import ImageRenderer
 
 
@@ -61,6 +62,12 @@ async def lifespan(app: FastAPI):
 
     data_computer = DataComputer()
 
+    holiday_cache_dir = Path(config.paths.state_path).parent / "holidays"
+    holiday_service = HolidayService(
+        logger=logger,
+        cache_dir=holiday_cache_dir,
+    )
+
     image_renderer = ImageRenderer(
         template_path=config.paths.template_path,
         static_dir=config.paths.static_dir,
@@ -77,6 +84,7 @@ async def lifespan(app: FastAPI):
     # Store services in app.state for access in tasks
     app.state.data_fetcher = data_fetcher
     app.state.data_computer = data_computer
+    app.state.holiday_service = holiday_service
     app.state.image_renderer = image_renderer
     app.state.cache_cleaner = cache_cleaner
 
@@ -182,6 +190,15 @@ async def _generate_and_save_image(app: FastAPI) -> None:
     # 1. Fetch data from all endpoints
     raw_data = await app.state.data_fetcher.fetch_all()
     logger.info(f"Fetched data from {len(raw_data)} endpoints")
+
+    # 1.1 Fetch holiday data
+    try:
+        holidays = await app.state.holiday_service.fetch_holidays()
+        raw_data["holidays"] = holidays
+        logger.info(f"Fetched {len(holidays)} holidays")
+    except Exception as e:
+        logger.warning(f"Failed to fetch holidays, using default: {e}")
+        raw_data["holidays"] = []
 
     # 2. Compute template context
     template_data = app.state.data_computer.compute(raw_data)

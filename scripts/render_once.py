@@ -16,6 +16,7 @@ from app.core.config import load_config
 from app.core.logging import setup_logging
 from app.services.compute import DataComputer
 from app.services.fetcher import DataFetcher
+from app.services.holiday import HolidayService
 from app.services.renderer import ImageRenderer
 
 
@@ -34,6 +35,11 @@ async def main():
         endpoints=config.fetch.api_endpoints,
         logger=logger,
     )
+    holiday_cache_dir = Path(config.paths.state_path).parent / "holidays"
+    holiday_service = HolidayService(
+        logger=logger,
+        cache_dir=holiday_cache_dir,
+    )
     data_computer = DataComputer()
     image_renderer = ImageRenderer(
         template_path=config.paths.template_path,
@@ -47,6 +53,15 @@ async def main():
     # 1. Fetch data
     raw_data = await data_fetcher.fetch_all()
     logger.info(f"Fetched data from {len(raw_data)} endpoints")
+
+    # 1.1 Fetch holiday data
+    try:
+        holidays = await holiday_service.fetch_holidays()
+        raw_data["holidays"] = holidays
+        logger.info(f"Fetched {len(holidays)} holidays")
+    except Exception as e:
+        logger.warning(f"Failed to fetch holidays, using default: {e}")
+        raw_data["holidays"] = []
 
     # 2. Compute template context
     template_data = data_computer.compute(raw_data)

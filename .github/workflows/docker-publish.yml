@@ -41,6 +41,9 @@ jobs:
       - name: Generate version tags
         id: version
         run: |
+          # 将仓库名转为小写（Docker 要求）
+          IMAGE_NAME_LOWER=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+
           # 获取短 commit SHA
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
 
@@ -82,23 +85,24 @@ jobs:
 
           if [[ "${IS_TAG}" == "true" ]]; then
             # Tag 触发：推送版本号标签
-            TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+            TAGS="${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:${VERSION}"
 
             # 只有 main 分支的 tag 才推送 latest
             if [[ "${IS_MAIN}" == "true" ]]; then
-              TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+              TAGS="${TAGS},${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:latest"
             fi
           elif [[ "${IS_MAIN}" == "true" ]]; then
             # main 分支 push：推送 latest 和 SHA
-            TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-            TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+            TAGS="${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:latest"
+            TAGS="${TAGS},${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:${VERSION}"
           else
             # 其他分支：推送带后缀的标签
-            TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-${SUFFIX}"
-            TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-${SUFFIX}"
+            TAGS="${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:${VERSION}-${SUFFIX}"
+            TAGS="${TAGS},${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:latest-${SUFFIX}"
           fi
 
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          echo "image_name=${IMAGE_NAME_LOWER}" >> $GITHUB_OUTPUT
           echo "is_main=${IS_MAIN}" >> $GITHUB_OUTPUT
           echo "is_tag=${IS_TAG}" >> $GITHUB_OUTPUT
           echo "Generated tags: ${TAGS}"
@@ -107,7 +111,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ steps.version.outputs.image_name }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5

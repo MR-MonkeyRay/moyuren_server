@@ -22,9 +22,7 @@ fetch:
     timeout_sec: 10
     params:
       "force-update": "false"
-  - name: "holiday"
-    url: "https://api.example.com/holiday"
-    timeout_sec: 10
+  # holiday 数据已由 HolidayService 独立获取，移除无效配置
 
 render:
   viewport_width: 794
