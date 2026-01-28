@@ -59,6 +59,7 @@ class FetchEndpointConfig(BaseModel):
     name: str
     url: str
     timeout_sec: int = 10
+    params: dict[str, Any] | None = None
 
     @field_validator("name", "url")
     @classmethod

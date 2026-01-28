@@ -38,7 +38,8 @@ class DataFetcher:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
                     endpoint.url,
-                    timeout=httpx.Timeout(endpoint.timeout_sec)
+                    params=endpoint.params,
+                    timeout=httpx.Timeout(endpoint.timeout_sec),
                 )
                 response.raise_for_status()
 

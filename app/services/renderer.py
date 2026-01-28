@@ -122,6 +122,7 @@ class ImageRenderer:
                 screenshot_bytes = await page.screenshot(
                     type="jpeg",
                     quality=self.render_config.jpeg_quality,
+                    full_page=True,
                 )
 
                 return screenshot_bytes

@@ -32,18 +32,19 @@
         body {
             background-color: var(--bg-body);
             font-family: 'PingFang SC', 'Helvetica Neue', sans-serif;
-            height: 100vh;
+            min-height: 100vh;
             width: 100vw;
             display: flex;
             justify-content: center;
             align-items: center;
-            overflow: hidden; /* 禁止滚动条 */
+            padding: 22px 0;
         }
 
         /* 核心容器：锁定A4比例，高度自适应屏幕 */
         .poster {
-            aspect-ratio: 210 / 297;
-            height: 92vh; /* 留出一点边距 */
+            width: 90vw;
+            max-width: 760px;
+            min-height: 1030px;
             background-color: var(--bg-paper);
             border-radius: 8px;
             box-shadow: 20px 20px 60px #bebebe, -20px -20px 60px #ffffff;
@@ -65,7 +66,7 @@
         }
 
         h2 {
-            font-size: 1.8vh;
+            font-size: 20px;
             color: var(--text-grey);
             font-weight: 600;
             margin-bottom: 12px;
@@ -78,7 +79,8 @@
 
         /* --- 第一排：头部 (固定高度) --- */
         .row-header {
-            height: 16%;
+            height: 170px;
+            flex-shrink: 0;
             display: flex;
             gap: var(--spacing);
         }
@@ -93,8 +95,8 @@
             align-items: center;
             text-align: center;
         }
-        .moyu-text { font-size: 4vh; font-weight: 900; line-height: 1.1; letter-spacing: 4px; }
-        .moyu-sub { font-size: 1.2vh; font-weight: 300; opacity: 0.8; margin-top: 8px; letter-spacing: 2px; }
+        .moyu-text { font-size: 45px; font-weight: 900; line-height: 1.1; letter-spacing: 4px; }
+        .moyu-sub { font-size: 14px; font-weight: 300; opacity: 0.8; margin-top: 8px; letter-spacing: 2px; }
 
         .date-card {
             flex: 0.65;
@@ -104,20 +106,21 @@
             padding: 0 30px;
         }
         .date-left { display: flex; flex-direction: column; }
-        .big-day { font-size: 7vh; font-weight: 800; color: var(--text-dark); line-height: 1; }
-        .ym-text { font-size: 2vh; color: var(--text-grey); font-weight: 500; }
+        .big-day { font-size: 80px; font-weight: 800; color: var(--text-dark); line-height: 1; }
+        .ym-text { font-size: 22px; color: var(--text-grey); font-weight: 500; }
 
         .date-right { text-align: right; }
         .week-pill {
             background: var(--accent-blue); color: var(--accent-blue-text);
-            padding: 6px 16px; border-radius: 20px; font-weight: bold; font-size: 1.6vh;
+            padding: 6px 16px; border-radius: 20px; font-weight: bold; font-size: 18px;
             display: inline-block; margin-bottom: 8px;
         }
-        .lunar-text { font-size: 1.4vh; color: var(--text-grey); }
+        .lunar-text { font-size: 16px; color: var(--text-grey); }
 
         /* --- 第二排：信息 (弹性) --- */
         .row-info {
-            height: 20%;
+            height: 215px;
+            flex-shrink: 0;
             display: flex;
             gap: var(--spacing);
         }
@@ -129,11 +132,11 @@
             flex-direction: column;
         }
         .countdown-wrap { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-        .days-num { font-size: 5vh; font-weight: 800; color: var(--accent-green-text); line-height: 1; }
-        .days-label { font-size: 1.4vh; color: var(--text-grey); margin-top: 4px; }
+        .days-num { font-size: 56px; font-weight: 800; color: var(--accent-green-text); line-height: 1; }
+        .days-label { font-size: 16px; color: var(--text-grey); margin-top: 4px; }
 
         .yi-ji-row {
-            display: flex; gap: 10px; font-size: 1.2vh; border-top: 1px dashed #eee; padding-top: 10px;
+            display: flex; gap: 10px; font-size: 14px; border-top: 1px dashed #eee; padding-top: 10px;
         }
         .tag { padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-right: 4px; }
         .tag.yi { background: #E8F8F5; color: #1ABC9C; }
@@ -146,21 +149,21 @@
         }
         .history-content {
             flex: 1;
-            font-size: 1.5vh;
+            font-size: 17px;
             line-height: 1.6;
             color: #555;
             display: flex;
             align-items: center;
             text-align: justify;
         }
-        .joke-tag { font-size: 1.2vh; color: #aaa; margin-top: auto; text-align: right; font-style: italic; }
+        .joke-tag { font-size: 14px; color: #aaa; margin-top: auto; text-align: right; font-style: italic; }
 
         /* --- 第三排：主要内容 (占据剩余所有空间) --- */
         .row-main {
             flex: 1; /* 关键：自动填充剩余高度 */
             display: flex;
             gap: var(--spacing);
-            min-height: 0; /* 防止溢出 */
+            /* min-height: 0;  Removed to allow growth */
         }
 
         .news-card {
@@ -176,7 +179,7 @@
             list-style: none;
         }
         .news-item {
-            font-size: 1.3vh;
+            font-size: 15px;
             padding-bottom: 8px;
             margin-bottom: 8px;
             border-bottom: 1px solid #f0f0f0;
@@ -185,7 +188,7 @@
         }
         .news-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
         .news-num {
-            color: var(--accent-blue-text); font-size: 1.2vh; width: 1.5em; flex-shrink: 0; font-weight: 800;
+            color: var(--accent-blue-text); font-size: 14px; width: 1.5em; flex-shrink: 0; font-weight: 800;
             font-family: 'Courier New', Courier, monospace;
         }
         .news-text {
@@ -205,7 +208,7 @@
             display: flex;
             flex-direction: column;
             gap: 8px; /* 减小间距 */
-            overflow-y: auto; /* 内容过多时滚动，虽然打印不需要 */
+            /* overflow-y: auto; Removed to allow growth */
         }
         .holiday-item {
             background: #fff;
@@ -218,12 +221,21 @@
             /* flex: 1;  取消自动拉伸，更紧凑 */
         }
         .h-info { display: flex; flex-direction: column; justify-content: center; }
-        .h-name { font-size: 1.4vh; font-weight: 700; color: #333; }
-        .h-date { font-size: 1vh; color: #999; margin-top: 2px; }
+        .h-name { font-size: 16px; font-weight: 700; color: #333; }
+        .h-date { font-size: 11px; color: #999; margin-top: 2px; }
 
         .h-count-wrap { text-align: right; }
-        .h-num { font-size: 2.4vh; font-weight: 800; color: var(--accent-pink-text); }
-        .h-unit { font-size: 0.8vh; color: var(--text-light); }
+        .h-num { font-size: 27px; font-weight: 800; color: var(--accent-pink-text); }
+        .h-unit { font-size: 9px; color: var(--text-light); }
+
+        /* 页脚更新时间 */
+        .footer-info {
+            text-align: center;
+            font-size: 11px;
+            color: var(--text-light);
+            padding-top: 8px;
+            margin-top: auto;
+        }
 
         /* 打印样式 */
         @media print {
@@ -256,7 +268,7 @@
                     <div class="week-pill">{{ date.week_cn }} · {{ date.week_en }}</div>
                     <div class="lunar-text">农历 {{ date.lunar_year }}</div>
                     <div class="lunar-text">{{ date.lunar_date }}</div>
-                    <div style="margin-top:6px; font-size:1.2vh; color:#E67E22; font-weight:bold;">
+                    <div style="margin-top:6px; font-size:14px; color:#E67E22; font-weight:bold;">
                         ⏳ 距周末还有 {{ weekend.days_left }} 天
                     </div>
                 </div>
@@ -314,6 +326,13 @@
                 </div>
             </div>
         </div>
+
+        <!-- 页脚：API 更新时间 -->
+        {% if news_meta and news_meta.api_updated %}
+        <div class="footer-info">
+            数据更新于 {{ news_meta.api_updated }}
+        </div>
+        {% endif %}
 
     </div>
 

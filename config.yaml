@@ -18,8 +18,10 @@ cache:
 fetch:
   api_endpoints:
   - name: "news"
-    url: "https://api.example.com/news"
+    url: "https://60s.viki.moe/v2/60s"
     timeout_sec: 10
+    params:
+      "force-update": "false"
   - name: "holiday"
     url: "https://api.example.com/holiday"
     timeout_sec: 10

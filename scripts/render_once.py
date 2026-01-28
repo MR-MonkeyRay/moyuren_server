@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""One-time image rendering script for testing."""
+
+import asyncio
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime
+from pathlib import Path
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from app.core.config import load_config
+from app.core.logging import setup_logging
+from app.services.compute import DataComputer
+from app.services.fetcher import DataFetcher
+from app.services.renderer import ImageRenderer
+
+
+async def main():
+    """Generate image once."""
+    # Load config
+    config = load_config()
+    logger = setup_logging(config.logging, logger_name="render_once")
+
+    # Ensure directories exist
+    Path(config.paths.static_dir).mkdir(parents=True, exist_ok=True)
+    Path(config.paths.state_path).parent.mkdir(parents=True, exist_ok=True)
+
+    # Initialize services
+    data_fetcher = DataFetcher(
+        endpoints=config.fetch.api_endpoints,
+        logger=logger,
+    )
+    data_computer = DataComputer()
+    image_renderer = ImageRenderer(
+        template_path=config.paths.template_path,
+        static_dir=config.paths.static_dir,
+        render_config=config.render,
+        logger=logger,
+    )
+
+    logger.info("Starting image generation...")
+
+    # 1. Fetch data
+    raw_data = await data_fetcher.fetch_all()
+    logger.info(f"Fetched data from {len(raw_data)} endpoints")
+
+    # 2. Compute template context
+    template_data = data_computer.compute(raw_data)
+    logger.info("Template data computed")
+
+    # 3. Render image
+    filename = await image_renderer.render(template_data)
+    logger.info(f"Image rendered: {filename}")
+
+    # 4. Update state file
+    state_file = Path(config.paths.state_path)
+    now = datetime.now()
+    state_data = {
+        "date": now.strftime("%Y-%m-%d"),
+        "timestamp": now.isoformat(),
+        "filename": filename,
+    }
+
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        dir=state_file.parent,
+        prefix=".latest_",
+        suffix=".tmp",
+        delete=False,
+    ) as tmp_file:
+        json.dump(state_data, tmp_file, ensure_ascii=False, indent=2)
+        tmp_path = tmp_file.name
+
+    os.replace(tmp_path, state_file)
+    logger.info(f"State file updated: {config.paths.state_path}")
+
+    # Print result
+    image_path = Path(config.paths.static_dir) / filename
+    print(f"\n✅ Image generated: {image_path}")
+    print(f"   Size: {image_path.stat().st_size / 1024:.1f} KB")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

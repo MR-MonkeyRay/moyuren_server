@@ -44,6 +44,7 @@ class DataComputer:
             "guide": self._compute_guide(),
             "history": self._compute_history(raw_data),
             "news_list": self._compute_news_list(raw_data),
+            "news_meta": self._compute_news_meta(raw_data),
             "holidays": self._compute_holidays(raw_data),
         }
 
@@ -96,12 +97,36 @@ class DataComputer:
     def _compute_news_list(self, raw_data: dict[str, dict[str, Any] | None]) -> list[dict[str, Any]]:
         """Extract or generate news list."""
         news_data = raw_data.get("news")
+        # Handle new API format: { code, data: { news: [...] } }
+        if isinstance(news_data, dict):
+            data = news_data.get("data")
+            if isinstance(data, dict):
+                news_items = data.get("news")
+                if isinstance(news_items, list):
+                    return [
+                        {"num": i + 1, "text": str(item)}
+                        for i, item in enumerate(news_items)
+                    ]
+        # Handle legacy format: [{ text: "..." }, ...]
         if news_data and isinstance(news_data, list):
             return [
-                {"num": i + 1, "text": item.get("text", "")}
+                {"num": i + 1, "text": item.get("text", "") if isinstance(item, dict) else str(item)}
                 for i, item in enumerate(news_data)
             ]
         return self._DEFAULT_NEWS
+
+    def _compute_news_meta(self, raw_data: dict[str, dict[str, Any] | None]) -> dict[str, Any]:
+        """Extract news API metadata."""
+        news_data = raw_data.get("news")
+        if isinstance(news_data, dict):
+            data = news_data.get("data")
+            if isinstance(data, dict):
+                return {
+                    "date": data.get("date"),
+                    "api_updated": data.get("api_updated"),
+                    "api_updated_at": data.get("api_updated_at"),
+                }
+        return {}
 
     def _compute_holidays(self, raw_data: dict[str, dict[str, Any] | None]) -> list[dict[str, Any]]:
         """Extract or generate holiday list."""
