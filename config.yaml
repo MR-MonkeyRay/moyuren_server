@@ -4,7 +4,7 @@ server:
   base_domain: "http://localhost:8000"
 
 paths:
-  static_dir: "static" # 图片输出目录（可配置）
+  static_dir: "static" # 图片输出目录
   template_path: "templates/moyuren.html"
   state_path: "state/latest.json"
 
@@ -22,7 +22,11 @@ fetch:
     timeout_sec: 10
     params:
       "force-update": "false"
-  # holiday 数据已由 HolidayService 独立获取，移除无效配置
+
+holiday:
+  mirror_urls:
+  - "https://ghfast.top/"
+  timeout_sec: 10
 
 render:
   viewport_width: 794

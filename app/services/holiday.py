@@ -7,14 +7,9 @@ from typing import Any
 
 import httpx
 
-HOLIDAY_DATA_URLS = [
-    "https://cdn.jsdelivr.net/gh/NateScarlet/holiday-cn@master/{year}.json",
-    "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json",
-    "https://ghfast.top/https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json",
-    "https://fastly.jsdelivr.net/gh/NateScarlet/holiday-cn@master/{year}.json",
-]
-REQUEST_TIMEOUT = 10.0
 SHANGHAI_TZ = timezone(timedelta(hours=8))
+# GitHub 原始源（硬编码，不可配置）
+GITHUB_RAW_URL = "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json"
 
 
 class HolidayService:
@@ -24,10 +19,31 @@ class HolidayService:
         self,
         logger: logging.Logger,
         cache_dir: str | Path = "state/holidays",
+        mirror_urls: list[str] | None = None,
+        timeout_sec: int = 10,
     ) -> None:
         self._logger = logger
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
+        self._mirror_urls = mirror_urls or []
+        self._timeout_sec = timeout_sec
+
+    def _build_urls(self, year: int) -> list[str]:
+        """构建 URL 列表：镜像源优先，GitHub 原始源兜底"""
+        urls = []
+        # 镜像源：前缀 + raw.githubusercontent.com/...
+        raw_path = f"raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json"
+        for mirror in self._mirror_urls:
+            # 校验镜像前缀必须包含协议
+            if not mirror.startswith(("http://", "https://")):
+                self._logger.warning(f"跳过无效镜像前缀（缺少协议）: {mirror}")
+                continue
+            # 确保镜像地址以 / 结尾
+            prefix = mirror.rstrip("/") + "/"
+            urls.append(f"{prefix}{raw_path}")
+        # GitHub 原始源兜底
+        urls.append(GITHUB_RAW_URL.format(year=year))
+        return urls
 
     def _get_today(self) -> date:
         """获取上海时区的今天日期"""
@@ -44,7 +60,7 @@ class HolidayService:
             f"开始获取 {prev_year}、{current_year} 和 {next_year} 年节假日数据"
         )
 
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=self._timeout_sec) as client:
             tasks = [
                 self._fetch_year_data(client, prev_year),
                 self._fetch_year_data(client, current_year),
@@ -58,9 +74,11 @@ class HolidayService:
         self, client: httpx.AsyncClient, year: int
     ) -> dict[str, Any] | None:
         """获取指定年份的节假日数据，支持多源重试和本地缓存"""
+        # 构建 URL 列表：镜像源优先，GitHub 原始源兜底
+        urls = self._build_urls(year)
+
         # 1. 尝试从网络获取
-        for url_template in HOLIDAY_DATA_URLS:
-            url = url_template.format(year=year)
+        for url in urls:
             try:
                 response = await client.get(url)
                 response.raise_for_status()

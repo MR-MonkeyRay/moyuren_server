@@ -29,6 +29,12 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # LOG_FILE: ${LOG_FILE:-}  # 设置此变量可启用文件日志
 
+      # Holiday configuration (GitHub proxy mirrors)
+      # 镜像站前缀列表，逗号分隔，如：https://ghfast.top/,https://mirror2.com/
+      # 留空则直接使用 GitHub 原始源
+      HOLIDAY_MIRROR_URLS: ${HOLIDAY_MIRROR_URLS:-https://ghfast.top/}
+      HOLIDAY_TIMEOUT_SEC: ${HOLIDAY_TIMEOUT_SEC:-10}
+
     restart: unless-stopped
 
     healthcheck:

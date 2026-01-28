@@ -39,6 +39,8 @@ async def main():
     holiday_service = HolidayService(
         logger=logger,
         cache_dir=holiday_cache_dir,
+        mirror_urls=config.holiday.mirror_urls,
+        timeout_sec=config.holiday.timeout_sec,
     )
     data_computer = DataComputer()
     image_renderer = ImageRenderer(

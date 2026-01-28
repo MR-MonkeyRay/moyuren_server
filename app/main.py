@@ -66,6 +66,8 @@ async def lifespan(app: FastAPI):
     holiday_service = HolidayService(
         logger=logger,
         cache_dir=holiday_cache_dir,
+        mirror_urls=config.holiday.mirror_urls,
+        timeout_sec=config.holiday.timeout_sec,
     )
 
     image_renderer = ImageRenderer(

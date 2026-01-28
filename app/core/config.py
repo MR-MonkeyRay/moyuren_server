@@ -103,6 +103,21 @@ class LoggingConfig(BaseModel):
         return v.upper()
 
 
+class HolidayConfig(BaseModel):
+    """Holiday service configuration."""
+    # GitHub 代理镜像站前缀列表（如 https://ghfast.top/）
+    mirror_urls: list[str] = Field(default_factory=list)
+    # 请求超时（秒）
+    timeout_sec: int = 10
+
+    @field_validator("timeout_sec")
+    @classmethod
+    def validate_timeout(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("timeout_sec must be positive")
+        return v
+
+
 class AppConfig(BaseModel):
     """Main application configuration."""
     server: ServerConfig
@@ -112,6 +127,7 @@ class AppConfig(BaseModel):
     fetch: FetchConfig
     render: RenderConfig
     logging: LoggingConfig
+    holiday: HolidayConfig = Field(default_factory=HolidayConfig)
 
 
 def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
@@ -184,6 +200,20 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
             data["logging"]["level"] = log_level
         if log_file := os.getenv("LOG_FILE"):
             data["logging"]["file"] = log_file
+
+    # Holiday configuration
+    if "holiday" not in data or not isinstance(data.get("holiday"), dict):
+        data["holiday"] = {}
+    if holiday_mirrors := os.getenv("HOLIDAY_MIRROR_URLS"):
+        # Support comma-separated URLs
+        mirrors = [u.strip() for u in holiday_mirrors.split(",") if u.strip()]
+        if mirrors:
+            data["holiday"]["mirror_urls"] = mirrors
+    if holiday_timeout := os.getenv("HOLIDAY_TIMEOUT_SEC"):
+        try:
+            data["holiday"]["timeout_sec"] = int(holiday_timeout)
+        except ValueError:
+            raise ValueError(f"Invalid HOLIDAY_TIMEOUT_SEC value: {holiday_timeout}")
 
     # Paths configuration
     if "paths" in data:

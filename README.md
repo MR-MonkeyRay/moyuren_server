@@ -72,6 +72,8 @@ sudo chown -R 1000:1000 static state logs
 | `render.device_scale_factor` | `RENDER_DEVICE_SCALE_FACTOR` | 缩放因子 |
 | `cache.ttl_hours` | `CACHE_TTL_HOURS` | 缓存保留时长 |
 | `logging.level` | `LOG_LEVEL` | 日志级别 |
+| `holiday.mirror_urls` | `HOLIDAY_MIRROR_URLS` | GitHub 代理镜像站（逗号分隔） |
+| `holiday.timeout_sec` | `HOLIDAY_TIMEOUT_SEC` | 节假日数据请求超时 |
 
 ### 配置示例
 
@@ -90,6 +92,14 @@ render:
   viewport_height: 1123
   device_scale_factor: 3
   jpeg_quality: 100
+
+holiday:
+  # GitHub 代理镜像站前缀列表
+  # 程序自动拼接为：https://ghfast.top/raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json
+  # 留空则直接使用 GitHub 原始源
+  mirror_urls:
+    - "https://ghfast.top/"
+  timeout_sec: 10
 ```
 
 ## 目录结构
