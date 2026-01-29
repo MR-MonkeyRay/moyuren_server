@@ -52,7 +52,7 @@ class DataComputer:
             "history": self._compute_history(raw_data),
             "news_list": self._compute_news_list(raw_data),
             "news_meta": self._compute_news_meta(raw_data),
-            "holidays": self._compute_holidays(raw_data),
+            "holidays": self._compute_holidays(now, raw_data),
             "kfc_content": self._compute_kfc(now, raw_data),
             # 项目元信息
             "version": f"v{__version__}",
@@ -63,15 +63,14 @@ class DataComputer:
         """Compute KFC content if available and it's Thursday.
 
         Args:
-            now: Current datetime (not used, using local time instead).
+            now: Current datetime.
             raw_data: Raw data dictionary.
 
         Returns:
             Dictionary with kfc content or None.
         """
-        # Use local server time for consistency with generator.py
         # 0=Mon, ... 3=Thu
-        if datetime.now().weekday() == 3:
+        if now.weekday() == 3:
             content = raw_data.get("kfc_copy")
             if content:
                 return {
@@ -221,24 +220,26 @@ class DataComputer:
         if isinstance(news_data, dict):
             data = news_data.get("data")
             if isinstance(data, dict):
+                # 兼容新旧字段名：优先使用 updated，回退到 api_updated
                 return {
                     "date": data.get("date"),
-                    "updated": data.get("updated"),
-                    "updated_at": data.get("updated_at"),
+                    "updated": data.get("updated") or data.get("api_updated"),
+                    "updated_at": data.get("updated_at") or data.get("api_updated_at"),
                 }
         return {}
 
-    def _compute_holidays(self, raw_data: dict[str, Any]) -> list[dict[str, Any]]:
+    def _compute_holidays(self, now: datetime, raw_data: dict[str, Any]) -> list[dict[str, Any]]:
         """整合三种数据源的节日数据。
 
         Args:
+            now: Current datetime.
             raw_data: Raw API data dictionary, expects "holidays" key from HolidayService.
 
         Returns:
             List of holiday dictionaries with name, start_date, end_date, duration,
             days_left, is_legal_holiday, color.
         """
-        today = datetime.now().date()
+        today = now.date()
 
         # 获取三种数据源
         legal_holidays = raw_data.get("holidays", [])

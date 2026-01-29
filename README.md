@@ -8,6 +8,7 @@
 - 按需生成：启动时或请求时若无可用图片则自动生成
 - 节日倒计时整合（法定假日 + 农历/公历节日）
 - 趣味内容随机展示（冷笑话、一言、段子、摸鱼语录）
+- 疯狂星期四：每周四自动展示 KFC 文案
 - Playwright 高质量浏览器渲染
 - 自动清理过期缓存
 - RESTful API + 静态文件服务
@@ -81,6 +82,9 @@ sudo chown -R 1000:1000 static state logs
 | `holiday.timeout_sec` | `HOLIDAY_TIMEOUT_SEC` | 节假日数据请求超时 |
 | `fun_content.timeout_sec` | - | 趣味内容 API 超时 |
 | `fun_content.endpoints` | - | 趣味内容 API 端点列表（仅 YAML） |
+| `crazy_thursday.enabled` | - | 是否启用疯狂星期四功能 |
+| `crazy_thursday.url` | - | KFC 文案 API 地址 |
+| `crazy_thursday.timeout_sec` | - | KFC API 超时时间 |
 
 ### 配置示例
 
@@ -133,6 +137,7 @@ moyuren_server/
 │   │   ├── fetcher.py    # 数据获取
 │   │   ├── holiday.py    # 节假日服务
 │   │   ├── fun_content.py # 趣味内容服务
+│   │   ├── kfc.py        # 疯狂星期四服务
 │   │   ├── calendar.py   # 日历计算
 │   │   ├── compute.py    # 数据计算
 │   │   ├── renderer.py   # 图片渲染

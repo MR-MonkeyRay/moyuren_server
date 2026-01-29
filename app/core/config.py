@@ -144,7 +144,6 @@ class CrazyThursdayConfig(BaseModel):
     enabled: bool = True
     url: str
     timeout_sec: int = 5
-    display_title: str = "🍗 疯狂星期四"
 
     @field_validator("timeout_sec")
     @classmethod

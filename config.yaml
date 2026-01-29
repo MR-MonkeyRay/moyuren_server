@@ -47,7 +47,6 @@ crazy_thursday:
   enabled: true
   url: "https://60s.viki.moe/v2/kfc"
   timeout_sec: 5
-  display_title: "🍗 疯狂星期四"
 
 holiday:
   mirror_urls:

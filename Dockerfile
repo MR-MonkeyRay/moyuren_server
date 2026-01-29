@@ -27,7 +27,7 @@ RUN (getent group ${GID} || groupadd -g ${GID} appuser) \
 
 # 安装运行时依赖
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         wget \
         ca-certificates \
         procps \
