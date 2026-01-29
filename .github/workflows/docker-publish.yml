@@ -47,19 +47,18 @@ jobs:
           # 获取短 commit SHA
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
 
+          # 从 app/__init__.py 读取项目版本号
+          PROJECT_VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' app/__init__.py || echo "0.0.0")
+          echo "Project version from app/__init__.py: ${PROJECT_VERSION}"
+
           # 初始化变量
           IS_TAG=false
           IS_MAIN=false
-          VERSION=""
           SUFFIX=""
 
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            # Tag 触发：提取版本号
+            # Tag 触发
             IS_TAG=true
-            VERSION="${{ github.ref_name }}"
-            # 清理版本号中的特殊字符（防止 v1.0/rc 这类带斜杠的 tag）
-            VERSION=$(echo "${VERSION}" | sed 's|/|-|g' | sed 's/[^a-zA-Z0-9._-]/-/g')
-
             # 检查 tag 是否在 main 分支上（精确匹配，避免误匹配 main-foo）
             if git branch -r --contains "${{ github.sha }}" | grep -qE '^\s*origin/main$'; then
               IS_MAIN=true
@@ -67,7 +66,6 @@ jobs:
           elif [[ "${{ github.ref }}" == refs/heads/* ]]; then
             # 分支触发
             BRANCH="${{ github.ref_name }}"
-            VERSION="${SHORT_SHA}"
 
             if [[ "${BRANCH}" == "main" ]]; then
               IS_MAIN=true
@@ -80,24 +78,24 @@ jobs:
             fi
           fi
 
-          # 构建标签列表
+          # 构建标签列表（使用项目版本号）
           TAGS=""
 
           if [[ "${IS_TAG}" == "true" ]]; then
-            # Tag 触发：推送版本号标签
-            TAGS="${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:${VERSION}"
+            # Tag 触发：推送项目版本号标签
+            TAGS="${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:v${PROJECT_VERSION}"
 
             # 只有 main 分支的 tag 才推送 latest
             if [[ "${IS_MAIN}" == "true" ]]; then
               TAGS="${TAGS},${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:latest"
             fi
           elif [[ "${IS_MAIN}" == "true" ]]; then
-            # main 分支 push：推送 latest 和 SHA
+            # main 分支 push：推送 latest 和版本号+SHA
             TAGS="${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:latest"
-            TAGS="${TAGS},${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:${VERSION}"
+            TAGS="${TAGS},${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:v${PROJECT_VERSION}-${SHORT_SHA}"
           else
-            # 其他分支：推送带后缀的标签
-            TAGS="${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:${VERSION}-${SUFFIX}"
+            # 其他分支：推送版本号+SHA+分支后缀
+            TAGS="${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:v${PROJECT_VERSION}-${SHORT_SHA}-${SUFFIX}"
             TAGS="${TAGS},${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:latest-${SUFFIX}"
           fi
 
@@ -105,6 +103,7 @@ jobs:
           echo "image_name=${IMAGE_NAME_LOWER}" >> $GITHUB_OUTPUT
           echo "is_main=${IS_MAIN}" >> $GITHUB_OUTPUT
           echo "is_tag=${IS_TAG}" >> $GITHUB_OUTPUT
+          echo "project_version=${PROJECT_VERSION}" >> $GITHUB_OUTPUT
           echo "Generated tags: ${TAGS}"
 
       - name: Extract metadata for Docker

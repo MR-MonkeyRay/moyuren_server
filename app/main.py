@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app import __version__
 from app.api.v1.moyuren import router as moyuren_router
 from app.core.config import load_config
 from app.core.logging import setup_logging
@@ -16,6 +17,7 @@ from app.services.cache import CacheCleaner
 from app.services.compute import DataComputer
 from app.services.fetcher import DataFetcher
 from app.services.fun_content import FunContentService
+from app.services.kfc import KfcService
 from app.services.holiday import HolidayService
 from app.services.renderer import ImageRenderer
 
@@ -67,6 +69,11 @@ async def lifespan(app: FastAPI):
     )
 
     fun_content_service = FunContentService(config.fun_content)
+    
+    # Initialize KFC service if config exists (handle cases where config might be missing temporarily)
+    kfc_service = None
+    if config.crazy_thursday:
+        kfc_service = KfcService(config.crazy_thursday)
 
     image_renderer = ImageRenderer(
         template_path=config.paths.template_path,
@@ -86,6 +93,7 @@ async def lifespan(app: FastAPI):
     app.state.data_computer = data_computer
     app.state.holiday_service = holiday_service
     app.state.fun_content_service = fun_content_service
+    app.state.kfc_service = kfc_service
     app.state.image_renderer = image_renderer
     app.state.cache_cleaner = cache_cleaner
 
@@ -145,7 +153,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Moyuren API",
     description="摸鱼日历 API 服务",
-    version="1.0.0",
+    version=__version__,
     lifespan=lifespan,
 )
 

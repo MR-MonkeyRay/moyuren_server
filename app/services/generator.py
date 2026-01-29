@@ -118,6 +118,17 @@ async def generate_and_save_image(app: FastAPI) -> str:
                     logger.warning(f"Failed to fetch fun content, using default: {e}")
                     raw_data["fun_content"] = None
 
+                # 1.3 Fetch KFC Crazy Thursday content (Only on Thursday)
+                raw_data["kfc_copy"] = None
+                if app.state.kfc_service and date.today().weekday() == 3:
+                    try:
+                        kfc_copy = await app.state.kfc_service.fetch_kfc_copy()
+                        raw_data["kfc_copy"] = kfc_copy
+                        if kfc_copy:
+                            logger.info("Fetched KFC Crazy Thursday content")
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch KFC content: {e}")
+
                 # 2. Compute template context
                 template_data = app.state.data_computer.compute(raw_data)
                 logger.info("Template data computed")

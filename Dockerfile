@@ -25,12 +25,15 @@ ARG GID=1000
 RUN (getent group ${GID} || groupadd -g ${GID} appuser) \
     && useradd -u ${UID} -g ${GID} -m appuser
 
-# 安装运行时依赖（最小化）
+# 安装运行时依赖
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         wget \
         ca-certificates \
         procps \
+        tzdata \
+    && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+    && echo "Asia/Shanghai" > /etc/timezone \
     && rm -rf /var/lib/apt/lists/*
 
 # 设置工作目录
@@ -42,6 +45,7 @@ COPY --from=builder /opt/venv /opt/venv
 # 设置环境变量
 ENV PATH="/opt/venv/bin:$PATH"
 ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright
+ENV TZ=Asia/Shanghai
 
 # 安装 Playwright 浏览器及其系统依赖，并清理 apt 缓存
 RUN playwright install --with-deps chromium \

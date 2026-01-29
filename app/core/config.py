@@ -139,6 +139,21 @@ class FunContentConfig(BaseModel):
         return v
 
 
+class CrazyThursdayConfig(BaseModel):
+    """Crazy Thursday configuration."""
+    enabled: bool = True
+    url: str
+    timeout_sec: int = 5
+    display_title: str = "🍗 疯狂星期四"
+
+    @field_validator("timeout_sec")
+    @classmethod
+    def validate_timeout(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("timeout_sec must be positive")
+        return v
+
+
 class AppConfig(BaseModel):
     """Main application configuration."""
     server: ServerConfig
@@ -150,6 +165,7 @@ class AppConfig(BaseModel):
     logging: LoggingConfig
     holiday: HolidayConfig = Field(default_factory=HolidayConfig)
     fun_content: FunContentConfig
+    crazy_thursday: CrazyThursdayConfig | None = None
 
 
 def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:

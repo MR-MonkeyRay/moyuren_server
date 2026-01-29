@@ -205,7 +205,7 @@
 
         .holiday-card {
             flex: 0.4;
-            background-color: #FFF8F8; /* 极淡的粉色背景 */
+            background-color: #FFFFFF; /* 白色背景 */
             display: flex;
             flex-direction: column;
             overflow: hidden;  /* 防止溢出 */
@@ -252,13 +252,91 @@
         .h-num.later { color: #2C3E50; }   /* >30天 深灰色 */
         .holiday-item.normal .h-num { color: #95A5A6; } /* 非法定假日统一用浅色 */
 
-        /* 页脚更新时间 */
-        .footer-info {
-            text-align: center;
-            font-size: 11px;
-            color: var(--text-light);
-            padding-top: 8px;
+        /* 页脚整体容器 */
+        .footer-wrapper {
             margin-top: auto;
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            align-items: center;
+            width: 100%;
+            padding-top: 12px;
+            border-top: 1px solid rgba(0,0,0,0.03);
+            font-size: 10px;
+            color: var(--text-light);
+            font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+        }
+
+        .footer-left { text-align: left; }
+        .footer-center { text-align: center; }
+        .footer-right { text-align: right; }
+
+        /* --- 第四排：特色板块 (疯狂星期四) --- */
+        .row-special {
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            background: #FFFFFF;
+            border-radius: var(--card-radius);
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+            border: 1px solid rgba(0,0,0,0.02);
+            /* 稍微加一点红色氛围 */
+            background: linear-gradient(135deg, #fffcfc 0%, #fff5f5 100%);
+            border-left: 4px solid #C0392B; /* 肯德基红 */
+            margin-bottom: 8px;
+        }
+
+        .kfc-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+            border-bottom: 1px dashed rgba(192, 57, 43, 0.2);
+            padding-bottom: 10px;
+        }
+
+        .kfc-icon {
+            font-size: 28px;
+            background: #FDEDEC;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+        }
+
+        .kfc-titles {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .kfc-title-en {
+            font-size: 18px;
+            font-weight: 900;
+            color: #C0392B;
+            letter-spacing: 1px;
+            font-family: 'Arial Black', sans-serif;
+            line-height: 1;
+        }
+
+        .kfc-title-cn {
+            font-size: 12px;
+            color: #E74C3C;
+            letter-spacing: 4px;
+            font-weight: bold;
+            margin-top: 4px;
+        }
+
+        .kfc-body {
+            font-size: 14px;
+            line-height: 1.5;
+            color: #555;
+            text-align: justify;
+            /* 移除高度限制，完整显示内容 */
+            font-style: italic;
+            white-space: pre-wrap;
+            word-break: break-word;
         }
 
         /* 打印样式 */
@@ -355,12 +433,36 @@
             </div>
         </div>
 
-        <!-- 页脚：API 更新时间 -->
-        {% if news_meta and news_meta.api_updated %}
-        <div class="footer-info">
-            数据更新于 {{ news_meta.api_updated }}
+        <!-- 第四排：疯狂星期四 (仅周四显示) -->
+        {% if kfc_content %}
+        <div class="row-special kfc-card">
+            <div class="kfc-header">
+                <div class="kfc-icon">🍗</div>
+                <div class="kfc-titles">
+                    <div class="kfc-title-en">{{ kfc_content.title }}</div>
+                    <div class="kfc-title-cn">{{ kfc_content.sub_title }}</div>
+                </div>
+            </div>
+            <div class="kfc-body">{{ kfc_content.content }}</div>
         </div>
         {% endif %}
+
+        <!-- 页脚区域 -->
+        <div class="footer-wrapper">
+            <div class="footer-left">
+                {{ github_url | default('MR-MonkeyRay/moyuren_server') }}
+            </div>
+            
+            <div class="footer-center">
+                {% if news_meta and news_meta.updated %}
+                数据更新于 {{ news_meta.updated }}
+                {% endif %}
+            </div>
+
+            <div class="footer-right">
+                {{ version | default('v0.1.0') }}
+            </div>
+        </div>
 
     </div>
 

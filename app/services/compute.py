@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from app import __version__, __github_url__
 from app.services.calendar import CalendarService
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ class DataComputer:
         Returns:
             A complete template context dictionary with all required variables.
         """
-        now = CalendarService.now_shanghai()
+        now = datetime.now()
 
         return {
             "date": self._compute_date(now),
@@ -52,7 +53,33 @@ class DataComputer:
             "news_list": self._compute_news_list(raw_data),
             "news_meta": self._compute_news_meta(raw_data),
             "holidays": self._compute_holidays(raw_data),
+            "kfc_content": self._compute_kfc(now, raw_data),
+            # 项目元信息
+            "version": f"v{__version__}",
+            "github_url": __github_url__,
         }
+
+    def _compute_kfc(self, now: datetime, raw_data: dict[str, Any]) -> dict[str, Any] | None:
+        """Compute KFC content if available and it's Thursday.
+
+        Args:
+            now: Current datetime (not used, using local time instead).
+            raw_data: Raw data dictionary.
+
+        Returns:
+            Dictionary with kfc content or None.
+        """
+        # Use local server time for consistency with generator.py
+        # 0=Mon, ... 3=Thu
+        if datetime.now().weekday() == 3:
+            content = raw_data.get("kfc_copy")
+            if content:
+                return {
+                    "title": "CRAZY THURSDAY",
+                    "sub_title": "V我50",
+                    "content": content
+                }
+        return None
 
     def _compute_date(self, now: datetime) -> dict[str, Any]:
         """Compute date information including lunar calendar data.
@@ -196,8 +223,8 @@ class DataComputer:
             if isinstance(data, dict):
                 return {
                     "date": data.get("date"),
-                    "api_updated": data.get("api_updated"),
-                    "api_updated_at": data.get("api_updated_at"),
+                    "updated": data.get("updated"),
+                    "updated_at": data.get("updated_at"),
                 }
         return {}
 
@@ -211,7 +238,7 @@ class DataComputer:
             List of holiday dictionaries with name, start_date, end_date, duration,
             days_left, is_legal_holiday, color.
         """
-        today = CalendarService.now_shanghai().date()
+        today = datetime.now().date()
 
         # 获取三种数据源
         legal_holidays = raw_data.get("holidays", [])

@@ -18,6 +18,7 @@ from app.services.compute import DataComputer
 from app.services.fetcher import DataFetcher
 from app.services.fun_content import FunContentService
 from app.services.holiday import HolidayService
+from app.services.kfc import KfcService
 from app.services.renderer import ImageRenderer
 
 
@@ -44,6 +45,12 @@ async def main():
         timeout_sec=config.holiday.timeout_sec,
     )
     fun_content_service = FunContentService(config.fun_content)
+
+    # Initialize KFC service if config exists
+    kfc_service = None
+    if config.crazy_thursday:
+        kfc_service = KfcService(config.crazy_thursday)
+
     data_computer = DataComputer()
     image_renderer = ImageRenderer(
         template_path=config.paths.template_path,
@@ -76,6 +83,17 @@ async def main():
     except Exception as e:
         logger.warning(f"Failed to fetch fun content, using default: {e}")
         raw_data["fun_content"] = None
+
+    # 1.3 Fetch KFC Crazy Thursday content (Only on Thursday)
+    raw_data["kfc_copy"] = None
+    if kfc_service and date.today().weekday() == 3:
+        try:
+            kfc_copy = await kfc_service.fetch_kfc_copy()
+            raw_data["kfc_copy"] = kfc_copy
+            if kfc_copy:
+                logger.info("Fetched KFC Crazy Thursday content")
+        except Exception as e:
+            logger.warning(f"Failed to fetch KFC content: {e}")
 
     # 2. Compute template context
     template_data = data_computer.compute(raw_data)

@@ -7,7 +7,8 @@
 ```text
 [外部API] → DataFetcher ──────────┐
 [holiday-cn] → HolidayService ────┼→ DataComputer → ImageRenderer → [JPEG]
-[趣味API] → FunContentService ────┘                                    ↓
+[趣味API] → FunContentService ────┤                                    ↓
+[KFC API] → KfcService (周四) ────┘                                    ↓
 [客户端] ← GET /api/v1/moyuren ← StateFile ← ScheduledTask/OnDemand ←──┘
 ```
 
@@ -20,6 +21,7 @@
 | 获取 | `app/services/fetcher.py` | 异步并行 HTTP 请求 |
 | 节假日 | `app/services/holiday.py` | 中国法定节假日数据获取与处理 |
 | 趣味内容 | `app/services/fun_content.py` | 随机获取冷笑话/一言/段子等趣味内容 |
+| KFC | `app/services/kfc.py` | 疯狂星期四文案获取（仅周四生效） |
 | 计算 | `app/services/compute.py` | 原始数据 → 模板上下文 |
 | 渲染 | `app/services/renderer.py` | Jinja2 + Playwright 截图 |
 | 图片生成 | `app/services/generator.py` | 图片生成流水线（支持文件锁防并发） |
@@ -58,6 +60,9 @@ docker-compose up -d
 - `cache.ttl_hours`: 图片保留时长
 - `fun_content.timeout_sec`: 趣味内容 API 超时时间
 - `fun_content.endpoints`: 趣味内容 API 端点列表
+- `crazy_thursday.enabled`: 是否启用疯狂星期四功能
+- `crazy_thursday.url`: KFC 文案 API 地址
+- `crazy_thursday.timeout_sec`: API 超时时间
 
 ## 开发指引
 
@@ -66,6 +71,8 @@ docker-compose up -d
 **修改节假日逻辑**：`holiday.py` → `compute.py` → `templates/moyuren.html`
 
 **修改趣味内容**：`fun_content.py` → `compute.py` → `templates/moyuren.html`
+
+**修改 KFC 功能**：`kfc.py` → `compute.py` → `templates/moyuren.html`
 
 **添加 API**：在 `app/api/v1/` 创建路由 → `main.py` 注册
 
@@ -79,6 +86,8 @@ docker-compose up -d
 - 使用 `app/core/errors.py` 中的异常类
 - 通过 `config.py` 读取配置，禁止硬编码
 - 使用注入的 logger，禁止 print
+- 修改完成后应当更新README.md
+- 提交代码后修改应当根据内容更新系统版本号
 
 ## 节假日服务 (HolidayService)
 
