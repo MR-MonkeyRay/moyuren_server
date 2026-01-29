@@ -5,6 +5,7 @@ from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from tyme4py.festival import LunarFestival, SolarFestival
 from tyme4py.solar import SolarDay
 
 logger = logging.getLogger(__name__)
@@ -262,3 +263,94 @@ class CalendarService:
             Current datetime with Asia/Shanghai timezone.
         """
         return datetime.now(TZ_SHANGHAI)
+
+    @staticmethod
+    def get_upcoming_solar_festivals(dt: date, count: int = 10) -> list[dict[str, Any]]:
+        """获取从指定日期起未来的公历现代节日。
+
+        Args:
+            dt: 基准日期
+            count: 返回数量
+
+        Returns:
+            List of dicts with keys: name, solar_date, days_left
+        """
+        result = []
+        try:
+            for year in (dt.year, dt.year + 1):
+                for idx in range(20):  # 每年最多20个节日
+                    try:
+                        festival = SolarFestival.from_index(year, idx)
+                        day = festival.get_day()
+                        festival_date = date(day.get_year(), day.get_month(), day.get_day())
+                        if festival_date >= dt:
+                            days_left = (festival_date - dt).days
+                            result.append({
+                                "name": festival.get_name(),
+                                "solar_date": festival_date.isoformat(),
+                                "days_left": days_left,
+                            })
+                    except (IndexError, ValueError):
+                        break  # 索引超出范围
+                    except Exception as e:
+                        logger.debug("Error processing solar festival %d-%d: %s", year, idx, e)
+                        continue  # 其他异常继续处理下一个
+            # 去重并按日期排序
+            seen: set[str] = set()
+            unique_result = []
+            for item in sorted(result, key=lambda x: x["days_left"]):
+                if item["name"] not in seen:
+                    seen.add(item["name"])
+                    unique_result.append(item)
+            return unique_result[:count]
+        except Exception as e:
+            logger.warning("Failed to get solar festivals: %s", e)
+            return []
+
+    @staticmethod
+    def get_upcoming_lunar_festivals(dt: date, count: int = 10) -> list[dict[str, Any]]:
+        """获取从指定日期起未来的农历传统节日。
+
+        Args:
+            dt: 基准日期（公历）
+            count: 返回数量
+
+        Returns:
+            List of dicts with keys: name, solar_date, days_left
+        """
+        result = []
+        try:
+            for year in (dt.year, dt.year + 1):
+                for idx in range(20):  # 每年最多20个节日
+                    try:
+                        festival = LunarFestival.from_index(year, idx)
+                        lunar_day = festival.get_day()
+                        solar_day = lunar_day.get_solar_day()
+                        festival_date = date(
+                            solar_day.get_year(),
+                            solar_day.get_month(),
+                            solar_day.get_day()
+                        )
+                        if festival_date >= dt:
+                            days_left = (festival_date - dt).days
+                            result.append({
+                                "name": festival.get_name(),
+                                "solar_date": festival_date.isoformat(),
+                                "days_left": days_left,
+                            })
+                    except (IndexError, ValueError):
+                        break  # 索引超出范围
+                    except Exception as e:
+                        logger.debug("Error processing lunar festival %d-%d: %s", year, idx, e)
+                        continue  # 其他异常继续处理下一个
+            # 去重并按日期排序
+            seen: set[str] = set()
+            unique_result = []
+            for item in sorted(result, key=lambda x: x["days_left"]):
+                if item["name"] not in seen:
+                    seen.add(item["name"])
+                    unique_result.append(item)
+            return unique_result[:count]
+        except Exception as e:
+            logger.warning("Failed to get lunar festivals: %s", e)
+            return []

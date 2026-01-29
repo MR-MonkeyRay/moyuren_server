@@ -1,12 +1,7 @@
 """Moyuren API application entry point."""
 
-import asyncio
-import json
 import logging
-import os
-import tempfile
 from contextlib import asynccontextmanager
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -14,12 +9,13 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.moyuren import router as moyuren_router
 from app.core.config import load_config
-from app.core.errors import RenderError, StorageError
 from app.core.logging import setup_logging
+from app.services.generator import generate_and_save_image
 from app.core.scheduler import TaskScheduler
 from app.services.cache import CacheCleaner
 from app.services.compute import DataComputer
 from app.services.fetcher import DataFetcher
+from app.services.fun_content import FunContentService
 from app.services.holiday import HolidayService
 from app.services.renderer import ImageRenderer
 
@@ -70,6 +66,8 @@ async def lifespan(app: FastAPI):
         timeout_sec=config.holiday.timeout_sec,
     )
 
+    fun_content_service = FunContentService(config.fun_content)
+
     image_renderer = ImageRenderer(
         template_path=config.paths.template_path,
         static_dir=config.paths.static_dir,
@@ -87,6 +85,7 @@ async def lifespan(app: FastAPI):
     app.state.data_fetcher = data_fetcher
     app.state.data_computer = data_computer
     app.state.holiday_service = holiday_service
+    app.state.fun_content_service = fun_content_service
     app.state.image_renderer = image_renderer
     app.state.cache_cleaner = cache_cleaner
 
@@ -97,7 +96,7 @@ async def lifespan(app: FastAPI):
     async def generate_image_task():
         """Scheduled task: Generate moyuren calendar image."""
         try:
-            await _generate_and_save_image(app)
+            await generate_and_save_image(app)
         except Exception as e:
             logger.error(f"Image generation task failed: {e}")
 
@@ -124,7 +123,7 @@ async def lifespan(app: FastAPI):
     if not state_path.exists():
         logger.info("No existing image found, generating initial image...")
         try:
-            await _generate_and_save_image(app)
+            await generate_and_save_image(app)
         except Exception as e:
             logger.error(f"Initial image generation failed: {e}")
 
@@ -164,108 +163,3 @@ app.mount("/static", StaticFiles(directory=_default_static_dir), name="static")
 
 # Include API routers
 app.include_router(moyuren_router)
-
-
-# ==================== Internal Helper Functions ====================
-
-async def _generate_and_save_image(app: FastAPI) -> None:
-    """Generate image and update state file.
-
-    This function performs the complete image generation pipeline:
-    1. Fetch data from API endpoints
-    2. Compute template context
-    3. Render HTML to image
-    4. Update state/latest.json atomically
-
-    Args:
-        app: FastAPI application instance with services in app.state.
-
-    Raises:
-        RenderError: If image rendering fails.
-        StorageError: If state file update fails.
-    """
-    logger = app.state.logger
-    config = app.state.config
-
-    logger.info("Starting image generation...")
-
-    # 1. Fetch data from all endpoints
-    raw_data = await app.state.data_fetcher.fetch_all()
-    logger.info(f"Fetched data from {len(raw_data)} endpoints")
-
-    # 1.1 Fetch holiday data
-    try:
-        holidays = await app.state.holiday_service.fetch_holidays()
-        raw_data["holidays"] = holidays
-        logger.info(f"Fetched {len(holidays)} holidays")
-    except Exception as e:
-        logger.warning(f"Failed to fetch holidays, using default: {e}")
-        raw_data["holidays"] = []
-
-    # 2. Compute template context
-    template_data = app.state.data_computer.compute(raw_data)
-    logger.info("Template data computed")
-
-    # 3. Render image
-    filename = await app.state.image_renderer.render(template_data)
-    logger.info(f"Image rendered: {filename}")
-
-    # 4. Update state/latest.json atomically
-    await _update_state_file(
-        state_path=config.paths.state_path,
-        filename=filename,
-    )
-
-    # 5. Clean up old cache (run in thread to avoid blocking)
-    deleted_count = await asyncio.to_thread(app.state.cache_cleaner.cleanup)
-    if deleted_count > 0:
-        logger.info(f"Cleaned up {deleted_count} expired cache file(s)")
-
-
-async def _update_state_file(state_path: str, filename: str) -> None:
-    """Atomically update the state file with latest image information.
-
-    Args:
-        state_path: Path to the state file (e.g., "state/latest.json").
-        filename: Generated image filename.
-
-    Raises:
-        StorageError: If file write fails.
-    """
-    def _write_state():
-        state_file = Path(state_path)
-
-        # Prepare state data
-        now = datetime.now()
-        state_data = {
-            "date": now.strftime("%Y-%m-%d"),
-            "timestamp": now.isoformat(),
-            "filename": filename,
-        }
-
-        # Atomic write: temp file + rename
-        tmp_path = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                dir=state_file.parent,
-                prefix=".latest_",
-                suffix=".tmp",
-                delete=False,
-            ) as tmp_file:
-                json.dump(state_data, tmp_file, ensure_ascii=False, indent=2)
-                tmp_path = tmp_file.name
-
-            os.replace(tmp_path, state_file)
-
-        except Exception as e:
-            # Clean up temp file if it exists
-            if tmp_path and Path(tmp_path).exists():
-                Path(tmp_path).unlink(missing_ok=True)
-            raise StorageError(
-                message=f"Failed to update state file: {state_path}",
-                detail=str(e),
-            ) from e
-
-    # Run blocking IO in thread
-    await asyncio.to_thread(_write_state)

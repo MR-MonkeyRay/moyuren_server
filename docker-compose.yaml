@@ -17,7 +17,7 @@ services:
       # Server configuration
       SERVER_HOST: ${SERVER_HOST:-0.0.0.0}
       SERVER_PORT: ${SERVER_PORT:-8000}
-      SERVER_BASE_DOMAIN: ${SERVER_BASE_DOMAIN:-http://localhost:8000}
+      SERVER_BASE_DOMAIN: ${SERVER_BASE_DOMAIN:-http://127.0.0.1:8000}
 
       # Scheduler configuration (comma-separated for multiple times)
       SCHEDULER_DAILY_TIMES: ${SCHEDULER_DAILY_TIMES:-06:00}
@@ -38,7 +38,7 @@ services:
     restart: unless-stopped
 
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:${SERVER_PORT:-8000}/healthz"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:${SERVER_PORT:-8000}/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3

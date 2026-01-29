@@ -28,6 +28,10 @@ class ErrorCode(str, Enum):
     STORAGE_NOT_FOUND = "STORAGE_4003"
     STORAGE_DELETE_FAILED = "STORAGE_4004"
 
+    # Generation errors (5000-5099)
+    GENERATION_FAILED = "GENERATION_5001"
+    GENERATION_BUSY = "GENERATION_5002"
+
 
 class AppError(Exception):
     """Base application error."""

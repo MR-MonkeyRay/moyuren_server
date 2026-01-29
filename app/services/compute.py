@@ -134,18 +134,21 @@ class DataComputer:
         return {"yi": yi, "ji": ji}
 
     def _compute_history(self, raw_data: dict[str, Any]) -> dict[str, str]:
-        """Extract or generate history content.
+        """Extract fun content for display.
 
         Args:
-            raw_data: Raw API data dictionary.
+            raw_data: Raw data dictionary containing 'fun_content' key.
 
         Returns:
-            History content dictionary.
+            Dictionary with 'title' and 'content' keys.
         """
-        history_data = raw_data.get("history")
-        if history_data and "content" in history_data:
-            return {"content": history_data["content"]}
-        return {"content": self._DEFAULT_HISTORY}
+        fun_content = raw_data.get("fun_content")
+        if fun_content and isinstance(fun_content, dict):
+            return {
+                "title": fun_content.get("title", "🐟 摸鱼小贴士"),
+                "content": fun_content.get("content", self._DEFAULT_HISTORY)
+            }
+        return {"title": "🐟 摸鱼小贴士", "content": self._DEFAULT_HISTORY}
 
     def _compute_news_list(self, raw_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Extract or generate news list.
@@ -199,26 +202,113 @@ class DataComputer:
         return {}
 
     def _compute_holidays(self, raw_data: dict[str, Any]) -> list[dict[str, Any]]:
-        """Extract or generate holiday list.
+        """整合三种数据源的节日数据。
 
         Args:
             raw_data: Raw API data dictionary, expects "holidays" key from HolidayService.
 
         Returns:
-            List of holiday dictionaries with start_date, end_date, duration, days_left.
+            List of holiday dictionaries with name, start_date, end_date, duration,
+            days_left, is_legal_holiday, color.
         """
-        holidays_data = raw_data.get("holidays")
-        if holidays_data and isinstance(holidays_data, list):
-            return [
-                {
-                    "name": item.get("name", ""),
-                    "start_date": item.get("start_date", ""),
-                    "end_date": item.get("end_date", ""),
-                    "duration": item.get("duration", 1),
-                    "days_left": item.get("days_left", 0),
-                    "color": item.get("color"),
+        today = CalendarService.now_shanghai().date()
+
+        # 获取三种数据源
+        legal_holidays = raw_data.get("holidays", [])
+        solar_festivals = CalendarService.get_upcoming_solar_festivals(today)
+        lunar_festivals = CalendarService.get_upcoming_lunar_festivals(today)
+
+        # 使用名称作为主键去重（法定假日优先）
+        name_map: dict[str, dict[str, Any]] = {}
+
+        # 先加入法定假日（优先级最高）
+        if legal_holidays and isinstance(legal_holidays, list):
+            for h in legal_holidays:
+                if not isinstance(h, dict):
+                    continue
+                name = h.get("name", "")
+                start_date = h.get("start_date", "")
+                if name and start_date:
+                    # 确保 duration 和 days_left 为 int 类型
+                    try:
+                        duration = int(h.get("duration", 1))
+                    except (TypeError, ValueError):
+                        duration = 1
+                    try:
+                        days_left = int(h.get("days_left", 0))
+                    except (TypeError, ValueError):
+                        days_left = 0
+                    name_map[name] = {
+                        "name": name,
+                        "start_date": start_date,
+                        "end_date": h.get("end_date", start_date),
+                        "duration": duration,
+                        "days_left": days_left,
+                        "is_legal_holiday": True,
+                        "color": "#E67E22",
+                    }
+
+        # 检查名称是否与已有法定假日重复（基于核心词匹配）
+        # 白名单：这些名称不进行规范化处理
+        preserved_names = {"春节", "元旦", "清明", "端午", "中秋", "国庆", "劳动"}
+
+        def normalize_name(name: str) -> str:
+            """提取节日名称的核心词，去除常见后缀."""
+            # 白名单中的名称直接返回
+            if name in preserved_names:
+                return name
+            # 按长度降序排列后缀，避免短后缀优先匹配
+            suffixes = ["节假期", "假期", "节日", "节"]
+            for suffix in suffixes:
+                if name.endswith(suffix) and len(name) > len(suffix):
+                    core = name[:-len(suffix)]
+                    # 如果核心词在白名单中，返回核心词
+                    if core in preserved_names:
+                        return core
+                    # 核心词太短（小于2字符）则不规范化
+                    if len(core) < 2:
+                        continue
+                    return core
+            return name
+
+        def is_duplicate_name(name: str) -> bool:
+            """检查是否与已有法定假日核心词重复."""
+            core_name = normalize_name(name)
+            for existing_name in name_map:
+                existing_core = normalize_name(existing_name)
+                # 核心词完全匹配才认为是重复
+                if core_name == existing_core:
+                    return True
+            return False
+
+        # 加入农历节日（如果该名称没有法定假日）
+        for f in lunar_festivals:
+            name = f["name"]
+            if name not in name_map and not is_duplicate_name(name):
+                name_map[name] = {
+                    "name": name,
+                    "start_date": f["solar_date"],
+                    "end_date": f["solar_date"],
+                    "duration": 1,
+                    "days_left": f["days_left"],
+                    "is_legal_holiday": False,
+                    "color": None,
                 }
-                for item in holidays_data
-            ]
-        # Default placeholder when no data available
-        return []
+
+        # 加入公历节日（如果该名称没有）
+        for f in solar_festivals:
+            name = f["name"]
+            if name not in name_map and not is_duplicate_name(name):
+                name_map[name] = {
+                    "name": name,
+                    "start_date": f["solar_date"],
+                    "end_date": f["solar_date"],
+                    "duration": 1,
+                    "days_left": f["days_left"],
+                    "is_legal_holiday": False,
+                    "color": None,
+                }
+
+        # 按 days_left 排序并返回前10个
+        result = sorted(name_map.values(), key=lambda x: x["days_left"])
+        return result[:10]

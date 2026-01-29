@@ -16,6 +16,7 @@ from app.core.config import load_config
 from app.core.logging import setup_logging
 from app.services.compute import DataComputer
 from app.services.fetcher import DataFetcher
+from app.services.fun_content import FunContentService
 from app.services.holiday import HolidayService
 from app.services.renderer import ImageRenderer
 
@@ -42,6 +43,7 @@ async def main():
         mirror_urls=config.holiday.mirror_urls,
         timeout_sec=config.holiday.timeout_sec,
     )
+    fun_content_service = FunContentService(config.fun_content)
     data_computer = DataComputer()
     image_renderer = ImageRenderer(
         template_path=config.paths.template_path,
@@ -64,6 +66,16 @@ async def main():
     except Exception as e:
         logger.warning(f"Failed to fetch holidays, using default: {e}")
         raw_data["holidays"] = []
+
+    # 1.2 Fetch fun content
+    try:
+        from datetime import date
+        fun_content = await fun_content_service.fetch_content(date.today())
+        raw_data["fun_content"] = fun_content
+        logger.info(f"Fetched fun content: {fun_content.get('title')}")
+    except Exception as e:
+        logger.warning(f"Failed to fetch fun content, using default: {e}")
+        raw_data["fun_content"] = None
 
     # 2. Compute template context
     template_data = data_computer.compute(raw_data)

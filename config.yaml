@@ -1,7 +1,7 @@
 server:
   host: "0.0.0.0"
   port: 8000
-  base_domain: "http://localhost:8000"
+  base_domain: "http://127.0.0.1:8000"
 
 paths:
   static_dir: "static" # 图片输出目录
@@ -22,6 +22,26 @@ fetch:
     timeout_sec: 10
     params:
       "force-update": "false"
+
+fun_content:
+  timeout_sec: 5
+  endpoints:
+  - name: "dad_joke"
+    url: "https://60s.viki.moe/v2/dad-joke"
+    data_path: "data.content"
+    display_title: "🤣 冷笑话"
+  - name: "hitokoto"
+    url: "https://60s.viki.moe/v2/hitokoto"
+    data_path: "data.hitokoto"
+    display_title: "💬 一言"
+  - name: "duanzi"
+    url: "https://60s.viki.moe/v2/duanzi"
+    data_path: "data.duanzi"
+    display_title: "😂 搞笑段子"
+  - name: "moyu_quote"
+    url: "https://60s.viki.moe/v2/moyu"
+    data_path: "data.moyuQuote"
+    display_title: "🐟 摸鱼语录"
 
 holiday:
   mirror_urls:

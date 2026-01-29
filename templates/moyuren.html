@@ -116,6 +116,9 @@
             display: inline-block; margin-bottom: 8px;
         }
         .lunar-text { font-size: 16px; color: var(--text-grey); }
+        
+        .weekend-wrap { margin-top: 10px; font-size: 14px; color: var(--text-grey); display: flex; align-items: baseline; justify-content: flex-end; }
+        .weekend-num { font-size: 20px; font-weight: 800; color: #E67E22; margin: 0 4px; }
 
         /* --- 第二排：信息 (弹性) --- */
         .row-info {
@@ -132,13 +135,16 @@
             flex-direction: column;
         }
         .countdown-wrap { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-        .days-num { font-size: 56px; font-weight: 800; color: var(--accent-green-text); line-height: 1; }
-        .days-label { font-size: 16px; color: var(--text-grey); margin-top: 4px; }
+        .term-name-cn { font-size: 32px; font-weight: 800; color: var(--accent-green-text); line-height: 1.2; }
+        .term-name-en { font-size: 14px; color: var(--text-light); margin-bottom: 8px; font-weight: 500; }
+        .days-label { font-size: 16px; color: var(--text-grey); display: flex; align-items: baseline; }
+        .days-num { font-size: 24px; font-weight: 700; color: var(--text-dark); margin: 0 4px; }
 
         .yi-ji-row {
-            display: flex; gap: 10px; font-size: 14px; border-top: 1px dashed #eee; padding-top: 10px;
+            display: flex; flex-direction: column; gap: 8px; font-size: 13px; border-top: 1px dashed #eee; padding-top: 10px;
         }
-        .tag { padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-right: 4px; }
+        .yi-ji-row > div { display: flex; align-items: center; line-height: 1.4; }
+        .tag { padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-right: 8px; flex-shrink: 0; font-size: 12px; }
         .tag.yi { background: #E8F8F5; color: #1ABC9C; }
         .tag.ji { background: #FDEDEC; color: #E74C3C; }
 
@@ -202,31 +208,49 @@
             background-color: #FFF8F8; /* 极淡的粉色背景 */
             display: flex;
             flex-direction: column;
+            overflow: hidden;  /* 防止溢出 */
         }
         .holiday-list {
             flex: 1;
             display: flex;
             flex-direction: column;
-            gap: 8px; /* 减小间距 */
-            /* overflow-y: auto; Removed to allow growth */
+            gap: 6px; /* 减小间距适配更多条目 */
+            overflow: hidden;  /* 超出隐藏 */
         }
         .holiday-item {
-            background: #fff;
-            padding: 8px 12px; /* 减小内边距 */
+            padding: 6px 12px; /* 调整内边距 */
             border-radius: 8px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.02);
-            /* flex: 1;  取消自动拉伸，更紧凑 */
+            transition: all 0.2s ease-in-out;
+            border-left: 3px solid transparent; /* 默认透明边框占位 */
+        }
+        /* 法定节假日 - 突出 */
+        .holiday-item.legal {
+            background: linear-gradient(135deg, #FFF5E6 0%, #FFEDD5 100%);
+            border-left: 3px solid #E67E22;
+            box-shadow: 0 2px 8px rgba(230, 126, 34, 0.1);
+        }
+        /* 非法定节假日 - 淡化 */
+        .holiday-item.normal {
+            background: #F8F9F9;
+            opacity: 0.8;
         }
         .h-info { display: flex; flex-direction: column; justify-content: center; }
-        .h-name { font-size: 16px; font-weight: 700; color: #333; }
+        .h-name { font-size: 14px; font-weight: 700; color: #333; }
+        .holiday-item.normal .h-name { font-weight: 500; color: #555;}
         .h-date { font-size: 11px; color: #999; margin-top: 2px; }
 
         .h-count-wrap { text-align: right; }
-        .h-num { font-size: 27px; font-weight: 800; color: var(--accent-pink-text); }
+        .h-num { font-size: 27px; font-weight: 800; }
         .h-unit { font-size: 9px; color: var(--text-light); }
+
+        /* 倒计时颜色 */
+        .h-num.urgent { color: #E74C3C; }  /* ≤7天 红色 */
+        .h-num.soon { color: #E67E22; }    /* 7-30天 橙色 */
+        .h-num.later { color: #2C3E50; }   /* >30天 深灰色 */
+        .holiday-item.normal .h-num { color: #95A5A6; } /* 非法定假日统一用浅色 */
 
         /* 页脚更新时间 */
         .footer-info {
@@ -268,8 +292,8 @@
                     <div class="week-pill">{{ date.week_cn }} · {{ date.week_en }}</div>
                     <div class="lunar-text">农历 {{ date.lunar_year }}</div>
                     <div class="lunar-text">{{ date.lunar_date }}</div>
-                    <div style="margin-top:6px; font-size:14px; color:#E67E22; font-weight:bold;">
-                        ⏳ 距周末还有 {{ weekend.days_left }} 天
+                    <div class="weekend-wrap">
+                        ⏳ 距周末还有 <span class="weekend-num">{{ weekend.days_left }}</span> 天
                     </div>
                 </div>
             </div>
@@ -280,8 +304,9 @@
             <div class="box term-card">
                 <h2>🌿 下个节气</h2>
                 <div class="countdown-wrap">
-                    <div class="days-num">{{ solar_term.days_left }}</div>
-                    <div class="days-label">天后 · {{ solar_term.name }} ({{ solar_term.name_en }})</div>
+                    <div class="term-name-cn">{{ solar_term.name }}</div>
+                    <div class="term-name-en">{{ solar_term.name_en }}</div>
+                    <div class="days-label">还有 <span class="days-num">{{ solar_term.days_left }}</span> 天</div>
                 </div>
                 <div class="yi-ji-row">
                     <div><span class="tag yi">宜</span>{% for item in guide.yi %}{{ item }} {% endfor %}</div>
@@ -289,10 +314,8 @@
                 </div>
             </div>
             <div class="box history-card">
-                <h2>📜 历史上的今天</h2>
-                <div class="history-content">
-                    {{ history.content }}
-                </div>
+                <h2>{{ history.title }}</h2>
+                <div class="history-content">{{ history.content }}</div>
                 <div class="joke-tag">—— 摸鱼办宣</div>
             </div>
         </div>
@@ -312,9 +335,9 @@
                 <h2>🏖️ 假期盼头</h2>
                 <div class="holiday-list">
                     {% for holiday in holidays %}
-                    <div class="holiday-item">
+                    <div class="holiday-item {{ 'legal' if holiday.is_legal_holiday else 'normal' }}">
                         <div class="h-info">
-                            <div class="h-name">{{ holiday.name }}</div>
+                            <div class="h-name">{% if holiday.is_legal_holiday %}🎉 {% endif %}{{ holiday.name }}</div>
                             <div class="h-date">
                                 {{ holiday.start_date }}
                                 {% if holiday.duration > 1 %}
@@ -323,7 +346,7 @@
                             </div>
                         </div>
                         <div class="h-count-wrap">
-                            <div class="h-num"{% if holiday.color %} style="color:{{ holiday.color }}"{% endif %}>{{ holiday.days_left }}</div>
+                            <div class="h-num {% if holiday.is_legal_holiday %}{% if holiday.days_left <= 7 %}urgent{% elif holiday.days_left <= 30 %}soon{% else %}later{% endif %}{% endif %}">{{ holiday.days_left }}</div>
                             <div class="h-unit">DAYS</div>
                         </div>
                     </div>
@@ -341,5 +364,65 @@
 
     </div>
 
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const holidayList = document.querySelector('.holiday-list');
+            if (!holidayList) return;
+
+            const holidayItems = Array.from(holidayList.children);
+            if (holidayItems.length === 0) return;
+
+            const setVisibleHolidays = () => {
+                // Reset display for all items for recalculation
+                holidayItems.forEach(item => item.style.display = '');
+
+                const listMaxHeight = holidayList.clientHeight;
+                const listGap = parseFloat(window.getComputedStyle(holidayList).gap) || 0;
+                let accumulatedHeight = 0;
+
+                for (let i = 0; i < holidayItems.length; i++) {
+                    const item = holidayItems[i];
+                    const itemHeight = item.offsetHeight;
+                    
+                    let heightWithGap = itemHeight;
+                    if (i > 0) {
+                        heightWithGap += listGap;
+                    }
+
+                    // Use a small buffer (1px) to prevent floating point inaccuracies
+                    if (accumulatedHeight + heightWithGap > listMaxHeight + 1) {
+                        for (let j = i; j < holidayItems.length; j++) {
+                            holidayItems[j].style.display = 'none';
+                        }
+                        break;
+                    }
+                    accumulatedHeight += heightWithGap;
+                }
+            };
+
+            const run = () => {
+                // Wait for fonts to load before calculating heights
+                // Fallback to rAF for older browsers without FontFaceSet API
+                if (document.fonts && document.fonts.ready) {
+                    document.fonts.ready.then(() => {
+                        requestAnimationFrame(setVisibleHolidays);
+                    });
+                } else {
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(setVisibleHolidays);
+                    });
+                }
+            };
+
+            run();
+
+            // Re-run on window resize, debounced
+            let resizeTimeout;
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(run, 150);
+            });
+        });
+    </script>
 </body>
 </html>
