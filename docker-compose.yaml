@@ -1,13 +1,9 @@
 version: '3.8'
 
 services:
-  moyuren-api:
-    build:
-      context: .
-      args:
-        UID: ${UID:-1000}
-        GID: ${GID:-1000}
-    container_name: moyuren-api
+  moyuren-server:
+    container_name: moyuren-server
+    image: docker.io/monkeyray/moyuren-server:latest
     ports:
       - "${SERVER_PORT:-8000}:${SERVER_PORT:-8000}"
     volumes:

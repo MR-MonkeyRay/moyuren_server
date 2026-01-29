@@ -1,6 +1,10 @@
-# Moyuren API
+# Moyuren Server
 
 摸鱼日历图片生成服务 | FastAPI + Playwright
+
+## 预览
+
+![摸鱼日历预览](assets/preview.jpg)
 
 ## 功能
 
