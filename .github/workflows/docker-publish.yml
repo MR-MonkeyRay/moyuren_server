@@ -3,16 +3,17 @@ name: Build and Publish Docker Image
 on:
   push:
     branches:
-      - '**'
+    - '**'
     tags:
-      - 'v*'
+    - 'v*'
   workflow_dispatch:
+
 
 env:
   GHCR_REGISTRY: ghcr.io
   DOCKERHUB_REGISTRY: docker.io
   IMAGE_NAME: ${{ github.repository }}
-  DOCKERHUB_IMAGE: monkeyray/moyuren-server
+  DOCKERHUB_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/moyuren-server
 
 jobs:
   build-and-push:
@@ -22,124 +23,124 @@ jobs:
       packages: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.GHCR_REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.GHCR_REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.DOCKERHUB_REGISTRY }}
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.DOCKERHUB_REGISTRY }}
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Generate version tags
-        id: version
-        run: |
-          # 将仓库名转为小写（Docker 要求）
-          IMAGE_NAME_LOWER=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+    - name: Generate version tags
+      id: version
+      run: |
+        # 将仓库名转为小写（Docker 要求）
+        IMAGE_NAME_LOWER=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
 
-          # 获取短 commit SHA
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+        # 获取短 commit SHA
+        SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
 
-          # 从 app/__init__.py 读取项目版本号
-          PROJECT_VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' app/__init__.py || echo "0.0.0")
-          echo "Project version from app/__init__.py: ${PROJECT_VERSION}"
+        # 从 app/__init__.py 读取项目版本号
+        PROJECT_VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' app/__init__.py || echo "0.0.0")
+        echo "Project version from app/__init__.py: ${PROJECT_VERSION}"
 
-          # 初始化变量
-          IS_TAG=false
-          IS_MAIN=false
-          SUFFIX=""
+        # 初始化变量
+        IS_TAG=false
+        IS_MAIN=false
+        SUFFIX=""
 
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            # Tag 触发
-            IS_TAG=true
-            # 检查 tag 是否在 main 分支上（精确匹配，避免误匹配 main-foo）
-            if git branch -r --contains "${{ github.sha }}" | grep -qE '^\s*origin/main$'; then
-              IS_MAIN=true
-            fi
-          elif [[ "${{ github.ref }}" == refs/heads/* ]]; then
-            # 分支触发
-            BRANCH="${{ github.ref_name }}"
-
-            if [[ "${BRANCH}" == "main" ]]; then
-              IS_MAIN=true
-            else
-              # 生成分支后缀：将 / 和 _ 替换为 -，保留完整路径避免冲突
-              # feat/xxx -> feat-xxx, fix/yyy -> fix-yyy, develop -> develop
-              SUFFIX=$(echo "${BRANCH}" | sed 's|/|-|g' | sed 's|_|-|g')
-              # 清理后缀中的特殊字符（Docker tag 只允许 [a-zA-Z0-9._-]）
-              SUFFIX=$(echo "${SUFFIX}" | sed 's/[^a-zA-Z0-9._-]/-/g')
-            fi
+        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          # Tag 触发
+          IS_TAG=true
+          # 检查 tag 是否在 main 分支上（精确匹配，避免误匹配 main-foo）
+          if git branch -r --contains "${{ github.sha }}" | grep -qE '^\s*origin/main$'; then
+            IS_MAIN=true
           fi
+        elif [[ "${{ github.ref }}" == refs/heads/* ]]; then
+          # 分支触发
+          BRANCH="${{ github.ref_name }}"
 
-          # 构建标签列表（使用项目版本号）
-          GHCR_TAGS=""
-          DOCKERHUB_TAGS=""
-
-          if [[ "${IS_TAG}" == "true" ]]; then
-            # Tag 触发：推送项目版本号标签
-            GHCR_TAGS="${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:v${PROJECT_VERSION}"
-            DOCKERHUB_TAGS="${{ env.DOCKERHUB_REGISTRY }}/${{ env.DOCKERHUB_IMAGE }}:v${PROJECT_VERSION}"
-
-            # 只有 main 分支的 tag 才推送 latest
-            if [[ "${IS_MAIN}" == "true" ]]; then
-              GHCR_TAGS="${GHCR_TAGS},${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:latest"
-              DOCKERHUB_TAGS="${DOCKERHUB_TAGS},${{ env.DOCKERHUB_REGISTRY }}/${{ env.DOCKERHUB_IMAGE }}:latest"
-            fi
-          elif [[ "${IS_MAIN}" == "true" ]]; then
-            # main 分支 push：推送 latest 和版本号+SHA
-            GHCR_TAGS="${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:latest"
-            GHCR_TAGS="${GHCR_TAGS},${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:v${PROJECT_VERSION}-${SHORT_SHA}"
-            DOCKERHUB_TAGS="${{ env.DOCKERHUB_REGISTRY }}/${{ env.DOCKERHUB_IMAGE }}:latest"
-            DOCKERHUB_TAGS="${DOCKERHUB_TAGS},${{ env.DOCKERHUB_REGISTRY }}/${{ env.DOCKERHUB_IMAGE }}:v${PROJECT_VERSION}-${SHORT_SHA}"
+          if [[ "${BRANCH}" == "main" ]]; then
+            IS_MAIN=true
           else
-            # 其他分支：推送版本号+SHA+分支后缀
-            GHCR_TAGS="${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:v${PROJECT_VERSION}-${SHORT_SHA}-${SUFFIX}"
-            GHCR_TAGS="${GHCR_TAGS},${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:latest-${SUFFIX}"
-            DOCKERHUB_TAGS="${{ env.DOCKERHUB_REGISTRY }}/${{ env.DOCKERHUB_IMAGE }}:v${PROJECT_VERSION}-${SHORT_SHA}-${SUFFIX}"
-            DOCKERHUB_TAGS="${DOCKERHUB_TAGS},${{ env.DOCKERHUB_REGISTRY }}/${{ env.DOCKERHUB_IMAGE }}:latest-${SUFFIX}"
+            # 生成分支后缀：将 / 和 _ 替换为 -，保留完整路径避免冲突
+            # feat/xxx -> feat-xxx, fix/yyy -> fix-yyy, develop -> develop
+            SUFFIX=$(echo "${BRANCH}" | sed 's|/|-|g' | sed 's|_|-|g')
+            # 清理后缀中的特殊字符（Docker tag 只允许 [a-zA-Z0-9._-]）
+            SUFFIX=$(echo "${SUFFIX}" | sed 's/[^a-zA-Z0-9._-]/-/g')
           fi
+        fi
 
-          # 合并所有 tags
-          ALL_TAGS="${GHCR_TAGS},${DOCKERHUB_TAGS}"
+        # 构建标签列表（使用项目版本号）
+        GHCR_TAGS=""
+        DOCKERHUB_TAGS=""
 
-          echo "tags=${ALL_TAGS}" >> $GITHUB_OUTPUT
-          echo "image_name=${IMAGE_NAME_LOWER}" >> $GITHUB_OUTPUT
-          echo "is_main=${IS_MAIN}" >> $GITHUB_OUTPUT
-          echo "is_tag=${IS_TAG}" >> $GITHUB_OUTPUT
-          echo "project_version=${PROJECT_VERSION}" >> $GITHUB_OUTPUT
-          echo "Generated tags: ${ALL_TAGS}"
+        if [[ "${IS_TAG}" == "true" ]]; then
+          # Tag 触发：推送项目版本号标签
+          GHCR_TAGS="${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:v${PROJECT_VERSION}"
+          DOCKERHUB_TAGS="${{ env.DOCKERHUB_REGISTRY }}/${{ env.DOCKERHUB_IMAGE }}:v${PROJECT_VERSION}"
 
-      - name: Extract metadata for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ env.GHCR_REGISTRY }}/${{ steps.version.outputs.image_name }}
-            ${{ env.DOCKERHUB_REGISTRY }}/${{ env.DOCKERHUB_IMAGE }}
+          # 只有 main 分支的 tag 才推送 latest
+          if [[ "${IS_MAIN}" == "true" ]]; then
+            GHCR_TAGS="${GHCR_TAGS},${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:latest"
+            DOCKERHUB_TAGS="${DOCKERHUB_TAGS},${{ env.DOCKERHUB_REGISTRY }}/${{ env.DOCKERHUB_IMAGE }}:latest"
+          fi
+        elif [[ "${IS_MAIN}" == "true" ]]; then
+          # main 分支 push：推送 latest 和版本号+SHA
+          GHCR_TAGS="${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:latest"
+          GHCR_TAGS="${GHCR_TAGS},${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:v${PROJECT_VERSION}-${SHORT_SHA}"
+          DOCKERHUB_TAGS="${{ env.DOCKERHUB_REGISTRY }}/${{ env.DOCKERHUB_IMAGE }}:latest"
+          DOCKERHUB_TAGS="${DOCKERHUB_TAGS},${{ env.DOCKERHUB_REGISTRY }}/${{ env.DOCKERHUB_IMAGE }}:v${PROJECT_VERSION}-${SHORT_SHA}"
+        else
+          # 其他分支：推送版本号+SHA+分支后缀
+          GHCR_TAGS="${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:v${PROJECT_VERSION}-${SHORT_SHA}-${SUFFIX}"
+          GHCR_TAGS="${GHCR_TAGS},${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:latest-${SUFFIX}"
+          DOCKERHUB_TAGS="${{ env.DOCKERHUB_REGISTRY }}/${{ env.DOCKERHUB_IMAGE }}:v${PROJECT_VERSION}-${SHORT_SHA}-${SUFFIX}"
+          DOCKERHUB_TAGS="${DOCKERHUB_TAGS},${{ env.DOCKERHUB_REGISTRY }}/${{ env.DOCKERHUB_IMAGE }}:latest-${SUFFIX}"
+        fi
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.version.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        # 合并所有 tags
+        ALL_TAGS="${GHCR_TAGS},${DOCKERHUB_TAGS}"
+
+        echo "tags=${ALL_TAGS}" >> $GITHUB_OUTPUT
+        echo "image_name=${IMAGE_NAME_LOWER}" >> $GITHUB_OUTPUT
+        echo "is_main=${IS_MAIN}" >> $GITHUB_OUTPUT
+        echo "is_tag=${IS_TAG}" >> $GITHUB_OUTPUT
+        echo "project_version=${PROJECT_VERSION}" >> $GITHUB_OUTPUT
+        echo "Generated tags: ${ALL_TAGS}"
+
+    - name: Extract metadata for Docker
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: |
+          ${{ env.GHCR_REGISTRY }}/${{ steps.version.outputs.image_name }}
+          ${{ env.DOCKERHUB_REGISTRY }}/${{ env.DOCKERHUB_IMAGE }}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.version.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
