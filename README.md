@@ -6,11 +6,18 @@
 
 ![摸鱼日历预览](assets/preview.jpg)
 
+## api体验
+
+```bash
+https://api.monkeyray.net/api/v1/moyuren
+```
+
 ## 功能
 
 - 每日定时生成摸鱼日历图片（支持多时间点）
 - 按需生成：启动时或请求时若无可用图片则自动生成
 - 节日倒计时整合（法定假日 + 农历/公历节日）
+  - 数据源：[holiday-cn](https://github.com/NateScarlet/holiday-cn)
 - 趣味内容随机展示（冷笑话、一言、段子、摸鱼语录）
 - 疯狂星期四：每周四自动展示 KFC 文案
 - Playwright 高质量浏览器渲染
