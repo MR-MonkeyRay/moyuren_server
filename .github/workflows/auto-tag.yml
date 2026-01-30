@@ -1,0 +1,36 @@
+name: Auto Tag
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  create-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version and create tag
+        run: |
+          # 从 app/__init__.py 提取版本号
+          VERSION=$(grep -oP '__version__ = "\K[^"]+' app/__init__.py)
+          echo "Current version: $VERSION"
+
+          # 检查 tag 是否已存在
+          if git tag -l "v$VERSION" | grep -q "v$VERSION"; then
+            echo "Tag v$VERSION already exists, skipping"
+            exit 0
+          fi
+
+          # 创建并推送 tag
+          echo "Creating tag v$VERSION"
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+          echo "Successfully created and pushed tag v$VERSION"
