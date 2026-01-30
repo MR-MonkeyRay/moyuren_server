@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import os
+import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,10 @@ GITHUB_RAW_URL = "https://raw.githubusercontent.com/NateScarlet/holiday-cn/maste
 
 class HolidayService:
     """节假日数据服务，获取并处理中国法定节假日信息"""
+
+    # 缓存 TTL 常量（秒）
+    TTL_CURRENT_YEAR = 7 * 24 * 3600  # 7天
+    TTL_NEXT_YEAR = 12 * 3600  # 12小时
 
     def __init__(
         self,
@@ -49,6 +55,42 @@ class HolidayService:
         """获取上海时区的今天日期"""
         return datetime.now(SHANGHAI_TZ).date()
 
+    def _get_ttl(self, year: int) -> int | None:
+        """根据年份获取缓存 TTL（秒），往年返回 None 表示永久有效"""
+        current_year = self._get_today().year
+        if year < current_year:
+            return None  # 往年：永久有效
+        elif year == current_year:
+            return self.TTL_CURRENT_YEAR  # 当年：7天
+        else:
+            return self.TTL_NEXT_YEAR  # 次年及以后：12小时
+
+    def _is_cache_valid(self, year: int) -> bool:
+        """检查缓存是否有效（基于 mtime）"""
+        cache_file = self._cache_dir / f"{year}.json"
+        if not cache_file.exists():
+            return False
+
+        ttl = self._get_ttl(year)
+        if ttl is None:
+            # 往年数据：缓存存在即有效
+            self._logger.debug(f"{year} 年为往年数据，缓存永久有效")
+            return True
+
+        # 检查 mtime
+        mtime = os.path.getmtime(cache_file)
+        age = time.time() - mtime
+        # 兜底：系统时间回拨时视为过期
+        if age < 0:
+            self._logger.warning(f"{year} 年缓存 mtime 异常（系统时间可能回拨），视为过期")
+            return False
+        if age < ttl:
+            self._logger.debug(f"{year} 年缓存有效，已缓存 {age/3600:.1f} 小时，TTL {ttl/3600:.1f} 小时")
+            return True
+        else:
+            self._logger.debug(f"{year} 年缓存已过期，已缓存 {age/3600:.1f} 小时，TTL {ttl/3600:.1f} 小时")
+            return False
+
     async def fetch_holidays(self) -> list[dict[str, Any]]:
         """获取去年、今年和明年的节假日数据，合并处理后返回"""
         today = self._get_today()
@@ -73,11 +115,17 @@ class HolidayService:
     async def _fetch_year_data(
         self, client: httpx.AsyncClient, year: int
     ) -> dict[str, Any] | None:
-        """获取指定年份的节假日数据，支持多源重试和本地缓存"""
-        # 构建 URL 列表：镜像源优先，GitHub 原始源兜底
+        """获取指定年份的节假日数据，支持 TTL 缓存、多源重试和降级"""
+        # 1. 检查缓存是否有效
+        if self._is_cache_valid(year):
+            cached_data = self._load_from_cache(year)
+            if cached_data:
+                self._logger.debug(f"使用 {year} 年有效缓存数据")
+                return cached_data
+
+        # 2. 缓存无效或不存在，尝试从网络获取
         urls = self._build_urls(year)
 
-        # 1. 尝试从网络获取
         for url in urls:
             try:
                 response = await client.get(url)
@@ -97,7 +145,7 @@ class HolidayService:
             except Exception as e:
                 self._logger.warning(f"数据源 {url} 访问异常: {e}")
 
-        # 2. 网络请求全部失败，尝试读取缓存
+        # 3. 网络请求全部失败，尝试读取过期缓存（降级策略）
         self._logger.warning(f"所有数据源均无法获取 {year} 年数据，尝试读取本地缓存")
         cached_data = self._load_from_cache(year)
         if cached_data:
