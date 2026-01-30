@@ -5,6 +5,9 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
 # 复制依赖文件
 COPY requirements.txt .
 
@@ -21,20 +24,29 @@ FROM python:3.12-slim
 ARG UID=1000
 ARG GID=1000
 
-# 创建非 root 用户（使用指定的 UID/GID，兼容已存在的 GID）
-RUN (getent group ${GID} || groupadd -g ${GID} appuser) \
-    && useradd -u ${UID} -g ${GID} -m appuser
+# Python 运行时优化
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    PLAYWRIGHT_BROWSERS_PATH=/app/.playwright \
+    TZ=Asia/Shanghai
 
-# 安装运行时依赖
-RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+# 创建用户 + 安装运行时依赖（合并为单层）
+RUN set -eux; \
+    (getent group ${GID} || groupadd -g ${GID} appuser); \
+    useradd -u ${UID} -g ${GID} -m appuser; \
+    apt-get update; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         wget \
         ca-certificates \
+        gosu \
         procps \
-        tzdata \
-    && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
-    && echo "Asia/Shanghai" > /etc/timezone \
-    && rm -rf /var/lib/apt/lists/*
+        tzdata; \
+    ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime; \
+    echo "Asia/Shanghai" > /etc/timezone; \
+    rm -rf /var/lib/apt/lists/*
 
 # 设置工作目录
 WORKDIR /app
@@ -42,28 +54,20 @@ WORKDIR /app
 # 从 builder 阶段复制虚拟环境
 COPY --from=builder /opt/venv /opt/venv
 
-# 设置环境变量
-ENV PATH="/opt/venv/bin:$PATH"
-ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright
-ENV TZ=Asia/Shanghai
-
-# 安装 Playwright 浏览器及其系统依赖，并清理 apt 缓存
+# 安装 Playwright 浏览器及其系统依赖（放在 COPY 代码之前，提升缓存命中）
 RUN playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 # 复制启动脚本
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+COPY --chown=appuser:appuser docker-entrypoint.sh /app/
+RUN chmod +x /app/docker-entrypoint.sh
 
-# 复制应用代码
-COPY . .
+# 复制应用代码（使用 --chown 替代后续 chown -R）
+COPY --chown=appuser:appuser . /app
 
-# 创建必要的目录并设置权限
-RUN mkdir -p static state logs templates \
-    && chown -R appuser:appuser /app
-
-# 切换到非 root 用户
-USER appuser
+# 创建挂载目录（entrypoint 会在运行时处理权限）
+RUN mkdir -p /app/static /app/state /app/logs /app/templates \
+    && chown appuser:appuser /app/static /app/state /app/logs /app/templates
 
 # 暴露端口
 EXPOSE 8000
@@ -73,4 +77,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD wget --spider -q http://127.0.0.1:${SERVER_PORT:-8000}/healthz || exit 1
 
 # 启动命令
-ENTRYPOINT ["docker-entrypoint.sh"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
