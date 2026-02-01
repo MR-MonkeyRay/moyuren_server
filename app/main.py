@@ -20,6 +20,7 @@ from app.services.fun_content import FunContentService
 from app.services.kfc import KfcService
 from app.services.holiday import HolidayService
 from app.services.renderer import ImageRenderer
+from app.services.calendar import init_timezones
 
 
 @asynccontextmanager
@@ -40,6 +41,12 @@ async def lifespan(app: FastAPI):
     app.state.logger = logger
     logger.info("Configuration loaded successfully")
     logger.info("Logging initialized")
+
+    # 2.1 Initialize timezones
+    init_timezones(
+        business_tz=config.timezone.business,
+        display_tz=config.timezone.display
+    )
 
     # 3. Ensure required directories exist
     Path(config.paths.static_dir).mkdir(parents=True, exist_ok=True)

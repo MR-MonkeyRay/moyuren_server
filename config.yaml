@@ -3,6 +3,18 @@ server:
   port: 8000
   base_domain: "http://127.0.0.1:8000"
 
+# 时区配置
+timezone:
+  # 业务时区：用于节假日/节气/周末判断
+  # 因为节假日数据来源于中国，建议设置为 Asia/Shanghai
+  # 支持 IANA 时区名称（如 Asia/Shanghai, America/New_York）
+  # 或 UTC 偏移格式（如 UTC+8, UTC-5）
+  business: "Asia/Shanghai"
+  # 显示时区：用于图片时间戳、API 响应时间
+  # 设置为 "local" 表示使用服务器本地时区
+  # 也可指定具体时区名称
+  display: "local"
+
 paths:
   static_dir: "static" # 图片输出目录
   template_path: "templates/moyuren.html"

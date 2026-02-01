@@ -9,7 +9,8 @@ from typing import Any
 
 import httpx
 
-SHANGHAI_TZ = timezone(timedelta(hours=8))
+from app.services.calendar import get_business_timezone
+
 # GitHub 原始源（硬编码，不可配置）
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json"
 
@@ -52,8 +53,8 @@ class HolidayService:
         return urls
 
     def _get_today(self) -> date:
-        """获取上海时区的今天日期"""
-        return datetime.now(SHANGHAI_TZ).date()
+        """获取业务时区的今天日期"""
+        return datetime.now(get_business_timezone()).date()
 
     def _get_ttl(self, year: int) -> int | None:
         """根据年份获取缓存 TTL（秒），往年返回 None 表示永久有效"""
@@ -197,12 +198,36 @@ class HolidayService:
         # 过滤：仅保留 isOffDay=True 的条目
         off_days = [d for d in all_days if d.get("isOffDay") is True]
 
+        # 检查今天是否是补班日
+        today = self._get_today()
+        today_str = today.isoformat()
+        workdays = [d for d in all_days if d.get("isOffDay") is False]
+        today_workday = next((d for d in workdays if d.get("date") == today_str), None)
+
         # 按 date 升序排序
         off_days.sort(key=lambda x: x.get("date", ""))
 
         self._logger.debug(f"合并后共 {len(off_days)} 个休息日")
 
-        return self._group_continuous_holidays(off_days)
+        # 处理正常假期
+        result = self._group_continuous_holidays(off_days)
+
+        # 如果今天是补班日，在结果开头插入补班日条目
+        if today_workday:
+            holiday_name = today_workday.get("name", "假期")
+            workday_entry = {
+                "name": f"{holiday_name}（补班）",
+                "start_date": today_str,
+                "end_date": today_str,
+                "duration": 1,
+                "days_left": 0,
+                "color": None,
+                "is_off_day": False
+            }
+            result.insert(0, workday_entry)
+            self._logger.info(f"今天是补班日：{holiday_name}")
+
+        return result
 
     def _group_continuous_holidays(
         self, days: list[dict[str, Any]]
@@ -290,4 +315,5 @@ class HolidayService:
             "duration": duration,
             "days_left": 0,  # 稍后计算
             "color": None,
+            "is_off_day": True,  # 正常假期都是休息日
         }

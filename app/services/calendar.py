@@ -1,7 +1,8 @@
 """Calendar service module using tyme4py library."""
 
 import logging
-from datetime import date, datetime
+import os
+from datetime import date, datetime, timedelta, timezone, tzinfo
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -10,7 +11,208 @@ from tyme4py.solar import SolarDay
 
 logger = logging.getLogger(__name__)
 
-TZ_SHANGHAI = ZoneInfo("Asia/Shanghai")
+
+def get_local_timezone() -> tzinfo:
+    """从环境获取时区。
+
+    优先级：
+    1. TZ 环境变量
+    2. 系统本地时区（转换为等效 ZoneInfo 或固定偏移时区）
+    3. 回退到 UTC
+
+    Returns:
+        时区对象（ZoneInfo 或 datetime.timezone）
+    """
+    # 1. 尝试使用 TZ 环境变量
+    tz_name = os.environ.get("TZ")
+    if tz_name:
+        try:
+            return ZoneInfo(tz_name)
+        except (KeyError, ValueError, OSError) as e:
+            logger.warning(
+                "Invalid TZ environment variable '%s': %s, falling back to local timezone",
+                tz_name, e
+            )
+
+    # 2. 尝试获取系统本地时区
+    try:
+        local_dt = datetime.now().astimezone()
+        local_tz = local_dt.tzinfo
+        if local_tz is not None:
+            tz_name = str(local_tz)
+            # 尝试创建 ZoneInfo（如果是标准时区名称如 "Asia/Shanghai"）
+            try:
+                return ZoneInfo(tz_name)
+            except (KeyError, ValueError, OSError):
+                # 非标准时区名称，使用 UTC 偏移量构造等效时区
+                offset = local_dt.utcoffset()
+                if offset is not None:
+                    total_seconds = int(offset.total_seconds())
+                    sign = "+" if total_seconds >= 0 else "-"
+                    abs_seconds = abs(total_seconds)
+                    hours = abs_seconds // 3600
+                    minutes = (abs_seconds % 3600) // 60
+                    # 如果有分钟偏移，直接返回基于 UTC 偏移的固定时区对象
+                    if minutes != 0:
+                        logger.warning(
+                            "Local timezone '%s' (offset %s%02d:%02d) cannot be converted to ZoneInfo, using fixed offset timezone",
+                            tz_name, sign, hours, minutes
+                        )
+                        return timezone(timedelta(seconds=total_seconds))
+                    # 构造 Etc/GMT 格式时区（注意符号相反）
+                    if -12 <= (total_seconds // 3600) <= 14:
+                        # Etc/GMT 时区符号与偏移相反
+                        gmt_offset = -total_seconds // 3600
+                        gmt_sign = "+" if gmt_offset > 0 else ("-" if gmt_offset < 0 else "")
+                        try:
+                            return ZoneInfo(f"Etc/GMT{gmt_sign}{abs(gmt_offset)}" if gmt_offset != 0 else "Etc/GMT")
+                        except (KeyError, ValueError, OSError):
+                            pass
+                    logger.warning(
+                        "Local timezone '%s' (offset %s%02d:%02d) cannot be converted to ZoneInfo, using UTC",
+                        tz_name, sign, hours, minutes
+                    )
+    except OSError as e:
+        logger.warning("Failed to get local timezone: %s, falling back to UTC", e)
+
+    # 3. 回退到 UTC
+    return ZoneInfo("UTC")
+
+
+def get_timezone_label(dt: datetime | None = None) -> str:
+    """获取时区标签用于显示。
+
+    Args:
+        dt: 可选的 datetime 对象，用于获取该时刻的时区偏移。
+            如果为 None，则使用当前时间。
+
+    Returns:
+        时区标签字符串，如 "UTC+08" 或 "UTC-05"
+    """
+    if dt is None:
+        tz = get_display_timezone()
+        dt = datetime.now(tz)
+
+    offset = dt.utcoffset()
+    if offset is None:
+        return "UTC"
+
+    total_seconds = int(offset.total_seconds())
+    # 使用绝对值计算，避免负偏移整除错误
+    sign = "+" if total_seconds >= 0 else "-"
+    abs_seconds = abs(total_seconds)
+    hours = abs_seconds // 3600
+    minutes = (abs_seconds % 3600) // 60
+
+    if minutes == 0:
+        return f"UTC{sign}{hours:02d}"
+    else:
+        return f"UTC{sign}{hours:02d}:{minutes:02d}"
+
+
+# ============ 业务时区与显示时区 ============
+# 模块级缓存变量
+_business_timezone: tzinfo | None = None
+_display_timezone: tzinfo | None = None
+
+
+def _parse_timezone(tz_str: str) -> tzinfo:
+    """解析时区字符串为时区对象。
+
+    支持格式：
+    - IANA 时区名称：Asia/Shanghai, America/New_York
+    - UTC 偏移格式：UTC+8, UTC-5, UTC+05:30
+
+    Returns:
+        时区对象（ZoneInfo 或 datetime.timezone）
+    """
+    import re
+
+    # 尝试直接作为 IANA 时区名称
+    try:
+        return ZoneInfo(tz_str)
+    except (KeyError, ValueError):
+        pass
+
+    # 尝试解析 UTC±X 格式
+    match = re.match(r'^UTC([+-])(\d{1,2})(?::(\d{2}))?$', tz_str, re.IGNORECASE)
+    if match:
+        sign = 1 if match.group(1) == '+' else -1
+        hours = int(match.group(2))
+        minutes = int(match.group(3) or 0)
+
+        # 如果有分钟偏移，直接返回基于 UTC 偏移的固定时区对象
+        if minutes != 0:
+            return timezone(timedelta(hours=sign * hours, minutes=sign * minutes))
+
+        # 转换为 Etc/GMT 格式（符号相反）
+        if -12 <= sign * hours <= 14:
+            gmt_offset = -sign * hours
+            if gmt_offset == 0:
+                return ZoneInfo("Etc/GMT")
+            gmt_sign = "+" if gmt_offset > 0 else ""
+            try:
+                return ZoneInfo(f"Etc/GMT{gmt_sign}{gmt_offset}")
+            except (KeyError, ValueError, OSError):
+                pass
+
+    logger.warning("Cannot parse timezone '%s', falling back to UTC", tz_str)
+    return ZoneInfo("UTC")
+
+
+def init_timezones(business_tz: str, display_tz: str) -> None:
+    """初始化时区配置（应用启动时调用）。
+
+    Args:
+        business_tz: 业务时区名称（用于节假日/节气判断）
+        display_tz: 显示时区名称，"local" 表示使用本地时区
+    """
+    global _business_timezone, _display_timezone
+
+    _business_timezone = _parse_timezone(business_tz)
+
+    if display_tz.lower() == "local":
+        _display_timezone = get_local_timezone()
+    else:
+        _display_timezone = _parse_timezone(display_tz)
+
+    logger.info(
+        "Timezones initialized: business=%s, display=%s",
+        _business_timezone, _display_timezone
+    )
+
+
+def get_business_timezone() -> tzinfo:
+    """获取业务时区。
+
+    用于节假日/节气/周末等业务逻辑判断。
+    如果未初始化，回退到 Asia/Shanghai（与节假日数据源保持一致）。
+    """
+    if _business_timezone is None:
+        return ZoneInfo("Asia/Shanghai")
+    return _business_timezone
+
+
+def get_display_timezone() -> tzinfo:
+    """获取显示时区。
+
+    用于图片时间戳、API 响应时间等显示场景。
+    如果未初始化，回退到本地时区。
+    """
+    if _display_timezone is None:
+        return get_local_timezone()
+    return _display_timezone
+
+
+def now_business() -> datetime:
+    """获取业务时区的当前时间。"""
+    return datetime.now(get_business_timezone())
+
+
+def today_business() -> date:
+    """获取业务时区的今天日期。"""
+    return now_business().date()
+
 
 # 农历月份雅称映射
 _LUNAR_MONTH_NAMES = {
@@ -100,17 +302,40 @@ class CalendarService:
 
     @staticmethod
     def get_solar_term_info(dt: date) -> dict[str, Any]:
-        """Get next solar term information.
+        """Get solar term information for the given date.
+
+        If today is a solar term day, returns the current solar term with is_today=True.
+        Otherwise, returns the next upcoming solar term with days_left countdown.
 
         Args:
             dt: The date to calculate from.
 
         Returns:
-            Dict with keys: name, name_en, days_left, date
+            Dict with keys: name, name_en, days_left, date, is_today
         """
         try:
             solar = SolarDay.from_ymd(dt.year, dt.month, dt.day)
             term = solar.get_term()
+
+            # 获取当前节气的日期
+            term_jd = term.get_julian_day()
+            term_solar = term_jd.get_solar_day()
+            term_date = date(
+                term_solar.get_year(),
+                term_solar.get_month(),
+                term_solar.get_day(),
+            )
+
+            # 检查今天是否是节气当天
+            if term_date == dt:
+                term_name = term.get_name()
+                return {
+                    "name": term_name,
+                    "name_en": _TERM_EN_MAP.get(term_name, term_name),
+                    "days_left": 0,
+                    "date": term_date.isoformat(),
+                    "is_today": True,
+                }
 
             # 获取下一个节气
             next_term = term.next(1)
@@ -129,6 +354,7 @@ class CalendarService:
                 "name_en": _TERM_EN_MAP.get(term_name, term_name),
                 "days_left": max(0, days_left),
                 "date": next_date.isoformat(),
+                "is_today": False,
             }
         except Exception as e:
             logger.warning("Failed to get solar term info for %s: %s", dt, e)
@@ -137,6 +363,7 @@ class CalendarService:
                 "name_en": "Unknown",
                 "days_left": 0,
                 "date": "",
+                "is_today": False,
             }
 
     @staticmethod
@@ -256,13 +483,13 @@ class CalendarService:
             return False
 
     @staticmethod
-    def now_shanghai() -> datetime:
-        """Get current datetime in Asia/Shanghai timezone.
+    def now_local() -> datetime:
+        """Get current datetime in display timezone.
 
         Returns:
-            Current datetime with Asia/Shanghai timezone.
+            Current datetime with display timezone.
         """
-        return datetime.now(TZ_SHANGHAI)
+        return datetime.now(get_display_timezone())
 
     @staticmethod
     def get_upcoming_solar_festivals(dt: date, count: int = 10) -> list[dict[str, Any]]:
