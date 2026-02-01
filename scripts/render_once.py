@@ -106,10 +106,61 @@ async def main():
     # 4. Update state file
     state_file = Path(config.paths.state_path)
     now = datetime.now()
+
+    # Extract data from template_data
+    date_info = template_data.get("date", {})
+    fun_content_raw = template_data.get("history", {})
+    holidays_raw = template_data.get("holidays", [])
+    kfc_content_raw = template_data.get("kfc_content")
+
+    # Build fun_content
+    fun_content = None
+    if fun_content_raw:
+        # Determine type from title
+        title = fun_content_raw.get("title", "")
+        content_type = "unknown"
+        if "冷笑话" in title:
+            content_type = "joke"
+        elif "一言" in title:
+            content_type = "quote"
+        elif "段子" in title:
+            content_type = "story"
+
+        fun_content = {
+            "type": content_type,
+            "title": title,
+            "text": fun_content_raw.get("content", "")
+        }
+
+    # Build countdowns
+    countdowns = []
+    for holiday in holidays_raw:
+        if isinstance(holiday, dict):
+            countdowns.append({
+                "name": holiday.get("name", ""),
+                "date": holiday.get("start_date", ""),
+                "days_left": holiday.get("days_left", 0)
+            })
+
+    # Build KFC content
+    kfc_content = None
+    if kfc_content_raw and isinstance(kfc_content_raw, dict):
+        kfc_content = kfc_content_raw.get("content")
+
     state_data = {
         "date": now.strftime("%Y-%m-%d"),
         "timestamp": now.isoformat(),
         "filename": filename,
+        # New time fields
+        "updated": now.strftime("%Y/%m/%d %H:%M:%S"),
+        "updated_at": int(now.timestamp() * 1000),
+        # New content fields
+        "weekday": date_info.get("week_cn", ""),
+        "lunar_date": date_info.get("lunar_date", ""),
+        "fun_content": fun_content,
+        "countdowns": countdowns,
+        "is_crazy_thursday": now.weekday() == 3,
+        "kfc_content": kfc_content,
     }
 
     with tempfile.NamedTemporaryFile(
