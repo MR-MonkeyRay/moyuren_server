@@ -7,6 +7,7 @@ import tempfile
 import time
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
 from filelock import FileLock, Timeout
@@ -141,6 +142,8 @@ async def generate_and_save_image(app: FastAPI) -> str:
                 await _update_state_file(
                     state_path=config.paths.state_path,
                     filename=filename,
+                    template_data=template_data,
+                    config=config,
                 )
 
                 # 5. Clean up old cache (run in thread to avoid blocking)
@@ -160,12 +163,19 @@ async def generate_and_save_image(app: FastAPI) -> str:
             raise GenerationBusyError("Image generation locked by another process")
 
 
-async def _update_state_file(state_path: str, filename: str) -> None:
+async def _update_state_file(
+    state_path: str,
+    filename: str,
+    template_data: dict,
+    config: Any,
+) -> None:
     """Atomically update the state file with latest image information.
 
     Args:
         state_path: Path to the state file (e.g., "state/latest.json").
         filename: Generated image filename.
+        template_data: Template data dictionary from DataComputer.
+        config: Application config for reading render dimensions.
 
     Raises:
         StorageError: If file write fails.
@@ -178,10 +188,63 @@ async def _update_state_file(state_path: str, filename: str) -> None:
 
         # Prepare state data
         now = datetime.now()
+
+        # Extract data from template_data
+        date_info = template_data.get("date", {})
+        fun_content_raw = template_data.get("history", {})
+        holidays_raw = template_data.get("holidays", [])
+        kfc_content_raw = template_data.get("kfc_content")
+
+        # Build fun_content
+        fun_content = None
+        if fun_content_raw:
+            # Determine type from title
+            title = fun_content_raw.get("title", "")
+            content_type = "unknown"
+            if "冷笑话" in title:
+                content_type = "dad_joke"
+            elif "一言" in title:
+                content_type = "hitokoto"
+            elif "段子" in title:
+                content_type = "duanzi"
+            elif "摸鱼" in title:
+                content_type = "moyu_quote"
+
+            fun_content = {
+                "type": content_type,
+                "title": title,
+                "text": fun_content_raw.get("content", "")
+            }
+
+        # Build countdowns
+        countdowns = []
+        for holiday in holidays_raw:
+            if isinstance(holiday, dict):
+                countdowns.append({
+                    "name": holiday.get("name", ""),
+                    "date": holiday.get("start_date", ""),
+                    "days_left": holiday.get("days_left", 0)
+                })
+
+        # Build KFC content
+        kfc_content = None
+        if kfc_content_raw and isinstance(kfc_content_raw, dict):
+            kfc_content = kfc_content_raw.get("content")
+
         state_data = {
             "date": now.strftime("%Y-%m-%d"),
             "timestamp": now.isoformat(),
             "filename": filename,
+            # New time fields
+            "updated": now.strftime("%Y/%m/%d %H:%M:%S"),
+            "updated_at": int(now.timestamp() * 1000),
+            # New content fields
+            "weekday": date_info.get("week_cn", ""),
+            "lunar_date": date_info.get("lunar_date", ""),
+            "fun_content": fun_content,
+            "countdowns": countdowns,
+            "is_crazy_thursday": now.weekday() == 3,
+            "kfc_content": kfc_content,
         }
 
         # Atomic write: temp file + rename
