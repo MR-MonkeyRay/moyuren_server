@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from filelock import FileLock, Timeout
 
 from app.core.errors import StorageError
+from app.services.calendar import get_display_timezone, get_timezone_label
 
 
 class GenerationBusyError(Exception):
@@ -187,7 +188,7 @@ async def _update_state_file(
         state_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Prepare state data
-        now = datetime.now()
+        now = datetime.now(get_display_timezone())
 
         # Extract data from template_data
         date_info = template_data.get("date", {})
@@ -236,7 +237,7 @@ async def _update_state_file(
             "timestamp": now.isoformat(),
             "filename": filename,
             # New time fields
-            "updated": now.strftime("%Y/%m/%d %H:%M:%S"),
+            "updated": now.strftime("%Y/%m/%d %H:%M:%S") + " " + get_timezone_label(),
             "updated_at": int(now.timestamp() * 1000),
             # New content fields
             "weekday": date_info.get("week_cn", ""),

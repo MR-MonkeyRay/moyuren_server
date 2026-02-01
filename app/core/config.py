@@ -103,6 +103,43 @@ class LoggingConfig(BaseModel):
         return v.upper()
 
 
+class TimezoneConfig(BaseModel):
+    """Timezone configuration."""
+    # 业务时区：用于节假日/节气/周末判断
+    business: str = "Asia/Shanghai"
+    # 显示时区：用于时间戳显示，"local" 表示使用本地时区
+    display: str = "local"
+
+    @field_validator("business", "display")
+    @classmethod
+    def validate_timezone(cls, v: str, info) -> str:
+        # 只有 display 字段允许 "local" 值
+        if v.lower() == "local":
+            if info.field_name == "display":
+                return "local"
+            else:
+                raise ValueError(f"Field '{info.field_name}' does not accept 'local' value, must be a specific timezone name")
+        # 验证时区名称有效性
+        from zoneinfo import ZoneInfo
+        import re
+        try:
+            ZoneInfo(v)
+            return v
+        except Exception:
+            pass
+        # 尝试解析 UTC±X 格式，并验证范围
+        match = re.match(r'^UTC([+-])(\d{1,2})(?::(\d{2}))?$', v, re.IGNORECASE)
+        if match:
+            sign = 1 if match.group(1) == '+' else -1
+            hours = int(match.group(2))
+            minutes = int(match.group(3) or 0)
+            # 验证范围：小时 0-14，分钟 0-59，总偏移不超过 ±24 小时
+            if hours > 14 or minutes > 59 or (hours == 14 and minutes > 0):
+                raise ValueError(f"Invalid timezone offset: {v} (hours must be 0-14, minutes 0-59)")
+            return v
+        raise ValueError(f"Invalid timezone: {v}")
+
+
 class HolidayConfig(BaseModel):
     """Holiday service configuration."""
     # GitHub 代理镜像站前缀列表（如 https://ghfast.top/）
@@ -162,6 +199,7 @@ class AppConfig(BaseModel):
     fetch: FetchConfig
     render: RenderConfig
     logging: LoggingConfig
+    timezone: TimezoneConfig = Field(default_factory=TimezoneConfig)
     holiday: HolidayConfig = Field(default_factory=HolidayConfig)
     fun_content: FunContentConfig
     crazy_thursday: CrazyThursdayConfig | None = None

@@ -119,6 +119,17 @@
         
         .weekend-wrap { margin-top: 10px; font-size: 14px; color: var(--text-grey); display: flex; align-items: baseline; justify-content: flex-end; }
         .weekend-num { font-size: 20px; font-weight: 800; color: #E67E22; margin: 0 4px; }
+        /* 周末当天特殊样式 - 温暖杏色，慵懒惬意 */
+        .weekend-wrap.is-weekend {
+            background: linear-gradient(135deg, #F5CBA7 0%, #E67E22 100%);
+            padding: 8px 16px;
+            border-radius: 12px;
+            justify-content: center;
+            font-weight: 600;
+            color: white;
+            box-shadow: 0 4px 12px rgba(230, 126, 34, 0.3);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.15);
+        }
 
         /* --- 第二排：信息 (弹性) --- */
         .row-info {
@@ -139,6 +150,15 @@
         .term-name-en { font-size: 14px; color: var(--text-light); margin-bottom: 8px; font-weight: 500; }
         .days-label { font-size: 16px; color: var(--text-grey); display: flex; align-items: baseline; }
         .days-num { font-size: 24px; font-weight: 700; color: var(--text-dark); margin: 0 4px; }
+        /* 节气当天样式 - 鼠尾草绿，自然雅致 */
+        .days-label.today {
+            font-weight: 600;
+            color: #2C3E50;
+            background: linear-gradient(135deg, #A2D9CE 0%, #48C9B0 100%);
+            padding: 6px 14px;
+            border-radius: 20px;
+            box-shadow: 0 4px 12px rgba(72, 201, 176, 0.3);
+        }
 
         .yi-ji-row {
             display: flex; flex-direction: column; gap: 8px; font-size: 13px; border-top: 1px dashed #eee; padding-top: 10px;
@@ -251,6 +271,60 @@
         .h-num.soon { color: #E67E22; }    /* 7-30天 橙色 */
         .h-num.later { color: #2C3E50; }   /* >30天 深灰色 */
         .holiday-item.normal .h-num { color: #95A5A6; } /* 非法定假日统一用浅色 */
+        /* 节假日当天样式 */
+        .h-num.today { font-size: 24px; color: #E74C3C; }
+
+        /* 节假日当天卡片样式 - 珊瑚红，欢快喜庆 */
+        .holiday-item.is-today {
+            background: linear-gradient(135deg, #F1948A 0%, #E74C3C 100%);
+            border: none;
+            border-left: none;
+            box-shadow: 0 4px 12px rgba(231, 76, 60, 0.4);
+            transform: translateY(-1px);
+        }
+        .holiday-item.is-today .h-name,
+        .holiday-item.is-today .h-num.today,
+        .holiday-item.is-today .h-unit {
+            color: white;
+        }
+        .holiday-item.is-today .h-date {
+            color: rgba(255, 255, 255, 0.9);
+        }
+        .holiday-item.is-today .h-name {
+            text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .holiday-item.is-today .h-unit {
+            font-weight: 600;
+            font-size: 11px;
+        }
+
+        /* 补班日基础样式 */
+        .holiday-item.workday {
+            background: #F0F3F4;
+            border-left: 3px solid #7F8C8D;
+            color: #566573;
+        }
+
+        /* 补班日当天样式 - 浅灰蓝，沉稳冷静 */
+        .holiday-item.workday.is-today {
+            background: linear-gradient(135deg, #BDC3C7 0%, #7F8C8D 100%);
+            border: none;
+            border-left: none;
+            box-shadow: 0 4px 12px rgba(127, 140, 141, 0.3);
+            transform: translateY(-1px);
+        }
+
+        .holiday-item.workday.is-today .h-name,
+        .holiday-item.workday.is-today .h-date,
+        .holiday-item.workday.is-today .h-num,
+        .holiday-item.workday.is-today .h-unit {
+            color: #FFFFFF;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+        }
+
+        .holiday-item.workday .h-name {
+            color: #34495E;
+        }
 
         /* 页脚整体容器 */
         .footer-wrapper {
@@ -370,9 +444,15 @@
                     <div class="week-pill">{{ date.week_cn }} · {{ date.week_en }}</div>
                     <div class="lunar-text">农历 {{ date.lunar_year }}</div>
                     <div class="lunar-text">{{ date.lunar_date }}</div>
+                    {% if weekend.is_weekend %}
+                    <div class="weekend-wrap is-weekend" role="img" aria-label="今日周末，尽情休息">
+                        🎉 周末愉快，摸鱼无罪！
+                    </div>
+                    {% else %}
                     <div class="weekend-wrap">
                         ⏳ 距周末还有 <span class="weekend-num">{{ weekend.days_left }}</span> 天
                     </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -384,7 +464,11 @@
                 <div class="countdown-wrap">
                     <div class="term-name-cn">{{ solar_term.name }}</div>
                     <div class="term-name-en">{{ solar_term.name_en }}</div>
+                    {% if solar_term.is_today %}
+                    <div class="days-label today">今日 {{ solar_term.name }}，顺应天时</div>
+                    {% else %}
                     <div class="days-label">还有 <span class="days-num">{{ solar_term.days_left }}</span> 天</div>
+                    {% endif %}
                 </div>
                 <div class="yi-ji-row">
                     <div><span class="tag yi">宜</span>{% for item in guide.yi %}{{ item }} {% endfor %}</div>
@@ -413,9 +497,11 @@
                 <h2>🏖️ 假期盼头</h2>
                 <div class="holiday-list">
                     {% for holiday in holidays %}
-                    <div class="holiday-item {{ 'legal' if holiday.is_legal_holiday else 'normal' }}">
+                    <div class="holiday-item {{ 'workday' if holiday.is_off_day is false else ('legal' if holiday.is_legal_holiday else 'normal') }}{{ ' is-today' if holiday.days_left == 0 else '' }}">
                         <div class="h-info">
-                            <div class="h-name">{% if holiday.is_legal_holiday %}🎉 {% endif %}{{ holiday.name }}</div>
+                            <div class="h-name">
+                                {% if holiday.is_off_day is false %}<span role="img" aria-label="补班">💼</span> {% elif holiday.is_legal_holiday %}<span role="img" aria-label="法定假日">🎉</span> {% endif %}{{ holiday.name }}
+                            </div>
                             <div class="h-date">
                                 {{ holiday.start_date }}
                                 {% if holiday.duration > 1 %}
@@ -424,8 +510,18 @@
                             </div>
                         </div>
                         <div class="h-count-wrap">
+                            {% if holiday.days_left == 0 %}
+                                {% if holiday.is_off_day is false %}
+                                <div class="h-num today" role="img" aria-label="今日补班">😭</div>
+                                <div class="h-unit">补班中</div>
+                                {% else %}
+                                <div class="h-num today" role="img" aria-label="今日假期">🥳</div>
+                                <div class="h-unit">假期中</div>
+                                {% endif %}
+                            {% else %}
                             <div class="h-num {% if holiday.is_legal_holiday %}{% if holiday.days_left <= 7 %}urgent{% elif holiday.days_left <= 30 %}soon{% else %}later{% endif %}{% endif %}">{{ holiday.days_left }}</div>
                             <div class="h-unit">DAYS</div>
+                            {% endif %}
                         </div>
                     </div>
                     {% endfor %}

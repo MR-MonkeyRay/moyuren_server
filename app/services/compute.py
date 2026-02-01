@@ -1,11 +1,12 @@
 """Business computation service module."""
 
 import logging
+import re
 from datetime import datetime
 from typing import Any
 
 from app import __version__, __github_url__
-from app.services.calendar import CalendarService
+from app.services.calendar import CalendarService, get_timezone_label, now_business
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,8 @@ class DataComputer:
         Returns:
             A complete template context dictionary with all required variables.
         """
-        now = datetime.now()
+        # 使用业务时区的当前时间（用于节假日/节气/周末判断）
+        now = now_business()
 
         return {
             "date": self._compute_date(now),
@@ -114,22 +116,23 @@ class DataComputer:
             "is_holiday": CalendarService.is_holiday(today),
         }
 
-    def _compute_weekend(self, now: datetime) -> dict[str, int]:
+    def _compute_weekend(self, now: datetime) -> dict[str, int | bool]:
         """Compute days until weekend.
 
         Args:
             now: Current datetime.
 
         Returns:
-            Dictionary with days_left until weekend.
+            Dictionary with days_left until weekend and is_weekend flag.
         """
         weekday = now.weekday()
         # Saturday = 5, Sunday = 6
-        if weekday >= 5:
+        is_weekend = weekday >= 5
+        if is_weekend:
             days_left = 0
         else:
             days_left = 5 - weekday
-        return {"days_left": days_left}
+        return {"days_left": days_left, "is_weekend": is_weekend}
 
     def _compute_solar_term(self, now: datetime) -> dict[str, Any]:
         """Compute next solar term using CalendarService.
@@ -221,9 +224,22 @@ class DataComputer:
             data = news_data.get("data")
             if isinstance(data, dict):
                 # 兼容新旧字段名：优先使用 updated，回退到 api_updated
+                updated_str = data.get("updated") or data.get("api_updated")
+                # 添加时区标签（仅当外部 API 返回的时间没有时区信息时）
+                if updated_str:
+                    # 检测常见时区标识
+                    tz_patterns = [
+                        r'[+-]\d{2}:?\d{2}',  # +08:00, -0500, +0800
+                        r'[+-]\d{1,2}\b',  # +8, +08 (无分钟)
+                        r'\bUTC[+-]?\d*',  # UTC, UTC+8, UTC+08
+                        r'\b(?:GMT|CST|EST|PST|EDT|PDT|Z)\b',  # 常见时区缩写
+                    ]
+                    has_tz = any(re.search(p, updated_str, re.IGNORECASE) for p in tz_patterns)
+                    if not has_tz:
+                        updated_str = f"{updated_str} {get_timezone_label()}"
                 return {
                     "date": data.get("date"),
-                    "updated": data.get("updated") or data.get("api_updated"),
+                    "updated": updated_str,
                     "updated_at": data.get("updated_at") or data.get("api_updated_at"),
                 }
         return {}
@@ -274,6 +290,7 @@ class DataComputer:
                         "days_left": days_left,
                         "is_legal_holiday": True,
                         "color": "#E67E22",
+                        "is_off_day": h.get("is_off_day", True),
                     }
 
         # 检查名称是否与已有法定假日重复（基于核心词匹配）
@@ -321,6 +338,7 @@ class DataComputer:
                     "days_left": f["days_left"],
                     "is_legal_holiday": False,
                     "color": None,
+                    "is_off_day": True,
                 }
 
         # 加入公历节日（如果该名称没有）
@@ -335,6 +353,7 @@ class DataComputer:
                     "days_left": f["days_left"],
                     "is_legal_holiday": False,
                     "color": None,
+                    "is_off_day": True,
                 }
 
         # 按 days_left 排序并返回前10个

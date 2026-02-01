@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Request, status
@@ -132,24 +131,6 @@ async def _read_state_file(state_path: Path, logger) -> tuple[dict | None, JSONR
             ),
             status_code=status.HTTP_404_NOT_FOUND,
         )
-
-    # Migrate old state format: convert timestamp to updated/updated_at
-    if "updated" not in state_data or "updated_at" not in state_data:
-        timestamp_str = state_data.get("timestamp", "")
-        if timestamp_str:
-            try:
-                dt = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-                state_data["updated"] = dt.strftime("%Y/%m/%d %H:%M:%S")
-                state_data["updated_at"] = int(dt.timestamp() * 1000)
-            except ValueError:
-                # Fallback to current time if parsing fails
-                now = datetime.now()
-                state_data["updated"] = now.strftime("%Y/%m/%d %H:%M:%S")
-                state_data["updated_at"] = int(now.timestamp() * 1000)
-        else:
-            now = datetime.now()
-            state_data["updated"] = now.strftime("%Y/%m/%d %H:%M:%S")
-            state_data["updated_at"] = int(now.timestamp() * 1000)
 
     return state_data, None
 

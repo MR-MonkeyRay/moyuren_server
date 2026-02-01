@@ -20,6 +20,7 @@ from app.services.fun_content import FunContentService
 from app.services.holiday import HolidayService
 from app.services.kfc import KfcService
 from app.services.renderer import ImageRenderer
+from app.services.calendar import init_timezones, get_display_timezone, get_timezone_label
 
 
 async def main():
@@ -27,6 +28,12 @@ async def main():
     # Load config
     config = load_config()
     logger = setup_logging(config.logging, logger_name="render_once")
+
+    # Initialize timezones
+    init_timezones(
+        business_tz=config.timezone.business,
+        display_tz=config.timezone.display
+    )
 
     # Ensure directories exist
     Path(config.paths.static_dir).mkdir(parents=True, exist_ok=True)
@@ -105,7 +112,7 @@ async def main():
 
     # 4. Update state file
     state_file = Path(config.paths.state_path)
-    now = datetime.now()
+    now = datetime.now(get_display_timezone())
 
     # Extract data from template_data
     date_info = template_data.get("date", {})
@@ -152,7 +159,7 @@ async def main():
         "timestamp": now.isoformat(),
         "filename": filename,
         # New time fields
-        "updated": now.strftime("%Y/%m/%d %H:%M:%S"),
+        "updated": now.strftime("%Y/%m/%d %H:%M:%S") + " " + get_timezone_label(),
         "updated_at": int(now.timestamp() * 1000),
         # New content fields
         "weekday": date_info.get("week_cn", ""),
