@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>摸鱼日历 {{ date.year_month }} - 杂志风格版</title>
+    <!-- Google Fonts: 思源黑体(正文) + 霞鹜文楷(标题) + Poppins(数字/英文) - 使用国内镜像 -->
+    <link rel="preconnect" href="https://fonts.loli.net">
+    <link rel="preconnect" href="https://gstatic.loli.net" crossorigin>
+    <link href="https://fonts.loli.net/css2?family=LXGW+WenKai:wght@400;700&family=Noto+Sans+SC:wght@400;500;700;900&family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {
             /* 莫兰迪/杂志风配色 */
@@ -25,13 +29,28 @@
 
             --card-radius: 16px;
             --spacing: 16px;
+
+            /* 字体系统 */
+            --font-body: 'Noto Sans SC', 'PingFang SC', 'Helvetica Neue', sans-serif;
+            --font-title: 'LXGW WenKai', 'STKaiti', 'KaiTi', serif;
+            --font-number: 'Poppins', 'Helvetica Neue', sans-serif;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
+        /* 防溢出保护 */
+        .moyu-text, .big-day, .term-name-cn, .h-num, .h-name, .week-pill, .days-num, .weekend-num, .news-num {
+            white-space: nowrap;
+            overflow: hidden;
+        }
+        .news-text, .history-content, .kfc-body {
+            overflow-wrap: break-word;
+            word-break: break-word;
+        }
+
         body {
             background-color: var(--bg-body);
-            font-family: 'PingFang SC', 'Helvetica Neue', sans-serif;
+            font-family: var(--font-body);
             min-height: 100vh;
             width: 100vw;
             display: flex;
@@ -55,14 +74,26 @@
             color: var(--text-dark);
         }
 
-        /* 通用卡片风格 */
+        /* 通用卡片风格 - 柔和悬浮阴影 */
         .box {
             background: #FFFFFF;
             border-radius: var(--card-radius);
             padding: 20px;
-            /* 柔和的投影让卡片浮起来 */
-            box-shadow: 0 4px 20px rgba(0,0,0,0.03);
-            border: 1px solid rgba(0,0,0,0.02);
+            /* 柔和悬浮阴影：清晰的层次感 */
+            box-shadow:
+                0 4px 16px rgba(0,0,0,0.06),
+                0 8px 24px rgba(0,0,0,0.04),
+                inset 0 1px 0 rgba(255,255,255,0.6);
+            border: 1px solid rgba(255,255,255,0.8);
+            transition: box-shadow 0.3s ease, transform 0.3s ease;
+        }
+
+        .box:hover {
+            box-shadow:
+                0 6px 20px rgba(0,0,0,0.08),
+                0 12px 32px rgba(0,0,0,0.05),
+                inset 0 1px 0 rgba(255,255,255,0.6);
+            transform: translateY(-2px);
         }
 
         h2 {
@@ -94,9 +125,22 @@
             justify-content: center;
             align-items: center;
             text-align: center;
+            /* 标题卡片深色阴影 */
+            box-shadow:
+                8px 8px 16px rgba(0,0,0,0.15),
+                -4px -4px 10px rgba(255,255,255,0.5),
+                inset 0 1px 0 rgba(255,255,255,0.1);
         }
-        .moyu-text { font-size: 45px; font-weight: 900; line-height: 1.1; letter-spacing: 4px; }
-        .moyu-sub { font-size: 14px; font-weight: 300; opacity: 0.8; margin-top: 8px; letter-spacing: 2px; }
+        .moyu-text {
+            font-size: 45px; font-weight: 700; line-height: 1.1; letter-spacing: 4px;
+            font-family: var(--font-title);
+            /* 标题文字阴影 */
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .moyu-sub {
+            font-size: 14px; font-weight: 500; opacity: 0.9; margin-top: 8px; letter-spacing: 3px;
+            font-family: var(--font-number);
+        }
 
         .date-card {
             flex: 0.65;
@@ -106,14 +150,27 @@
             padding: 0 30px;
         }
         .date-left { display: flex; flex-direction: column; }
-        .big-day { font-size: 80px; font-weight: 800; color: var(--text-dark); line-height: 1; }
-        .ym-text { font-size: 22px; color: var(--text-grey); font-weight: 500; }
+        .big-day {
+            font-size: 80px; font-weight: 800; color: var(--text-dark); line-height: 1;
+            font-family: var(--font-number);
+            /* 大日期数字阴影 */
+            text-shadow: 3px 3px 6px rgba(44, 62, 80, 0.15);
+        }
+        .ym-text {
+            font-size: 22px; color: var(--text-grey); font-weight: 500;
+            font-family: var(--font-number);
+        }
 
         .date-right { text-align: right; }
         .week-pill {
             background: var(--accent-blue); color: var(--accent-blue-text);
             padding: 6px 16px; border-radius: 20px; font-weight: bold; font-size: 18px;
             display: inline-block; margin-bottom: 8px;
+            /* 胶囊标签阴影 */
+            box-shadow:
+                3px 3px 8px rgba(46, 134, 193, 0.2),
+                -2px -2px 6px rgba(255,255,255,0.8),
+                inset 0 1px 0 rgba(255,255,255,0.5);
         }
         .lunar-text { font-size: 16px; color: var(--text-grey); }
         
@@ -133,7 +190,7 @@
 
         /* --- 第二排：信息 (弹性) --- */
         .row-info {
-            height: 215px;
+            min-height: 215px;
             flex-shrink: 0;
             display: flex;
             gap: var(--spacing);
@@ -145,11 +202,49 @@
             display: flex;
             flex-direction: column;
         }
-        .countdown-wrap { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-        .term-name-cn { font-size: 32px; font-weight: 800; color: var(--accent-green-text); line-height: 1.2; }
-        .term-name-en { font-size: 14px; color: var(--text-light); margin-bottom: 8px; font-weight: 500; }
-        .days-label { font-size: 16px; color: var(--text-grey); display: flex; align-items: baseline; }
-        .days-num { font-size: 24px; font-weight: 700; color: var(--text-dark); margin: 0 4px; }
+        .countdown-wrap {
+            flex: 0 1 auto;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-width: 0;
+            width: 100%;
+        }
+        .term-name-cn {
+            font-size: 32px; font-weight: 700; color: var(--accent-green-text); line-height: 1.2;
+            font-family: var(--font-title);
+            /* 节气名称文字阴影 */
+            text-shadow: 1px 1px 3px rgba(39, 174, 96, 0.2);
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .term-name-en {
+            font-size: 14px; color: var(--text-light); margin-bottom: 8px; font-weight: 500;
+            font-family: var(--font-number);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+            display: block;
+        }
+        .days-label {
+            font-size: 16px;
+            color: var(--text-grey);
+            display: flex;
+            align-items: baseline;
+            justify-content: center;
+            flex-wrap: wrap;
+            column-gap: 2px;
+            line-height: 1.4;
+        }
+        .days-num {
+            font-size: 24px; font-weight: 700; color: var(--text-dark); margin: 0 4px;
+            font-family: var(--font-number);
+            /* 数字阴影 */
+            text-shadow: 1px 1px 2px rgba(44, 62, 80, 0.1);
+        }
         /* 节气当天样式 - 鼠尾草绿，自然雅致 */
         .days-label.today {
             font-weight: 600;
@@ -157,16 +252,58 @@
             background: linear-gradient(135deg, #A2D9CE 0%, #48C9B0 100%);
             padding: 6px 14px;
             border-radius: 20px;
-            box-shadow: 0 4px 12px rgba(72, 201, 176, 0.3);
+            box-shadow:
+                0 4px 12px rgba(72, 201, 176, 0.3),
+                inset 0 1px 0 rgba(255,255,255,0.4);
         }
 
         .yi-ji-row {
-            display: flex; flex-direction: column; gap: 8px; font-size: 13px; border-top: 1px dashed #eee; padding-top: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 12px;
+            border-top: 1px dashed #E5E7EB;
+            padding-top: 8px;
+            margin-top: auto;
+            width: 100%;
+            flex-shrink: 0;
         }
-        .yi-ji-row > div { display: flex; align-items: center; line-height: 1.4; }
-        .tag { padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-right: 8px; flex-shrink: 0; font-size: 12px; }
-        .tag.yi { background: #E8F8F5; color: #1ABC9C; }
-        .tag.ji { background: #FDEDEC; color: #E74C3C; }
+        .yi-ji-row > div {
+            display: flex;
+            align-items: flex-start;
+            line-height: 1.3;
+            white-space: normal;
+        }
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            margin-right: 6px;
+            font-weight: 600;
+            flex-shrink: 0;
+            height: fit-content;
+            /* 标签微阴影 */
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.08);
+        }
+        .tag.yi {
+            background: #E8F8F5; color: #1ABC9C;
+            box-shadow: 2px 2px 6px rgba(26, 188, 156, 0.15), -1px -1px 3px rgba(255,255,255,0.8);
+        }
+        .tag.ji {
+            background: #FDEDEC; color: #E74C3C;
+            box-shadow: 2px 2px 6px rgba(231, 76, 60, 0.15), -1px -1px 3px rgba(255,255,255,0.8);
+        }
+
+        .yi-ji-text {
+            flex: 1;
+            display: -webkit-box;
+            -webkit-line-clamp: 1;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            word-break: break-all;
+        }
 
         .history-card {
             flex: 0.6;
@@ -215,12 +352,24 @@
         .news-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
         .news-num {
             color: var(--accent-blue-text); font-size: 14px; width: 1.5em; flex-shrink: 0; font-weight: 800;
-            font-family: 'Courier New', Courier, monospace;
+            font-family: var(--font-number);
+            /* 序号微阴影 */
+            text-shadow: 0 1px 2px rgba(46, 134, 193, 0.15);
         }
         .news-text {
             color: #444;
             /* 取消截断，显示完整内容 */
             line-height: 1.4;
+        }
+
+        .news-footer {
+            margin-top: 12px;
+            padding-top: 8px;
+            border-top: 1px dashed rgba(0,0,0,0.1);
+            text-align: right;
+            font-size: 10px;
+            color: var(--text-light);
+            font-family: var(--font-number);
         }
 
         .holiday-card {
@@ -245,17 +394,22 @@
             align-items: center;
             transition: all 0.2s ease-in-out;
             border-left: 3px solid transparent; /* 默认透明边框占位 */
+            /* 节假日卡片阴影 */
+            box-shadow: 2px 2px 6px rgba(0,0,0,0.04), -1px -1px 4px rgba(255,255,255,0.6);
         }
         /* 法定节假日 - 突出 */
         .holiday-item.legal {
             background: linear-gradient(135deg, #FFF5E6 0%, #FFEDD5 100%);
             border-left: 3px solid #E67E22;
-            box-shadow: 0 2px 8px rgba(230, 126, 34, 0.1);
+            box-shadow:
+                3px 3px 10px rgba(230, 126, 34, 0.15),
+                -2px -2px 6px rgba(255,255,255,0.8);
         }
         /* 非法定节假日 - 淡化 */
         .holiday-item.normal {
             background: #F8F9F9;
             opacity: 0.8;
+            box-shadow: 1px 1px 4px rgba(0,0,0,0.03);
         }
         .h-info { display: flex; flex-direction: column; justify-content: center; }
         .h-name { font-size: 14px; font-weight: 700; color: #333; }
@@ -263,14 +417,28 @@
         .h-date { font-size: 11px; color: #999; margin-top: 2px; }
 
         .h-count-wrap { text-align: right; }
-        .h-num { font-size: 27px; font-weight: 800; }
-        .h-unit { font-size: 9px; color: var(--text-light); }
+        .h-num {
+            font-size: 27px; font-weight: 800;
+            font-family: var(--font-number);
+            /* 倒计时数字阴影 */
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.1);
+        }
+        .h-unit {
+            font-size: 9px; color: var(--text-light);
+            font-family: var(--font-number);
+        }
 
         /* 倒计时颜色 */
-        .h-num.urgent { color: #E74C3C; }  /* ≤7天 红色 */
-        .h-num.soon { color: #E67E22; }    /* 7-30天 橙色 */
+        .h-num.urgent {
+            color: #E74C3C;
+            text-shadow: 1px 1px 4px rgba(231, 76, 60, 0.25);
+        }  /* ≤7天 红色 */
+        .h-num.soon {
+            color: #E67E22;
+            text-shadow: 1px 1px 4px rgba(230, 126, 34, 0.25);
+        }    /* 7-30天 橙色 */
         .h-num.later { color: #2C3E50; }   /* >30天 深灰色 */
-        .holiday-item.normal .h-num { color: #95A5A6; } /* 非法定假日统一用浅色 */
+        .holiday-item.normal .h-num { color: #95A5A6; text-shadow: none; } /* 非法定假日统一用浅色 */
         /* 节假日当天样式 */
         .h-num.today { font-size: 24px; color: #E74C3C; }
 
@@ -329,20 +497,27 @@
         /* 页脚整体容器 */
         .footer-wrapper {
             margin-top: auto;
-            display: grid;
-            grid-template-columns: 1fr auto 1fr;
-            align-items: center;
             width: 100%;
-            padding-top: 12px;
-            border-top: 1px solid rgba(0,0,0,0.03);
-            font-size: 10px;
-            color: var(--text-light);
-            font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+            padding-top: 14px;
+            border-top: 1px solid rgba(0,0,0,0.06);
+            font-family: var(--font-body);
         }
 
-        .footer-left { text-align: left; }
-        .footer-center { text-align: center; }
-        .footer-right { text-align: right; }
+        /* 技术元数据 */
+        .footer-secondary {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+            font-size: 9px;
+            color: var(--text-light);
+            letter-spacing: 0.03em;
+            opacity: 0.9;
+        }
+        .footer-secondary > span {
+            overflow-wrap: anywhere;
+        }
 
         /* --- 第四排：特色板块 (疯狂星期四) --- */
         .row-special {
@@ -352,8 +527,12 @@
             background: #FFFFFF;
             border-radius: var(--card-radius);
             padding: 20px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.03);
-            border: 1px solid rgba(0,0,0,0.02);
+            /* KFC 卡片新拟态阴影 */
+            box-shadow:
+                6px 6px 14px rgba(192, 57, 43, 0.1),
+                -4px -4px 10px rgba(255,255,255,0.9),
+                inset 0 1px 0 rgba(255,255,255,0.5);
+            border: 1px solid rgba(255,255,255,0.8);
             /* 稍微加一点红色氛围 */
             background: linear-gradient(135deg, #fffcfc 0%, #fff5f5 100%);
             border-left: 4px solid #C0392B; /* 肯德基红 */
@@ -378,6 +557,10 @@
             align-items: center;
             justify-content: center;
             border-radius: 12px;
+            /* 图标阴影 */
+            box-shadow:
+                3px 3px 8px rgba(192, 57, 43, 0.15),
+                -2px -2px 6px rgba(255,255,255,0.8);
         }
 
         .kfc-titles {
@@ -390,8 +573,10 @@
             font-weight: 900;
             color: #C0392B;
             letter-spacing: 1px;
-            font-family: 'Arial Black', sans-serif;
+            font-family: var(--font-number);
             line-height: 1;
+            /* KFC 标题阴影 */
+            text-shadow: 1px 1px 3px rgba(192, 57, 43, 0.2);
         }
 
         .kfc-title-cn {
@@ -422,6 +607,17 @@
                 aspect-ratio: auto;
             }
             .box { border: 1px solid #ddd; }
+            /* 页脚打印适配 */
+            .footer-secondary {
+                font-size: 10px;
+                color: #666;
+            }
+            /* 新闻底部时间打印适配 */
+            .news-footer {
+                font-size: 11px;
+                color: var(--text-dark);
+                border-top-color: rgba(0,0,0,0.3);
+            }
         }
     </style>
 </head>
@@ -471,8 +667,8 @@
                     {% endif %}
                 </div>
                 <div class="yi-ji-row">
-                    <div><span class="tag yi">宜</span>{% for item in guide.yi %}{{ item }} {% endfor %}</div>
-                    <div><span class="tag ji">忌</span>{% for item in guide.ji %}{{ item }} {% endfor %}</div>
+                    <div><span class="tag yi">宜</span><span class="yi-ji-text">{% for item in guide.yi %}{{ item }} {% endfor %}</span></div>
+                    <div><span class="tag ji">忌</span><span class="yi-ji-text">{% for item in guide.ji %}{{ item }} {% endfor %}</span></div>
                 </div>
             </div>
             <div class="box history-card">
@@ -491,6 +687,11 @@
                     <li class="news-item"><span class="news-num">{{ item.num }}</span><span class="news-text">{{ item.text }}</span></li>
                     {% endfor %}
                 </ul>
+                {% if news_meta and news_meta.updated %}
+                <div class="news-footer">
+                    数据更新于 {{ news_meta.updated }}
+                </div>
+                {% endif %}
             </div>
 
             <div class="box holiday-card">
@@ -545,18 +746,9 @@
 
         <!-- 页脚区域 -->
         <div class="footer-wrapper">
-            <div class="footer-left">
-                {{ github_url | default('MR-MonkeyRay/moyuren_server') }}
-            </div>
-            
-            <div class="footer-center">
-                {% if news_meta and news_meta.updated %}
-                数据更新于 {{ news_meta.updated }}
-                {% endif %}
-            </div>
-
-            <div class="footer-right">
-                {{ version | default('v0.1.0') }}
+            <div class="footer-secondary">
+                <span>{{ github_url | default('MR-MonkeyRay/moyuren_server') }}</span>
+                <span>{{ version | default('v0.1.0') }}</span>
             </div>
         </div>
 
