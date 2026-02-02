@@ -19,6 +19,7 @@ from app.services.fetcher import DataFetcher
 from app.services.fun_content import FunContentService
 from app.services.holiday import HolidayService
 from app.services.kfc import KfcService
+from app.services.stock_index import StockIndexService
 from app.services.renderer import ImageRenderer
 from app.services.calendar import init_timezones, get_display_timezone
 
@@ -57,6 +58,11 @@ async def main():
     kfc_service = None
     if config.crazy_thursday:
         kfc_service = KfcService(config.crazy_thursday)
+
+    # Initialize stock index service if config exists
+    stock_index_service = None
+    if config.stock_index:
+        stock_index_service = StockIndexService(config.stock_index)
 
     data_computer = DataComputer()
     image_renderer = ImageRenderer(
@@ -102,6 +108,16 @@ async def main():
         except Exception as e:
             logger.warning(f"Failed to fetch KFC content: {e}")
 
+    # 1.4 Fetch stock index data
+    raw_data["stock_indices"] = None
+    if stock_index_service:
+        try:
+            stock_indices = await stock_index_service.fetch_indices()
+            raw_data["stock_indices"] = stock_indices
+            logger.info(f"Fetched {len(stock_indices.get('items', []))} stock indices")
+        except Exception as e:
+            logger.warning(f"Failed to fetch stock indices: {e}")
+
     # 2. Compute template context
     template_data = data_computer.compute(raw_data)
     logger.info("Template data computed")
@@ -127,11 +143,13 @@ async def main():
         title = fun_content_raw.get("title", "")
         content_type = "unknown"
         if "冷笑话" in title:
-            content_type = "joke"
+            content_type = "dad_joke"
         elif "一言" in title:
-            content_type = "quote"
+            content_type = "hitokoto"
         elif "段子" in title:
-            content_type = "story"
+            content_type = "duanzi"
+        elif "摸鱼" in title:
+            content_type = "moyu_quote"
 
         fun_content = {
             "type": content_type,
@@ -168,6 +186,20 @@ async def main():
         "countdowns": countdowns,
         "is_crazy_thursday": now.weekday() == 3,
         "kfc_content": kfc_content,
+        # Full rendering data fields
+        "date_info": template_data.get("date"),
+        "weekend": template_data.get("weekend"),
+        "solar_term": template_data.get("solar_term"),
+        "guide": template_data.get("guide"),
+        "news_list": [item.get("text", "") for item in template_data.get("news_list", []) if isinstance(item, dict)],
+        "news_meta": template_data.get("news_meta"),
+        "holidays": [
+            {k: v for k, v in h.items() if k != "color"}
+            for h in template_data.get("holidays", [])
+            if isinstance(h, dict)
+        ],
+        "kfc_content_full": template_data.get("kfc_content"),
+        "stock_indices": raw_data.get("stock_indices"),
     }
 
     with tempfile.NamedTemporaryFile(

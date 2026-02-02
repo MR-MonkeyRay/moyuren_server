@@ -295,6 +295,16 @@ async def get_moyuren_detail(request: Request) -> JSONResponse:
         "countdowns": state_data.get("countdowns", []),
         "is_crazy_thursday": state_data.get("is_crazy_thursday", False),
         "kfc_content": state_data.get("kfc_content"),
+        # Full rendering data fields
+        "date_info": state_data.get("date_info"),
+        "weekend": state_data.get("weekend"),
+        "solar_term": state_data.get("solar_term"),
+        "guide": state_data.get("guide"),
+        "news_list": state_data.get("news_list"),
+        "news_meta": state_data.get("news_meta"),
+        "holidays": state_data.get("holidays"),
+        "kfc_content_full": state_data.get("kfc_content_full"),
+        "stock_indices": state_data.get("stock_indices"),
     }
 
     logger.info(f"Retrieved moyuren detail for: {state_data['date']}")

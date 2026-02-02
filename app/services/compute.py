@@ -56,9 +56,61 @@ class DataComputer:
             "news_meta": self._compute_news_meta(raw_data),
             "holidays": self._compute_holidays(now, raw_data),
             "kfc_content": self._compute_kfc(now, raw_data),
+            "stock_indices": self._compute_stock_indices(raw_data),
             # 项目元信息
             "version": f"v{__version__}",
             "github_url": __github_url__,
+        }
+
+    def _compute_stock_indices(self, raw_data: dict[str, Any]) -> dict[str, Any] | None:
+        """Compute stock indices data for template.
+
+        Args:
+            raw_data: Raw data dictionary.
+
+        Returns:
+            Dictionary with stock indices or None.
+        """
+        data = raw_data.get("stock_indices")
+        if not data or not data.get("items"):
+            return None
+
+        items = []
+        for item in data["items"]:
+            # Format price with proper decimal places and type safety
+            price = item.get("price")
+            if price is not None:
+                try:
+                    price_str = f"{float(price):,.2f}"
+                except (TypeError, ValueError):
+                    price_str = "--"
+            else:
+                price_str = "--"
+
+            # Format change percentage with type safety
+            change_pct = item.get("change_pct")
+            if change_pct is not None:
+                try:
+                    pct_value = float(change_pct)
+                    change_pct_str = f"{'+' if pct_value > 0 else ''}{pct_value:.2f}%"
+                except (TypeError, ValueError):
+                    change_pct_str = "--"
+            else:
+                change_pct_str = "--"
+
+            items.append({
+                "name": item.get("name", ""),
+                "price": price_str,
+                "change_pct": change_pct_str,
+                "trend": item.get("trend", "flat"),
+                "market": item.get("market", ""),
+                "is_trading_day": item.get("is_trading_day", True),
+            })
+
+        return {
+            "indices": items,
+            "updated": data.get("updated"),
+            "is_stale": data.get("is_stale", False),
         }
 
     def _compute_kfc(self, now: datetime, raw_data: dict[str, Any]) -> dict[str, Any] | None:

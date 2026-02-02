@@ -19,6 +19,7 @@ from app.services.fetcher import DataFetcher
 from app.services.fun_content import FunContentService
 from app.services.kfc import KfcService
 from app.services.holiday import HolidayService
+from app.services.stock_index import StockIndexService
 from app.services.renderer import ImageRenderer
 from app.services.calendar import init_timezones
 
@@ -82,6 +83,11 @@ async def lifespan(app: FastAPI):
     if config.crazy_thursday:
         kfc_service = KfcService(config.crazy_thursday)
 
+    # Initialize stock index service if config exists
+    stock_index_service = None
+    if config.stock_index:
+        stock_index_service = StockIndexService(config.stock_index)
+
     image_renderer = ImageRenderer(
         template_path=config.paths.template_path,
         static_dir=config.paths.static_dir,
@@ -101,6 +107,7 @@ async def lifespan(app: FastAPI):
     app.state.holiday_service = holiday_service
     app.state.fun_content_service = fun_content_service
     app.state.kfc_service = kfc_service
+    app.state.stock_index_service = stock_index_service
     app.state.image_renderer = image_renderer
     app.state.cache_cleaner = cache_cleaner
 

@@ -16,10 +16,19 @@ https://api.monkeyray.net/api/v1/moyuren
 
 - 每日定时生成摸鱼日历图片（支持多时间点）
 - 按需生成：启动时或请求时若无可用图片则自动生成
+- 60 秒读懂世界新闻
+  - 数据源：[60s-api](https://60s.viki.moe)
+- 农历信息与节气（干支年、生肖、二十四节气）
+  - 数据源：[tyme4py](https://github.com/6tail/tyme4py)
 - 节日倒计时整合（法定假日 + 农历/公历节日）
   - 数据源：[holiday-cn](https://github.com/NateScarlet/holiday-cn)
 - 趣味内容随机展示（冷笑话、一言、段子、摸鱼语录）
+  - 数据源：[60s-api](https://60s.viki.moe)
 - 疯狂星期四：每周四自动展示 KFC 文案
+  - 数据源：[60s-api](https://60s.viki.moe)
+- 大盘指数实时行情（上证、深证、创业板、恒生、道琼斯）
+  - 数据源：[东方财富](https://www.eastmoney.com)
+  - 交易日历：[exchange_calendars](https://github.com/gerrymanoim/exchange_calendars)
 - Playwright 高质量浏览器渲染
 - 自动清理过期缓存
 - RESTful API + 静态文件服务
@@ -114,22 +123,100 @@ sudo chown -R 1000:1000 static state logs
     { "name": "春节", "date": "2026-02-17", "days_left": 16 }
   ],
   "is_crazy_thursday": false,
-  "kfc_content": null
+  "kfc_content": null,
+  "date_info": {
+    "year_month": "2026.02",
+    "day": "1",
+    "week_cn": "星期日",
+    "week_en": "Sun",
+    "lunar_year": "乙巳年",
+    "lunar_date": "正月初四",
+    "zodiac": "蛇",
+    "constellation": "水瓶座",
+    "moon_phase": "峨眉月",
+    "festival_solar": null,
+    "festival_lunar": null,
+    "legal_holiday": null,
+    "is_holiday": false
+  },
+  "weekend": {
+    "days_left": 5,
+    "is_weekend": false
+  },
+  "solar_term": {
+    "name": "立春",
+    "name_en": "Beginning of Spring",
+    "days_left": 3,
+    "date": "2026-02-04",
+    "is_today": false
+  },
+  "guide": {
+    "yi": ["摸鱼", "喝茶", "休息", "学习"],
+    "ji": ["加班", "开会", "焦虑", "提需求"]
+  },
+  "news_list": [
+    "今日天气晴朗，适合摸鱼。",
+    "研究表明，适当休息有助于提高工作效率。"
+  ],
+  "news_meta": {
+    "date": "2026-02-01",
+    "updated": "2026-02-01 06:00:00 CST",
+    "updated_at": 1738368000000
+  },
+  "holidays": [
+    {
+      "name": "春节",
+      "start_date": "2026-02-17",
+      "end_date": "2026-02-23",
+      "duration": 7,
+      "days_left": 16,
+      "is_legal_holiday": true,
+      "is_off_day": true
+    }
+  ],
+  "kfc_content_full": null,
+  "stock_indices": {
+    "items": [
+      {
+        "code": "000001",
+        "name": "上证指数",
+        "price": 3250.12,
+        "change": 15.32,
+        "change_pct": 0.47,
+        "trend": "up",
+        "market": "A",
+        "is_trading_day": true
+      }
+    ],
+    "updated": "2026-02-01 10:30",
+    "updated_at": 1738384200000,
+    "trading_day": { "A": true, "HK": true, "US": false },
+    "is_stale": false
+  }
 }
 ```
 
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
 | `date` | string | 图片日期 (YYYY-MM-DD) |
-| `updated` | string | 生成时间 (RFC3339 格式，如 2026-02-01T07:22:32+08:00) |
+| `updated` | string | 生成时间 (RFC3339 格式) |
 | `updated_at` | number | 生成时间戳（13 位毫秒） |
 | `image` | string | 图片完整 URL |
 | `weekday` | string | 星期几（中文） |
 | `lunar_date` | string | 农历日期 |
 | `fun_content` | object | 趣味内容（type: dad_joke/hitokoto/duanzi/moyu_quote） |
-| `countdowns` | array | 节假日倒计时列表 |
+| `countdowns` | array | 节假日倒计时列表（精简版） |
 | `is_crazy_thursday` | boolean | 是否为周四 |
-| `kfc_content` | string | KFC 文案（仅周四有值） |
+| `kfc_content` | string | KFC 文案内容（仅周四有值） |
+| `date_info` | object | 完整日期信息（年月、农历、生肖、星座、月相、节日） |
+| `weekend` | object | 周末倒计时（days_left, is_weekend） |
+| `solar_term` | object | 节气信息（名称、天数、日期） |
+| `guide` | object | 宜忌指南（yi, ji 列表） |
+| `news_list` | array | 新闻文本列表 |
+| `news_meta` | object | 新闻元数据（date, updated, updated_at） |
+| `holidays` | array | 详细节假日列表（含法定假日标识、时长） |
+| `kfc_content_full` | object | 完整 KFC 对象（title, sub_title, content） |
+| `stock_indices` | object | 大盘指数数据（items: 指数列表, trading_day: 交易日状态） |
 
 ## 配置
 
