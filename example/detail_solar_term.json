@@ -1,0 +1,110 @@
+{
+  "date": "2026-02-04",
+  "updated": "2026-02-04T07:00:00+08:00",
+  "updated_at": 1770159600000,
+  "image": "https://api.monkeyray.net/static/moyuren_20260204_070000.jpg",
+  "weekday": "星期三",
+  "lunar_date": "腊月十七",
+  "fun_content": {
+    "type": "duanzi",
+    "title": "😂 段子",
+    "text": "立春到了，春天还会远吗？远，因为还要上班。"
+  },
+  "countdowns": [
+    { "name": "春节", "date": "2026-02-15", "days_left": 11 },
+    { "name": "元宵节", "date": "2026-03-03", "days_left": 27 },
+    { "name": "清明节", "date": "2026-04-04", "days_left": 59 }
+  ],
+  "is_crazy_thursday": false,
+  "kfc_content": null,
+  "date_info": {
+    "year_month": "2026.02",
+    "day": "4",
+    "week_cn": "星期三",
+    "week_en": "Wed",
+    "lunar_year": "乙巳年",
+    "lunar_date": "腊月十七",
+    "zodiac": "蛇",
+    "constellation": "水瓶座",
+    "moon_phase": "残月",
+    "festival_solar": "立春",
+    "festival_lunar": null,
+    "legal_holiday": null,
+    "is_holiday": false
+  },
+  "weekend": {
+    "days_left": 2,
+    "is_weekend": false
+  },
+  "solar_term": {
+    "name": "立春",
+    "name_en": "Start of Spring",
+    "days_left": 0,
+    "date": "2026-02-04",
+    "is_today": true
+  },
+  "guide": {
+    "yi": ["祈福", "开市", "纳财", "出行"],
+    "ji": ["动土", "安葬", "破土"]
+  },
+  "news_list": [
+    "今日立春，万物复苏，春回大地",
+    "气象部门预测：今年春季气温偏高，降水偏多",
+    "各地举办立春民俗活动，迎接春天到来"
+  ],
+  "news_meta": {
+    "date": "2026-02-04",
+    "updated": "2026/02/04 06:30 UTC+08",
+    "updated_at": 1770157800000
+  },
+  "holidays": [
+    {
+      "name": "春节",
+      "start_date": "2026-02-15",
+      "end_date": "2026-02-23",
+      "duration": 9,
+      "days_left": 11,
+      "is_legal_holiday": true,
+      "is_off_day": true
+    }
+  ],
+  "kfc_content_full": null,
+  "stock_indices": {
+    "items": [
+      {
+        "code": "000001",
+        "name": "上证指数",
+        "price": 3255.88,
+        "change": 8.76,
+        "change_pct": 0.27,
+        "trend": "up",
+        "market": "A",
+        "is_trading_day": true
+      },
+      {
+        "code": "399001",
+        "name": "深证成指",
+        "price": 10498.55,
+        "change": -12.33,
+        "change_pct": -0.12,
+        "trend": "down",
+        "market": "A",
+        "is_trading_day": true
+      },
+      {
+        "code": "399006",
+        "name": "创业板指",
+        "price": 2156.78,
+        "change": 18.92,
+        "change_pct": 0.89,
+        "trend": "up",
+        "market": "A",
+        "is_trading_day": true
+      }
+    ],
+    "updated": "2026-02-04 10:30",
+    "updated_at": 1770172200000,
+    "trading_day": { "A": true, "HK": true, "US": true },
+    "is_stale": false
+  }
+}

@@ -13,6 +13,19 @@ from app.core.config import RenderConfig
 from app.core.errors import RenderError
 
 
+def format_datetime(value: str) -> str:
+    """Format RFC3339 datetime to friendly display format."""
+    if not value:
+        return "--"
+    try:
+        # Handle 'Z' suffix (UTC timezone indicator)
+        normalized = value.replace("Z", "+00:00") if value.endswith("Z") else value
+        dt = datetime.fromisoformat(normalized)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except (ValueError, TypeError):
+        return "--"
+
+
 class ImageRenderer:
     """HTML template renderer and screenshot generator using Playwright."""
 
@@ -42,6 +55,7 @@ class ImageRenderer:
         # Setup Jinja2 environment
         template_dir = str(Path(template_path).parent)
         self.jinja_env = Environment(loader=FileSystemLoader(template_dir))
+        self.jinja_env.filters["format_datetime"] = format_datetime
         self.template_name = Path(template_path).name
 
     async def render(self, data: dict[str, Any]) -> str:

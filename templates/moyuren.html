@@ -855,7 +855,7 @@
                 </ul>
                 {% if news_meta and news_meta.updated %}
                 <div class="news-footer">
-                    数据更新于 {{ news_meta.updated }}
+                    数据更新于 {{ news_meta.updated | format_datetime }}
                 </div>
                 {% endif %}
             </div>
@@ -882,7 +882,7 @@
                         {% endfor %}
                     </ul>
                     {% if stock_indices.updated %}
-                    <div class="market-footer">数据更新: {{ stock_indices.updated }}</div>
+                    <div class="market-footer">数据更新: {{ stock_indices.updated | format_datetime }}</div>
                     {% endif %}
                     {% else %}
                     <div class="market-closed">

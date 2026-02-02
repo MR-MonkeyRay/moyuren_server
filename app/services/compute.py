@@ -2,13 +2,138 @@
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from app import __version__, __github_url__
-from app.services.calendar import CalendarService, get_timezone_label, now_business
+from app.services.calendar import CalendarService, get_timezone_label, get_business_timezone, now_business
 
 logger = logging.getLogger(__name__)
+
+
+# 时区缩写映射表（映射到 UTC 偏移）
+_TIMEZONE_ABBR_MAP: dict[str, timedelta] = {
+    # 中国时区（本项目默认）
+    "CST": timedelta(hours=8),      # China Standard Time
+    "CCT": timedelta(hours=8),      # China Coast Time
+    "BJT": timedelta(hours=8),      # Beijing Time
+    # UTC 变体
+    "UTC": timedelta(hours=0),
+    "GMT": timedelta(hours=0),
+    "Z": timedelta(hours=0),
+    # 美国时区
+    "EST": timedelta(hours=-5),     # Eastern Standard Time
+    "EDT": timedelta(hours=-4),     # Eastern Daylight Time
+    "CDT": timedelta(hours=-5),     # Central Daylight Time
+    "MST": timedelta(hours=-7),     # Mountain Standard Time
+    "MDT": timedelta(hours=-6),     # Mountain Daylight Time
+    "PST": timedelta(hours=-8),     # Pacific Standard Time
+    "PDT": timedelta(hours=-7),     # Pacific Daylight Time
+    # 其他常见时区
+    "JST": timedelta(hours=9),      # Japan Standard Time
+    "KST": timedelta(hours=9),      # Korea Standard Time
+    "IST": timedelta(hours=5, minutes=30),  # India Standard Time
+    "AEST": timedelta(hours=10),    # Australian Eastern Standard Time
+    "AEDT": timedelta(hours=11),    # Australian Eastern Daylight Time
+}
+
+
+def normalize_datetime(value: str, default_tz: timezone | None = None) -> str | None:
+    """将各种格式的时间字符串规范化为 RFC3339 格式。
+
+    支持的输入格式：
+    - ISO 8601 / RFC3339: 2026-02-01T07:22:32+08:00
+    - ISO 带 Z: 2026-02-01T07:22:32Z
+    - 空格分隔: 2026-02-01 07:22:32
+    - 带时区缩写: 2026-02-01 07:22:32 CST
+    - 带 UTC/GMT 偏移: 2026-02-01 07:22 UTC+8, 2026-02-01 07:22 GMT+8
+    - 带数字偏移: 2026-02-01 07:22 +0800, 2026-02-01 07:22 +08:00
+
+    Args:
+        value: 输入的时间字符串
+        default_tz: 无时区信息时使用的默认时区，None 则使用业务时区
+
+    Returns:
+        RFC3339 格式字符串（如 2026-02-01T07:22:32+08:00），解析失败返回 None
+    """
+    if not value or not isinstance(value, str):
+        return None
+
+    value = value.strip()
+    if not value:
+        return None
+
+    # 默认时区：使用业务时区的当前偏移
+    if default_tz is None:
+        biz_tz = get_business_timezone()
+        offset = biz_tz.utcoffset(datetime.now(biz_tz))
+        default_tz = timezone(offset if offset else timedelta(hours=8))
+
+    # 尝试直接解析 ISO 格式（处理 Z 结尾）
+    try:
+        normalized = value.replace("Z", "+00:00") if value.endswith("Z") else value
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=default_tz)
+        return dt.isoformat(timespec="seconds")
+    except ValueError:
+        pass
+
+    # 提取并移除时区缩写或 UTC 偏移
+    tz_offset: timedelta | None = None
+    clean_value = value
+
+    # 匹配 UTC+8, UTC+08, GMT+8, GMT+08 等格式
+    utc_gmt_match = re.search(r'\b(?:UTC|GMT)([+-])(\d{1,2})(?::?(\d{2}))?\s*$', value, re.IGNORECASE)
+    if utc_gmt_match:
+        sign = 1 if utc_gmt_match.group(1) == '+' else -1
+        hours = int(utc_gmt_match.group(2))
+        minutes = int(utc_gmt_match.group(3)) if utc_gmt_match.group(3) else 0
+        tz_offset = timedelta(hours=sign * hours, minutes=sign * minutes)
+        clean_value = value[:utc_gmt_match.start()].strip()
+    else:
+        # 匹配尾部数字偏移：+0800, +08:00, -05:00, +8
+        offset_match = re.search(r'\s([+-])(\d{1,2})(?::?(\d{2}))?\s*$', value)
+        if offset_match:
+            sign = 1 if offset_match.group(1) == '+' else -1
+            hours = int(offset_match.group(2))
+            minutes = int(offset_match.group(3)) if offset_match.group(3) else 0
+            tz_offset = timedelta(hours=sign * hours, minutes=sign * minutes)
+            clean_value = value[:offset_match.start()].strip()
+        else:
+            # 匹配时区缩写（如 CST, EST, GMT）
+            abbr_match = re.search(r'\b([A-Z]{2,5})\s*$', value)
+            if abbr_match:
+                abbr = abbr_match.group(1).upper()
+                if abbr in _TIMEZONE_ABBR_MAP:
+                    tz_offset = _TIMEZONE_ABBR_MAP[abbr]
+                    clean_value = value[:abbr_match.start()].strip()
+
+    # 尝试解析清理后的时间字符串
+    datetime_patterns = [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+        "%Y/%m/%d %H:%M:%S",
+        "%Y/%m/%d %H:%M",
+    ]
+
+    for pattern in datetime_patterns:
+        try:
+            dt = datetime.strptime(clean_value, pattern)
+            # 应用时区
+            if tz_offset is not None:
+                dt = dt.replace(tzinfo=timezone(tz_offset))
+            else:
+                dt = dt.replace(tzinfo=default_tz)
+            return dt.isoformat(timespec="seconds")
+        except ValueError:
+            continue
+
+    # 所有格式都无法解析
+    logger.warning(f"Failed to normalize datetime: {value}")
+    return None
 
 
 class DataComputer:
@@ -277,21 +402,11 @@ class DataComputer:
             if isinstance(data, dict):
                 # 兼容新旧字段名：优先使用 updated，回退到 api_updated
                 updated_str = data.get("updated") or data.get("api_updated")
-                # 添加时区标签（仅当外部 API 返回的时间没有时区信息时）
-                if updated_str:
-                    # 检测常见时区标识
-                    tz_patterns = [
-                        r'[+-]\d{2}:?\d{2}',  # +08:00, -0500, +0800
-                        r'[+-]\d{1,2}\b',  # +8, +08 (无分钟)
-                        r'\bUTC[+-]?\d*',  # UTC, UTC+8, UTC+08
-                        r'\b(?:GMT|CST|EST|PST|EDT|PDT|Z)\b',  # 常见时区缩写
-                    ]
-                    has_tz = any(re.search(p, updated_str, re.IGNORECASE) for p in tz_patterns)
-                    if not has_tz:
-                        updated_str = f"{updated_str} {get_timezone_label()}"
+                # 规范化为 RFC3339 格式
+                normalized_updated = normalize_datetime(updated_str) if updated_str else None
                 return {
                     "date": data.get("date"),
-                    "updated": updated_str,
+                    "updated": normalized_updated,
                     "updated_at": data.get("updated_at") or data.get("api_updated_at"),
                 }
         return {}

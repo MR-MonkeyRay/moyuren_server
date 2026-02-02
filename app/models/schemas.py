@@ -93,7 +93,7 @@ class GuideSchema(BaseModel):
 class NewsMetaSchema(BaseModel):
     """News source metadata."""
     date: Optional[str] = Field(None, description="News date")
-    updated: Optional[str] = Field(None, description="News update time with timezone")
+    updated: Optional[str] = Field(None, description="News update time in RFC3339 format (e.g., 2026-02-01T07:22:32+08:00)")
     updated_at: Optional[int] = Field(None, description="News update timestamp in milliseconds")
 
 
@@ -130,7 +130,7 @@ class StockIndexItemSchema(BaseModel):
 class StockIndicesSchema(BaseModel):
     """Stock indices data schema."""
     items: list[StockIndexItemSchema] = Field(default_factory=list, description="List of stock indices")
-    updated: str = Field(..., description="Last update time (YYYY-MM-DD HH:MM)")
+    updated: str = Field(..., description="Last update time in RFC3339 format (e.g., 2026-02-01T07:22:32+08:00)")
     updated_at: int = Field(..., description="Update timestamp in milliseconds")
     trading_day: dict[str, bool] = Field(..., description="Trading day status by market")
     is_stale: bool = Field(..., description="Whether data is stale/cached")

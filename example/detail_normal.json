@@ -1,0 +1,122 @@
+{
+  "date": "2026-02-02",
+  "updated": "2026-02-02T07:00:00+08:00",
+  "updated_at": 1769986800000,
+  "image": "https://api.monkeyray.net/static/moyuren_20260202_070000.jpg",
+  "weekday": "星期一",
+  "lunar_date": "腊月十五",
+  "fun_content": {
+    "type": "hitokoto",
+    "title": "💬 一言",
+    "text": "能者深藏不露。"
+  },
+  "countdowns": [
+    { "name": "春节", "date": "2026-02-15", "days_left": 13 },
+    { "name": "元宵节", "date": "2026-03-03", "days_left": 29 },
+    { "name": "清明节", "date": "2026-04-04", "days_left": 61 },
+    { "name": "劳动节", "date": "2026-05-01", "days_left": 88 }
+  ],
+  "is_crazy_thursday": false,
+  "kfc_content": null,
+  "date_info": {
+    "year_month": "2026.02",
+    "day": "2",
+    "week_cn": "星期一",
+    "week_en": "Mon",
+    "lunar_year": "乙巳年",
+    "lunar_date": "腊月十五",
+    "zodiac": "蛇",
+    "constellation": "水瓶座",
+    "moon_phase": "残月",
+    "festival_solar": null,
+    "festival_lunar": null,
+    "legal_holiday": null,
+    "is_holiday": false
+  },
+  "weekend": {
+    "days_left": 5,
+    "is_weekend": false
+  },
+  "solar_term": {
+    "name": "立春",
+    "name_en": "Start of Spring",
+    "days_left": 2,
+    "date": "2026-02-04",
+    "is_today": false
+  },
+  "guide": {
+    "yi": ["祭祀", "破屋", "坏垣", "馀事勿取"],
+    "ji": ["斋醮", "嫁娶", "开市"]
+  },
+  "news_list": [
+    "福布斯中国最新富豪榜出炉：张一鸣、钟睒睒、马化腾稳居前三",
+    "中指研究院：1 月百城新房价格环比上涨 0.18%",
+    "2026 年起增值税起征点再次提高：个人每次挣钱低于 1000 元不用交增值税",
+    "人民币现金收付新规 2 月起施行：明确拒收、排斥现金等均可直接举报",
+    "韦东奕新身份曝光：正式获聘北京大学数学科学学院长聘副教授"
+  ],
+  "news_meta": {
+    "date": "2026-02-02",
+    "updated": "2026/02/02 01:44 UTC+08",
+    "updated_at": 1769967865000
+  },
+  "holidays": [
+    {
+      "name": "春节",
+      "start_date": "2026-02-15",
+      "end_date": "2026-02-23",
+      "duration": 9,
+      "days_left": 13,
+      "is_legal_holiday": true,
+      "is_off_day": true
+    },
+    {
+      "name": "清明节",
+      "start_date": "2026-04-04",
+      "end_date": "2026-04-06",
+      "duration": 3,
+      "days_left": 61,
+      "is_legal_holiday": true,
+      "is_off_day": true
+    }
+  ],
+  "kfc_content_full": null,
+  "stock_indices": {
+    "items": [
+      {
+        "code": "000001",
+        "name": "上证指数",
+        "price": 3250.12,
+        "change": 15.32,
+        "change_pct": 0.47,
+        "trend": "up",
+        "market": "A",
+        "is_trading_day": true
+      },
+      {
+        "code": "399001",
+        "name": "深证成指",
+        "price": 10520.88,
+        "change": -28.45,
+        "change_pct": -0.27,
+        "trend": "down",
+        "market": "A",
+        "is_trading_day": true
+      },
+      {
+        "code": "HSI",
+        "name": "恒生指数",
+        "price": 20156.32,
+        "change": 125.67,
+        "change_pct": 0.63,
+        "trend": "up",
+        "market": "HK",
+        "is_trading_day": true
+      }
+    ],
+    "updated": "2026-02-02 10:30",
+    "updated_at": 1769999400000,
+    "trading_day": { "A": true, "HK": true, "US": false },
+    "is_stale": false
+  }
+}

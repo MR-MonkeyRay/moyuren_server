@@ -1,0 +1,104 @@
+{
+  "date": "2026-02-05",
+  "updated": "2026-02-05T07:00:00+08:00",
+  "updated_at": 1770246000000,
+  "image": "https://api.monkeyray.net/static/moyuren_20260205_070000.jpg",
+  "weekday": "星期四",
+  "lunar_date": "腊月十八",
+  "fun_content": {
+    "type": "dad_joke",
+    "title": "🤣 冷笑话",
+    "text": "程序员为什么喜欢黑暗模式？因为光会吸引 Bug。"
+  },
+  "countdowns": [
+    { "name": "春节", "date": "2026-02-15", "days_left": 10 },
+    { "name": "元宵节", "date": "2026-03-03", "days_left": 26 },
+    { "name": "清明节", "date": "2026-04-04", "days_left": 58 }
+  ],
+  "is_crazy_thursday": true,
+  "kfc_content": "今天是疯狂星期四！V我50，请你吃炸鸡！工作再累也要犒劳自己，来份黄金脆皮鸡，外酥里嫩，一口下去烦恼全消！",
+  "date_info": {
+    "year_month": "2026.02",
+    "day": "5",
+    "week_cn": "星期四",
+    "week_en": "Thu",
+    "lunar_year": "乙巳年",
+    "lunar_date": "腊月十八",
+    "zodiac": "蛇",
+    "constellation": "水瓶座",
+    "moon_phase": "残月",
+    "festival_solar": null,
+    "festival_lunar": null,
+    "legal_holiday": null,
+    "is_holiday": false
+  },
+  "weekend": {
+    "days_left": 1,
+    "is_weekend": false
+  },
+  "solar_term": {
+    "name": "雨水",
+    "name_en": "Rain Water",
+    "days_left": 14,
+    "date": "2026-02-19",
+    "is_today": false
+  },
+  "guide": {
+    "yi": ["摸鱼", "吃鸡", "休息", "购物"],
+    "ji": ["加班", "节食", "焦虑"]
+  },
+  "news_list": [
+    "春节前最后一个工作周，各地企业陆续放假",
+    "年终奖发放季，打工人喜迎红包",
+    "春运进入高峰期，铁路部门加开临客"
+  ],
+  "news_meta": {
+    "date": "2026-02-05",
+    "updated": "2026/02/05 06:30 UTC+08",
+    "updated_at": 1770244200000
+  },
+  "holidays": [
+    {
+      "name": "春节",
+      "start_date": "2026-02-15",
+      "end_date": "2026-02-23",
+      "duration": 9,
+      "days_left": 10,
+      "is_legal_holiday": true,
+      "is_off_day": true
+    }
+  ],
+  "kfc_content_full": {
+    "title": "CRAZY THURSDAY",
+    "sub_title": "V我50",
+    "content": "今天是疯狂星期四！V我50，请你吃炸鸡！工作再累也要犒劳自己，来份黄金脆皮鸡，外酥里嫩，一口下去烦恼全消！"
+  },
+  "stock_indices": {
+    "items": [
+      {
+        "code": "000001",
+        "name": "上证指数",
+        "price": 3268.45,
+        "change": 22.18,
+        "change_pct": 0.68,
+        "trend": "up",
+        "market": "A",
+        "is_trading_day": true
+      },
+      {
+        "code": "399001",
+        "name": "深证成指",
+        "price": 10588.32,
+        "change": 45.67,
+        "change_pct": 0.43,
+        "trend": "up",
+        "market": "A",
+        "is_trading_day": true
+      }
+    ],
+    "updated": "2026-02-05 10:30",
+    "updated_at": 1770258600000,
+    "trading_day": { "A": true, "HK": true, "US": true },
+    "is_stale": false
+  }
+}

@@ -4,7 +4,7 @@
 
 ## 预览
 
-![摸鱼日历预览](https://api.monkeyray.net/api/v1/moyuren/latest)
+![摸鱼日历预览](example/moyuren_example.jpg)
 
 ## api体验
 
@@ -302,6 +302,13 @@ moyuren_server/
 │   └── models/           # 数据模型
 ├── templates/            # Jinja2 模板
 ├── scripts/              # 工具脚本
+├── example/              # 示例文件
+│   ├── moyuren_example.jpg        # 示例图片
+│   ├── detail_normal.json         # 普通工作日响应示例
+│   ├── detail_weekend.json        # 周末响应示例
+│   ├── detail_crazy_thursday.json # 疯狂星期四响应示例
+│   ├── detail_holiday.json        # 节假日响应示例
+│   └── detail_solar_term.json     # 节气当天响应示例
 ├── config.yaml           # 配置文件
 └── docker-compose.yaml   # Docker 编排
 ```
