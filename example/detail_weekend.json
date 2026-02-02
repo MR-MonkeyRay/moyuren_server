@@ -1,0 +1,90 @@
+{
+  "date": "2026-02-07",
+  "updated": "2026-02-07T07:00:00+08:00",
+  "updated_at": 1770418800000,
+  "image": "https://api.monkeyray.net/static/moyuren_20260207_070000.jpg",
+  "weekday": "星期六",
+  "lunar_date": "腊月二十",
+  "fun_content": {
+    "type": "moyu_quote",
+    "title": "🐟 摸鱼语录",
+    "text": "周末不摸鱼，人生无意义。"
+  },
+  "countdowns": [
+    { "name": "春节", "date": "2026-02-15", "days_left": 8 },
+    { "name": "元宵节", "date": "2026-03-03", "days_left": 24 },
+    { "name": "清明节", "date": "2026-04-04", "days_left": 56 }
+  ],
+  "is_crazy_thursday": false,
+  "kfc_content": null,
+  "date_info": {
+    "year_month": "2026.02",
+    "day": "7",
+    "week_cn": "星期六",
+    "week_en": "Sat",
+    "lunar_year": "乙巳年",
+    "lunar_date": "腊月二十",
+    "zodiac": "蛇",
+    "constellation": "水瓶座",
+    "moon_phase": "下弦月",
+    "festival_solar": null,
+    "festival_lunar": null,
+    "legal_holiday": null,
+    "is_holiday": false
+  },
+  "weekend": {
+    "days_left": 0,
+    "is_weekend": true
+  },
+  "solar_term": {
+    "name": "雨水",
+    "name_en": "Rain Water",
+    "days_left": 12,
+    "date": "2026-02-19",
+    "is_today": false
+  },
+  "guide": {
+    "yi": ["休息", "出游", "访友", "娱乐"],
+    "ji": ["加班", "熬夜", "焦虑"]
+  },
+  "news_list": [
+    "春节临近，全国各地迎来返乡高峰",
+    "多地发布春节期间烟花爆竹燃放规定",
+    "年货市场火爆，传统年味回归"
+  ],
+  "news_meta": {
+    "date": "2026-02-07",
+    "updated": "2026/02/07 06:30 UTC+08",
+    "updated_at": 1770417000000
+  },
+  "holidays": [
+    {
+      "name": "春节",
+      "start_date": "2026-02-15",
+      "end_date": "2026-02-23",
+      "duration": 9,
+      "days_left": 8,
+      "is_legal_holiday": true,
+      "is_off_day": true
+    }
+  ],
+  "kfc_content_full": null,
+  "stock_indices": {
+    "items": [
+      {
+        "code": "000001",
+        "name": "上证指数",
+        "price": null,
+        "change": null,
+        "change_pct": null,
+        "trend": "flat",
+        "market": "A",
+        "is_trading_day": false
+      }
+    ],
+    "updated": "2026-02-06 15:00",
+    "updated_at": 1770361200000,
+    "trading_day": { "A": false, "HK": false, "US": false },
+    "is_stale": true
+  }
+}

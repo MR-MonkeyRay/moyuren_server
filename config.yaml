@@ -74,3 +74,18 @@ render:
 logging:
   level: "INFO"
   file: "logs/app.log"
+
+stock_index:
+  quote_url: "https://push2.eastmoney.com/api/qt/ulist.np/get"
+  secids:
+    - "1.000001"    # 上证指数
+    - "0.399001"    # 深证成指
+    - "0.399006"    # 创业板指
+    - "100.HSI"     # 恒生指数
+    - "100.DJIA"    # 道琼斯
+  timeout_sec: 5
+  market_timezones:
+    A: "Asia/Shanghai"
+    HK: "Asia/Hong_Kong"
+    US: "America/New_York"
+  cache_ttl_sec: 60

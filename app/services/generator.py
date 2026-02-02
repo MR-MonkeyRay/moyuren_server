@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from filelock import FileLock, Timeout
 
 from app.core.errors import StorageError
-from app.services.calendar import get_display_timezone, get_timezone_label
+from app.services.calendar import get_display_timezone
 
 
 class GenerationBusyError(Exception):
@@ -131,6 +131,16 @@ async def generate_and_save_image(app: FastAPI) -> str:
                     except Exception as e:
                         logger.warning(f"Failed to fetch KFC content: {e}")
 
+                # 1.4 Fetch stock index data
+                raw_data["stock_indices"] = None
+                if app.state.stock_index_service:
+                    try:
+                        stock_indices = await app.state.stock_index_service.fetch_indices()
+                        raw_data["stock_indices"] = stock_indices
+                        logger.info(f"Fetched {len(stock_indices.get('items', []))} stock indices")
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch stock indices: {e}")
+
                 # 2. Compute template context
                 template_data = app.state.data_computer.compute(raw_data)
                 logger.info("Template data computed")
@@ -144,6 +154,7 @@ async def generate_and_save_image(app: FastAPI) -> str:
                     state_path=config.paths.state_path,
                     filename=filename,
                     template_data=template_data,
+                    raw_data=raw_data,
                     config=config,
                 )
 
@@ -168,6 +179,7 @@ async def _update_state_file(
     state_path: str,
     filename: str,
     template_data: dict,
+    raw_data: dict,
     config: Any,
 ) -> None:
     """Atomically update the state file with latest image information.
@@ -176,6 +188,7 @@ async def _update_state_file(
         state_path: Path to the state file (e.g., "state/latest.json").
         filename: Generated image filename.
         template_data: Template data dictionary from DataComputer.
+        raw_data: Raw data dictionary containing original API responses.
         config: Application config for reading render dimensions.
 
     Raises:
@@ -237,7 +250,7 @@ async def _update_state_file(
             "timestamp": now.isoformat(),
             "filename": filename,
             # New time fields
-            "updated": now.strftime("%Y/%m/%d %H:%M:%S") + " " + get_timezone_label(),
+            "updated": now.isoformat(timespec='seconds'),
             "updated_at": int(now.timestamp() * 1000),
             # New content fields
             "weekday": date_info.get("week_cn", ""),
@@ -246,6 +259,20 @@ async def _update_state_file(
             "countdowns": countdowns,
             "is_crazy_thursday": now.weekday() == 3,
             "kfc_content": kfc_content,
+            # Full rendering data fields
+            "date_info": template_data.get("date"),
+            "weekend": template_data.get("weekend"),
+            "solar_term": template_data.get("solar_term"),
+            "guide": template_data.get("guide"),
+            "news_list": [item.get("text", "") for item in template_data.get("news_list", []) if isinstance(item, dict)],
+            "news_meta": template_data.get("news_meta"),
+            "holidays": [
+                {k: v for k, v in h.items() if k != "color"}
+                for h in template_data.get("holidays", [])
+                if isinstance(h, dict)
+            ],
+            "kfc_content_full": template_data.get("kfc_content"),
+            "stock_indices": raw_data.get("stock_indices"),
         }
 
         # Atomic write: temp file + rename

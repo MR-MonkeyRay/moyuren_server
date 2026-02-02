@@ -1,0 +1,99 @@
+{
+  "date": "2026-02-17",
+  "updated": "2026-02-17T07:00:00+08:00",
+  "updated_at": 1771282800000,
+  "image": "https://api.monkeyray.net/static/moyuren_20260217_070000.jpg",
+  "weekday": "星期二",
+  "lunar_date": "正月初一",
+  "fun_content": {
+    "type": "hitokoto",
+    "title": "💬 一言",
+    "text": "新年快乐，万事如意！"
+  },
+  "countdowns": [
+    { "name": "元宵节", "date": "2026-03-03", "days_left": 14 },
+    { "name": "清明节", "date": "2026-04-04", "days_left": 46 },
+    { "name": "劳动节", "date": "2026-05-01", "days_left": 73 }
+  ],
+  "is_crazy_thursday": false,
+  "kfc_content": null,
+  "date_info": {
+    "year_month": "2026.02",
+    "day": "17",
+    "week_cn": "星期二",
+    "week_en": "Tue",
+    "lunar_year": "丙午年",
+    "lunar_date": "正月初一",
+    "zodiac": "马",
+    "constellation": "水瓶座",
+    "moon_phase": "新月",
+    "festival_solar": null,
+    "festival_lunar": "春节",
+    "legal_holiday": "春节",
+    "is_holiday": true
+  },
+  "weekend": {
+    "days_left": 4,
+    "is_weekend": false
+  },
+  "solar_term": {
+    "name": "雨水",
+    "name_en": "Rain Water",
+    "days_left": 2,
+    "date": "2026-02-19",
+    "is_today": false
+  },
+  "guide": {
+    "yi": ["祭祀", "祈福", "拜年", "出行", "宴会"],
+    "ji": ["动土", "破土", "安葬"]
+  },
+  "news_list": [
+    "全国各地喜迎新春，烟花绽放庆团圆",
+    "春节档电影票房火爆，多部影片口碑爆棚",
+    "各地庙会活动精彩纷呈，传统文化魅力尽显"
+  ],
+  "news_meta": {
+    "date": "2026-02-17",
+    "updated": "2026/02/17 06:30 UTC+08",
+    "updated_at": 1771281000000
+  },
+  "holidays": [
+    {
+      "name": "春节",
+      "start_date": "2026-02-15",
+      "end_date": "2026-02-23",
+      "duration": 9,
+      "days_left": 0,
+      "is_legal_holiday": true,
+      "is_off_day": true
+    },
+    {
+      "name": "元宵节",
+      "start_date": "2026-03-03",
+      "end_date": "2026-03-03",
+      "duration": 1,
+      "days_left": 14,
+      "is_legal_holiday": false,
+      "is_off_day": true
+    }
+  ],
+  "kfc_content_full": null,
+  "stock_indices": {
+    "items": [
+      {
+        "code": "000001",
+        "name": "上证指数",
+        "price": null,
+        "change": null,
+        "change_pct": null,
+        "trend": "flat",
+        "market": "A",
+        "is_trading_day": false
+      }
+    ],
+    "updated": "2026-02-13 15:00",
+    "updated_at": 1770966000000,
+    "trading_day": { "A": false, "HK": false, "US": true },
+    "is_stale": true
+  }
+}

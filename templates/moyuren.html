@@ -7,7 +7,7 @@
     <!-- Google Fonts: 思源黑体(正文) + 霞鹜文楷(标题) + Poppins(数字/英文) - 使用国内镜像 -->
     <link rel="preconnect" href="https://fonts.loli.net">
     <link rel="preconnect" href="https://gstatic.loli.net" crossorigin>
-    <link href="https://fonts.loli.net/css2?family=LXGW+WenKai:wght@400;700&family=Noto+Sans+SC:wght@400;500;700;900&family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.loli.net/css2?family=JetBrains+Mono:wght@500;600;700&family=LXGW+WenKai:wght@400;700&family=Noto+Sans+SC:wght@400;500;700;900&family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {
             /* 莫兰迪/杂志风配色 */
@@ -26,6 +26,14 @@
 
             --accent-pink: #FADBD8;
             --accent-pink-text: #C0392B;
+
+            /* 股票涨跌颜色 - 莫兰迪柔和版 (WCAG AA compliant) */
+            --color-up: #C0392B;
+            --color-up-bg: rgba(192, 57, 43, 0.08);
+            --color-down: #1E8449;
+            --color-down-bg: rgba(30, 132, 73, 0.08);
+            --color-flat: #7F8C8D;
+            --color-flat-bg: #F7F9F9;
 
             --card-radius: 16px;
             --spacing: 16px;
@@ -98,7 +106,7 @@
 
         h2 {
             font-size: 20px;
-            color: var(--text-grey);
+            color: var(--text-dark);
             font-weight: 600;
             margin-bottom: 12px;
             letter-spacing: 1px;
@@ -330,7 +338,7 @@
         }
 
         .news-card {
-            flex: 0.6;
+            flex: 0.55;
             display: flex;
             flex-direction: column;
         }
@@ -372,8 +380,148 @@
             font-family: var(--font-number);
         }
 
+        /* 右侧列容器 */
+        .col-right {
+            flex: 0.45;
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing);
+            min-width: 0;
+        }
+
+        /* 大盘指数卡片 */
+        .market-card {
+            background: #FFFFFF;
+            display: flex;
+            flex-direction: column;
+        }
+        .market-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            padding: 4px 0;
+            list-style: none;
+            margin: 0;
+        }
+        .market-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 15px;
+            line-height: 1.4;
+            padding: 10px 4px;
+            border-bottom: 1px dashed rgba(0,0,0,0.06);
+        }
+        .market-item:last-child {
+            border-bottom: none;
+        }
+        .market-name {
+            color: #64748b;
+            font-weight: 500;
+            font-size: 14px;
+            font-family: 'Noto Sans SC', sans-serif;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100px;
+        }
+        .market-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .market-value {
+            font-family: 'JetBrains Mono', var(--font-number);
+            font-weight: 600;
+            color: var(--text-dark);
+            font-size: 15px;
+            letter-spacing: -0.03em;
+            font-variant-numeric: tabular-nums;
+        }
+        .market-change {
+            font-family: var(--font-number);
+            font-weight: 600;
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 6px;
+            min-width: 64px;
+            text-align: center;
+            display: inline-block;
+        }
+        .trend-up {
+            color: var(--color-up);
+            background-color: var(--color-up-bg);
+        }
+        .trend-down {
+            color: var(--color-down);
+            background-color: var(--color-down-bg);
+        }
+        .trend-flat {
+            color: var(--color-flat);
+            background-color: var(--color-flat-bg);
+        }
+        /* 休市行样式 */
+        .market-item.closed {
+            opacity: 0.6;
+        }
+        .market-item.closed .market-name {
+            color: var(--text-light);
+        }
+        .market-item.closed .market-value {
+            color: var(--text-light);
+        }
+        .closed-badge {
+            font-size: 12px;
+            color: var(--text-light);
+            background: rgba(0,0,0,0.05);
+            padding: 2px 8px;
+            border-radius: 6px;
+            min-width: 64px;
+            text-align: center;
+            display: inline-block;
+            font-family: var(--font-body);
+        }
+        .market-footer {
+            margin-top: 12px;
+            text-align: right;
+            font-size: 11px;
+            color: #BDC3C7;
+            font-family: var(--font-number);
+        }
+        .market-closed {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 30px 0;
+            color: var(--text-grey);
+            text-align: center;
+            background: radial-gradient(circle, #F7F9F9 0%, #fff 70%);
+            border-radius: 12px;
+            margin: 10px 0;
+        }
+        .market-closed-icon {
+            font-size: 42px;
+            margin-bottom: 10px;
+            opacity: 0.8;
+            filter: grayscale(0.5);
+        }
+        .market-closed-text {
+            font-family: var(--font-title);
+            font-size: 18px;
+            color: var(--text-dark);
+            margin-bottom: 4px;
+            font-weight: bold;
+        }
+        .market-closed-desc {
+            font-family: var(--font-title);
+            font-size: 14px;
+            color: var(--text-grey);
+            opacity: 0.8;
+        }
+
         .holiday-card {
-            flex: 0.4;
+            flex: 1; /* 在 col-right 中填充剩余空间 */
             background-color: #FFFFFF; /* 白色背景 */
             display: flex;
             flex-direction: column;
@@ -412,7 +560,7 @@
             box-shadow: 1px 1px 4px rgba(0,0,0,0.03);
         }
         .h-info { display: flex; flex-direction: column; justify-content: center; }
-        .h-name { font-size: 14px; font-weight: 700; color: #333; }
+        .h-name { font-size: 16px; font-weight: 700; color: #333; }
         .holiday-item.normal .h-name { font-weight: 500; color: #555;}
         .h-date { font-size: 11px; color: #999; margin-top: 2px; }
 
@@ -598,6 +746,24 @@
             word-break: break-word;
         }
 
+        /* 响应式布局 - 移动端适配 */
+        @media screen and (max-width: 768px) {
+            .row-main {
+                flex-direction: column;
+            }
+            .news-card {
+                flex: 1;
+            }
+            .col-right {
+                flex: 1;
+                flex-direction: column;
+            }
+            .market-card,
+            .holiday-card {
+                flex: 1 1 100%;
+            }
+        }
+
         /* 打印样式 */
         @media print {
             body { background: white; height: auto; overflow: visible; }
@@ -689,43 +855,78 @@
                 </ul>
                 {% if news_meta and news_meta.updated %}
                 <div class="news-footer">
-                    数据更新于 {{ news_meta.updated }}
+                    数据更新于 {{ news_meta.updated | format_datetime }}
                 </div>
                 {% endif %}
             </div>
 
-            <div class="box holiday-card">
-                <h2>🏖️ 假期盼头</h2>
-                <div class="holiday-list">
-                    {% for holiday in holidays %}
-                    <div class="holiday-item {{ 'workday' if holiday.is_off_day is false else ('legal' if holiday.is_legal_holiday else 'normal') }}{{ ' is-today' if holiday.days_left == 0 else '' }}">
-                        <div class="h-info">
-                            <div class="h-name">
-                                {% if holiday.is_off_day is false %}<span role="img" aria-label="补班">💼</span> {% elif holiday.is_legal_holiday %}<span role="img" aria-label="法定假日">🎉</span> {% endif %}{{ holiday.name }}
-                            </div>
-                            <div class="h-date">
-                                {{ holiday.start_date }}
-                                {% if holiday.duration > 1 %}
-                                ~ {{ holiday.end_date }} ({{ holiday.duration }}天)
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="h-count-wrap">
-                            {% if holiday.days_left == 0 %}
-                                {% if holiday.is_off_day is false %}
-                                <div class="h-num today" role="img" aria-label="今日补班">😭</div>
-                                <div class="h-unit">补班中</div>
+            <!-- 右侧列：大盘指数 + 假期盼头 -->
+            <div class="col-right">
+                <!-- 大盘指数 -->
+                <div class="box market-card">
+                    <h2><span role="img" aria-label="股票">📈</span> 大盘指数</h2>
+                    {% if stock_indices and stock_indices.indices %}
+                    <ul class="market-list" role="list" aria-label="大盘指数列表">
+                        {% for index in stock_indices.indices %}
+                        <li class="market-item{{ ' closed' if not index.is_trading_day else '' }}">
+                            <span class="market-name">{{ index.name }}</span>
+                            <div class="market-right">
+                                <span class="market-value">{{ index.price if index.price else '--' }}</span>
+                                {% if index.is_trading_day %}
+                                <span class="market-change trend-{{ index.trend }}">{{ index.change_pct }}</span>
                                 {% else %}
-                                <div class="h-num today" role="img" aria-label="今日假期">🥳</div>
-                                <div class="h-unit">假期中</div>
+                                <span class="closed-badge">休市</span>
                                 {% endif %}
-                            {% else %}
-                            <div class="h-num {% if holiday.is_legal_holiday %}{% if holiday.days_left <= 7 %}urgent{% elif holiday.days_left <= 30 %}soon{% else %}later{% endif %}{% endif %}">{{ holiday.days_left }}</div>
-                            <div class="h-unit">DAYS</div>
-                            {% endif %}
-                        </div>
+                            </div>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% if stock_indices.updated %}
+                    <div class="market-footer">数据更新: {{ stock_indices.updated | format_datetime }}</div>
+                    {% endif %}
+                    {% else %}
+                    <div class="market-closed">
+                        <span class="market-closed-icon" role="img" aria-label="咖啡">☕️</span>
+                        <div class="market-closed-text">今日休市</div>
+                        <div class="market-closed-desc">抛开K线，享受生活</div>
                     </div>
-                    {% endfor %}
+                    {% endif %}
+                </div>
+
+                <!-- 假期盼头 -->
+                <div class="box holiday-card">
+                    <h2>🏖️ 假期盼头</h2>
+                    <div class="holiday-list">
+                        {% for holiday in holidays %}
+                        <div class="holiday-item {{ 'workday' if holiday.is_off_day is false else ('legal' if holiday.is_legal_holiday else 'normal') }}{{ ' is-today' if holiday.days_left == 0 else '' }}">
+                            <div class="h-info">
+                                <div class="h-name">
+                                    {% if holiday.is_off_day is false %}<span role="img" aria-label="补班">💼</span> {% elif holiday.is_legal_holiday %}<span role="img" aria-label="法定假日">🎉</span> {% endif %}{{ holiday.name }}
+                                </div>
+                                <div class="h-date">
+                                    {{ holiday.start_date }}
+                                    {% if holiday.duration > 1 %}
+                                    ~ {{ holiday.end_date }} ({{ holiday.duration }}天)
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="h-count-wrap">
+                                {% if holiday.days_left == 0 %}
+                                    {% if holiday.is_off_day is false %}
+                                    <div class="h-num today" role="img" aria-label="今日补班">😭</div>
+                                    <div class="h-unit">补班中</div>
+                                    {% else %}
+                                    <div class="h-num today" role="img" aria-label="今日假期">🥳</div>
+                                    <div class="h-unit">假期中</div>
+                                    {% endif %}
+                                {% else %}
+                                <div class="h-num {% if holiday.is_legal_holiday %}{% if holiday.days_left <= 7 %}urgent{% elif holiday.days_left <= 30 %}soon{% else %}later{% endif %}{% endif %}">{{ holiday.days_left }}</div>
+                                <div class="h-unit">DAYS</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
         </div>

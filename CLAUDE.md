@@ -106,3 +106,10 @@ docker-compose up -d
 ```
 
 **缓存目录**：`state/holidays/`
+
+## 时间戳规范
+
+- **统一格式**：RFC3339（如 `2026-02-01T07:22:32+08:00`）
+- **规范化**：`normalize_datetime()`（`compute.py`）将外部时间字符串转为 RFC3339
+- **模板显示**：`format_datetime` 过滤器转为 `YYYY-MM-DD HH:MM`
+- **CST 映射**：默认为中国标准时间（+08:00）

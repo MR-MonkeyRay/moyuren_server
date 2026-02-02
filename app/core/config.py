@@ -190,6 +190,22 @@ class CrazyThursdayConfig(BaseModel):
         return v
 
 
+class StockIndexConfig(BaseModel):
+    """Stock index configuration."""
+    quote_url: str
+    secids: list[str]
+    timeout_sec: int = 5
+    market_timezones: dict[str, str]
+    cache_ttl_sec: int = 60
+
+    @field_validator("timeout_sec", "cache_ttl_sec")
+    @classmethod
+    def validate_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("value must be positive")
+        return v
+
+
 class AppConfig(BaseModel):
     """Main application configuration."""
     server: ServerConfig
@@ -203,6 +219,7 @@ class AppConfig(BaseModel):
     holiday: HolidayConfig = Field(default_factory=HolidayConfig)
     fun_content: FunContentConfig
     crazy_thursday: CrazyThursdayConfig | None = None
+    stock_index: StockIndexConfig | None = None
 
 
 def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
