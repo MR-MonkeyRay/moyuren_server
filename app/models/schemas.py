@@ -40,7 +40,7 @@ class MoyurenResponse(ImageMeta):
 class MoyurenImageResponse(BaseModel):
     """Response model for moyuren image metadata API."""
     date: str = Field(..., description="Image date in YYYY-MM-DD format")
-    updated: str = Field(..., description="Generation time in YYYY/MM/DD HH:MM:SS format")
+    updated: str = Field(..., description="Generation time in RFC3339 format (e.g., 2026-02-01T07:22:32+08:00)")
     updated_at: int = Field(..., description="Generation timestamp in milliseconds (13 digits)")
     image: str = Field(..., description="Full URL to the image file")
 
@@ -62,8 +62,9 @@ class CountdownSchema(BaseModel):
 class MoyurenDetailResponse(BaseModel):
     """Response model for moyuren detail API."""
     date: str = Field(..., description="Image date in YYYY-MM-DD format")
-    updated: str = Field(..., description="Generation time in YYYY/MM/DD HH:MM:SS format")
+    updated: str = Field(..., description="Generation time in RFC3339 format (e.g., 2026-02-01T07:22:32+08:00)")
     updated_at: int = Field(..., description="Generation timestamp in milliseconds (13 digits)")
+    image: str = Field(..., description="Full URL to the image file")
     weekday: str = Field(..., description="Weekday in Chinese (e.g., 星期日)")
     lunar_date: str = Field(..., description="Lunar calendar date")
     fun_content: Optional[FunContentSchema] = Field(None, description="Fun content (joke, quote, etc.)")

@@ -20,7 +20,7 @@ from app.services.fun_content import FunContentService
 from app.services.holiday import HolidayService
 from app.services.kfc import KfcService
 from app.services.renderer import ImageRenderer
-from app.services.calendar import init_timezones, get_display_timezone, get_timezone_label
+from app.services.calendar import init_timezones, get_display_timezone
 
 
 async def main():
@@ -159,7 +159,7 @@ async def main():
         "timestamp": now.isoformat(),
         "filename": filename,
         # New time fields
-        "updated": now.strftime("%Y/%m/%d %H:%M:%S") + " " + get_timezone_label(),
+        "updated": now.isoformat(timespec='seconds'),
         "updated_at": int(now.timestamp() * 1000),
         # New content fields
         "weekday": date_info.get("week_cn", ""),

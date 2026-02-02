@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 
 from app.core.errors import ErrorCode, error_response
 from app.models.schemas import (
@@ -119,18 +119,79 @@ async def _read_state_file(state_path: Path, logger) -> tuple[dict | None, JSONR
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
-    required_fields = ["filename", "date"]
-    missing_fields = [f for f in required_fields if not state_data.get(f)]
+    required_fields = ["filename", "date", "updated", "updated_at"]
+    missing_fields = [f for f in required_fields if f not in state_data]
     if missing_fields:
-        logger.warning(f"State file missing required fields: {missing_fields}")
-        return None, JSONResponse(
-            content=error_response(
-                code=ErrorCode.STORAGE_NOT_FOUND,
-                message="No image available",
-                detail=f"State file missing required fields: {missing_fields}",
-            ),
-            status_code=status.HTTP_404_NOT_FOUND,
-        )
+        logger.warning(f"State file missing required fields: {missing_fields}, will regenerate")
+        return None, None  # Signal to regenerate
+
+    # Validate field values
+    try:
+        # Validate filename and date are non-empty strings
+        if not state_data.get("filename") or not state_data.get("date"):
+            logger.warning("State file has empty filename or date, will regenerate")
+            return None, None
+
+        # Validate updated is RFC3339 format
+        from datetime import datetime
+        updated_str = state_data.get("updated")
+        if not updated_str or not isinstance(updated_str, str):
+            logger.warning("State file has invalid updated field, will regenerate")
+            return None, None
+
+        # Try parsing RFC3339 format
+        try:
+            datetime.fromisoformat(updated_str)
+        except (ValueError, TypeError):
+            logger.warning(f"State file updated field not RFC3339 format: {updated_str}, will regenerate")
+            return None, None
+
+        # Validate updated_at is positive integer
+        updated_at = state_data.get("updated_at")
+        if not isinstance(updated_at, int) or updated_at <= 0:
+            logger.warning(f"State file updated_at is not positive integer: {updated_at}, will regenerate")
+            return None, None
+
+    except Exception as e:
+        logger.warning(f"State file validation error: {e}, will regenerate")
+        return None, None
+
+    return state_data, None
+
+
+async def _get_valid_state(request: Request, state_path: Path, logger) -> tuple[dict | None, JSONResponse | None]:
+    """Get valid state data, regenerating if necessary.
+
+    Returns:
+        Tuple of (state_data, error_response). If successful, error_response is None.
+    """
+    # Ensure state file exists
+    if error := await _ensure_state_file_exists(request, state_path, logger):
+        return None, error
+
+    # Read state file
+    state_data, error = await _read_state_file(state_path, logger)
+    if error:
+        return None, error
+
+    # If state_data is None (missing required fields), regenerate
+    if state_data is None:
+        logger.info("State file incompatible, triggering regeneration...")
+        state_path.unlink(missing_ok=True)
+        if error := await _ensure_state_file_exists(request, state_path, logger):
+            return None, error
+        state_data, error = await _read_state_file(state_path, logger)
+        if error:
+            return None, error
+        if state_data is None:
+            return None, JSONResponse(
+                content=error_response(
+                    code=ErrorCode.GENERATION_FAILED,
+                    message="Failed to regenerate image",
+                    detail="State file still incompatible after regeneration",
+                ),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     return state_data, None
 
@@ -145,7 +206,7 @@ async def get_moyuren(request: Request) -> JSONResponse:
 
     Returns simplified metadata of the latest generated image including:
     - date: Image date in YYYY-MM-DD format
-    - updated: Generation time in YYYY/MM/DD HH:MM:SS format
+    - updated: Generation time in RFC3339 format (e.g., 2026-02-01T07:22:32+08:00)
     - updated_at: Generation timestamp in milliseconds (13 digits)
     - image: Full URL to the image file
 
@@ -158,12 +219,8 @@ async def get_moyuren(request: Request) -> JSONResponse:
     config = request.app.state.config
     state_path = Path(config.paths.state_path)
 
-    # Ensure state file exists
-    if error := await _ensure_state_file_exists(request, state_path, logger):
-        return error
-
-    # Read state file
-    state_data, error = await _read_state_file(state_path, logger)
+    # Get valid state data (regenerates if incompatible)
+    state_data, error = await _get_valid_state(request, state_path, logger)
     if error:
         return error
 
@@ -197,8 +254,9 @@ async def get_moyuren_detail(request: Request) -> JSONResponse:
 
     Returns detailed content information including:
     - date: Image date in YYYY-MM-DD format
-    - updated: Generation time in YYYY/MM/DD HH:MM:SS format
+    - updated: Generation time in RFC3339 format (e.g., 2026-02-01T07:22:32+08:00)
     - updated_at: Generation timestamp in milliseconds (13 digits)
+    - image: Full URL to the image file
     - weekday: Weekday in Chinese (e.g., 星期日)
     - lunar_date: Lunar calendar date
     - fun_content: Fun content (joke, quote, etc.)
@@ -215,20 +273,22 @@ async def get_moyuren_detail(request: Request) -> JSONResponse:
     config = request.app.state.config
     state_path = Path(config.paths.state_path)
 
-    # Ensure state file exists
-    if error := await _ensure_state_file_exists(request, state_path, logger):
-        return error
-
-    # Read state file
-    state_data, error = await _read_state_file(state_path, logger)
+    # Get valid state data (regenerates if incompatible)
+    state_data, error = await _get_valid_state(request, state_path, logger)
     if error:
         return error
+
+    # Build full image URL
+    base_domain = config.server.base_domain.rstrip("/")
+    filename = state_data["filename"]
+    image_url = f"{base_domain}/static/{filename}"
 
     # Build response with detailed content
     response_data = {
         "date": state_data["date"],
         "updated": state_data["updated"],
         "updated_at": state_data["updated_at"],
+        "image": image_url,
         "weekday": state_data.get("weekday", ""),
         "lunar_date": state_data.get("lunar_date", ""),
         "fun_content": state_data.get("fun_content"),
@@ -241,4 +301,97 @@ async def get_moyuren_detail(request: Request) -> JSONResponse:
     return JSONResponse(
         content=response_data,
         status_code=status.HTTP_200_OK,
+    )
+
+
+@router.get(
+    "/moyuren/latest",
+    response_class=FileResponse,
+    responses={404: {"model": ErrorResponse}},
+)
+async def get_moyuren_latest(request: Request) -> FileResponse:
+    """Get the latest moyuren calendar image file directly.
+
+    Returns the actual JPEG image file instead of JSON metadata.
+    This endpoint is useful for embedding the image directly in HTML or markdown.
+
+    Raises:
+        404: If no image has been generated yet or image file not found.
+    """
+    logger = logging.getLogger(__name__)
+
+    # Get state file path from config
+    config = request.app.state.config
+    state_path = Path(config.paths.state_path)
+
+    # Get valid state data (regenerates if incompatible)
+    state_data, error = await _get_valid_state(request, state_path, logger)
+    if error:
+        return error
+
+    # Build image file path with security validation
+    static_dir = Path(config.paths.static_dir)
+    filename = state_data["filename"]
+
+    # Validate filename to prevent path traversal
+    if "/" in filename or "\\" in filename or ".." in filename:
+        logger.error(f"Invalid filename with path separators: {filename}")
+        return JSONResponse(
+            content=error_response(
+                code=ErrorCode.STORAGE_READ_FAILED,
+                message="Invalid filename",
+                detail="Filename contains invalid characters",
+            ),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    image_path = static_dir / filename
+
+    # Ensure resolved path is still within static_dir
+    try:
+        resolved_path = image_path.resolve()
+        resolved_static = static_dir.resolve()
+        if not str(resolved_path).startswith(str(resolved_static)):
+            logger.error(f"Path traversal attempt: {filename}")
+            return JSONResponse(
+                content=error_response(
+                    code=ErrorCode.STORAGE_READ_FAILED,
+                    message="Invalid file path",
+                    detail="File path is outside static directory",
+                ),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+    except (OSError, ValueError) as e:
+        logger.error(f"Failed to resolve path: {e}")
+        return JSONResponse(
+            content=error_response(
+                code=ErrorCode.STORAGE_READ_FAILED,
+                message="Invalid file path",
+                detail=str(e),
+            ),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Check if image file exists and is a regular file
+    if not image_path.is_file():
+        logger.error(f"Image file not found or not a regular file: {image_path}")
+        return JSONResponse(
+            content=error_response(
+                code=ErrorCode.STORAGE_NOT_FOUND,
+                message="Image file not found",
+                detail=f"File {filename} does not exist or is not a regular file",
+            ),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    logger.info(f"Serving latest moyuren image: {filename}")
+    return FileResponse(
+        path=image_path,
+        media_type="image/jpeg",
+        filename=filename,
+        headers={
+            "Cache-Control": "no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
     )

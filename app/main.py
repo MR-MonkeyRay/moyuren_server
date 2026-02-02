@@ -133,10 +133,32 @@ async def lifespan(app: FastAPI):
     app.state.scheduler = scheduler
     logger.info("Scheduler started")
 
-    # 6. Generate initial image if none exists
+    # 6. Validate and generate initial image if needed
     state_path = Path(config.paths.state_path)
+    need_regenerate = False
+
     if not state_path.exists():
-        logger.info("No existing image found, generating initial image...")
+        logger.info("No existing state file found")
+        need_regenerate = True
+    else:
+        # Validate state file content
+        try:
+            import json
+            with state_path.open("r", encoding="utf-8") as f:
+                state_data = json.load(f)
+            required_fields = ["filename", "date", "updated", "updated_at"]
+            missing_fields = [f for f in required_fields if f not in state_data]
+            if missing_fields:
+                logger.warning(f"State file missing required fields: {missing_fields}")
+                need_regenerate = True
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"State file invalid or unreadable: {e}")
+            need_regenerate = True
+
+    if need_regenerate:
+        logger.info("Generating initial image...")
+        # Remove invalid state file if exists
+        state_path.unlink(missing_ok=True)
         try:
             await generate_and_save_image(app)
         except Exception as e:

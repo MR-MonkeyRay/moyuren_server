@@ -4,7 +4,7 @@
 
 ## 预览
 
-![摸鱼日历预览](assets/preview.jpg)
+![摸鱼日历预览](https://api.monkeyray.net/api/v1/moyuren/latest)
 
 ## api体验
 
@@ -60,6 +60,7 @@ sudo chown -R 1000:1000 static state logs
 | GET | `/healthz` | 健康检查 |
 | GET | `/api/v1/moyuren` | 获取图片元信息（精简版） |
 | GET | `/api/v1/moyuren/detail` | 获取图片内容详情 |
+| GET | `/api/v1/moyuren/latest` | 直接获取最新图片文件（JPEG） |
 | GET | `/static/{filename}` | 静态图片文件 |
 
 > 注：当无可用图片时，API 会自动触发按需生成，请求会等待生成完成后返回结果（最长等待 60 秒）。
@@ -71,7 +72,7 @@ sudo chown -R 1000:1000 static state logs
 ```json
 {
   "date": "2026-02-01",
-  "updated": "2026/02/01 07:22:32",
+  "updated": "2026-02-01T07:22:32+08:00",
   "updated_at": 1738372952000,
   "image": "https://api.monkeyray.net/static/moyuren_20260201_072232.jpg"
 }
@@ -80,17 +81,28 @@ sudo chown -R 1000:1000 static state logs
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
 | `date` | string | 图片日期 (YYYY-MM-DD) |
-| `updated` | string | 生成时间 (YYYY/MM/DD HH:MM:SS) |
+| `updated` | string | 生成时间 (RFC3339 格式，如 2026-02-01T07:22:32+08:00) |
 | `updated_at` | number | 生成时间戳（13 位毫秒） |
 | `image` | string | 图片完整 URL |
+
+#### GET /api/v1/moyuren/latest - 直接获取图片
+
+直接返回最新生成的 JPEG 图片文件，适用于：
+
+- 在 HTML 中使用 `<img>` 标签直接嵌入
+- 在 Markdown 中使用 `![](https://api.monkeyray.net/api/v1/moyuren/latest)` 显示
+- 需要直接下载图片的场景
+
+**响应**：`image/jpeg` 格式的二进制图片数据
 
 #### GET /api/v1/moyuren/detail - 内容详情
 
 ```json
 {
   "date": "2026-02-01",
-  "updated": "2026/02/01 07:22:32",
+  "updated": "2026-02-01T07:22:32+08:00",
   "updated_at": 1738372952000,
+  "image": "https://api.monkeyray.net/static/moyuren_20260201_072232.jpg",
   "weekday": "星期日",
   "lunar_date": "正月初四",
   "fun_content": {
@@ -109,8 +121,9 @@ sudo chown -R 1000:1000 static state logs
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
 | `date` | string | 图片日期 (YYYY-MM-DD) |
-| `updated` | string | 生成时间 (YYYY/MM/DD HH:MM:SS) |
+| `updated` | string | 生成时间 (RFC3339 格式，如 2026-02-01T07:22:32+08:00) |
 | `updated_at` | number | 生成时间戳（13 位毫秒） |
+| `image` | string | 图片完整 URL |
 | `weekday` | string | 星期几（中文） |
 | `lunar_date` | string | 农历日期 |
 | `fun_content` | object | 趣味内容（type: dad_joke/hitokoto/duanzi/moyu_quote） |
