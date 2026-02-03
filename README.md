@@ -236,7 +236,7 @@ sudo chown -R 1000:1000 static state logs
 | `render.viewport_width` | `RENDER_VIEWPORT_WIDTH` | 视口宽度 |
 | `render.viewport_height` | `RENDER_VIEWPORT_HEIGHT` | 视口最小高度 |
 | `render.device_scale_factor` | `RENDER_DEVICE_SCALE_FACTOR` | 缩放因子 |
-| `render.use_china_cdn` | - | 字体 CDN 开关（true: googleapis.cn, false: googleapis.com） |
+| `render.use_china_cdn` | `RENDER_USE_CHINA_CDN` | 字体 CDN 开关（true: 大陆 CDN googleapis.cn, false: 国际 CDN googleapis.com） |
 | `cache.ttl_hours` | `CACHE_TTL_HOURS` | 缓存保留时长 |
 | `logging.level` | `LOG_LEVEL` | 日志级别 |
 | `holiday.mirror_urls` | `HOLIDAY_MIRROR_URLS` | GitHub 代理镜像站（逗号分隔） |
@@ -267,7 +267,7 @@ render:
   # 字体 CDN 配置
   # true: 使用大陆 CDN (fonts.googleapis.cn)
   # false: 使用国际 CDN (fonts.googleapis.com)
-  use_china_cdn: true
+  use_china_cdn: false
 
 holiday:
   # GitHub 代理镜像站前缀列表
