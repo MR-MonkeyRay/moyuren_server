@@ -80,6 +80,7 @@ class RenderConfig(BaseModel):
     viewport_height: int = 1123
     device_scale_factor: int = 2
     jpeg_quality: int = 90
+    use_china_cdn: bool = True
 
     @field_validator("viewport_width", "viewport_height", "device_scale_factor", "jpeg_quality")
     @classmethod
@@ -285,6 +286,9 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
                 data["render"]["jpeg_quality"] = int(jpeg_quality)
             except ValueError:
                 raise ValueError(f"Invalid RENDER_JPEG_QUALITY value: {jpeg_quality}")
+
+        if use_china_cdn := os.getenv("RENDER_USE_CHINA_CDN"):
+            data["render"]["use_china_cdn"] = use_china_cdn.lower() in ("true", "1", "yes")
 
     # Logging configuration
     if "logging" in data:

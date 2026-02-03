@@ -101,8 +101,8 @@ def normalize_datetime(value: str, default_tz: timezone | None = None) -> str | 
             tz_offset = timedelta(hours=sign * hours, minutes=sign * minutes)
             clean_value = value[:offset_match.start()].strip()
         else:
-            # 匹配时区缩写（如 CST, EST, GMT）
-            abbr_match = re.search(r'\b([A-Z]{2,5})\s*$', value)
+            # 匹配时区缩写（如 CST, EST, GMT）- 不区分大小写
+            abbr_match = re.search(r'\b([A-Za-z]{2,5})\s*$', value, re.IGNORECASE)
             if abbr_match:
                 abbr = abbr_match.group(1).upper()
                 if abbr in _TIMEZONE_ABBR_MAP:
@@ -117,6 +117,13 @@ def normalize_datetime(value: str, default_tz: timezone | None = None) -> str | 
         "%Y-%m-%dT%H:%M",
         "%Y/%m/%d %H:%M:%S",
         "%Y/%m/%d %H:%M",
+        # 增加更多常见格式
+        "%Y-%m-%d %H:%M:%S.%f",  # 带毫秒
+        "%Y/%m/%d %H:%M:%S.%f",  # 带毫秒（斜杠分隔）
+        "%Y%m%d %H:%M:%S",       # 无分隔符日期
+        "%Y%m%d%H%M%S",          # 完全无分隔符
+        "%d/%m/%Y %H:%M:%S",     # 日/月/年格式
+        "%d-%m-%Y %H:%M:%S",     # 日-月-年格式
     ]
 
     for pattern in datetime_patterns:
@@ -171,17 +178,32 @@ class DataComputer:
         # 使用业务时区的当前时间（用于节假日/节气/周末判断）
         now = now_business()
 
+        # 计算各模块数据
+        news_list = self._compute_news_list(raw_data)
+        stock_indices = self._compute_stock_indices(raw_data)
+        holidays = self._compute_holidays(now, raw_data)
+        history = self._compute_history(raw_data)
+
+        # 检测降级模式：当多个外部数据源都失败时
+        is_fallback_mode = (
+            news_list == self._DEFAULT_NEWS  # 新闻使用默认值
+            and (stock_indices is None or stock_indices.get("is_data_missing"))  # 股票数据缺失
+            and history.get("content") == self._DEFAULT_HISTORY  # 趣味内容使用默认值
+        )
+
         return {
             "date": self._compute_date(now),
             "weekend": self._compute_weekend(now),
             "solar_term": self._compute_solar_term(now),
             "guide": self._compute_guide(now),
-            "history": self._compute_history(raw_data),
-            "news_list": self._compute_news_list(raw_data),
+            "history": history,
+            "news_list": news_list,
             "news_meta": self._compute_news_meta(raw_data),
-            "holidays": self._compute_holidays(now, raw_data),
+            "holidays": holidays,
             "kfc_content": self._compute_kfc(now, raw_data),
-            "stock_indices": self._compute_stock_indices(raw_data),
+            "stock_indices": stock_indices,
+            # 降级模式标志
+            "is_fallback_mode": is_fallback_mode,
             # 项目元信息
             "version": f"v{__version__}",
             "github_url": __github_url__,
@@ -197,11 +219,31 @@ class DataComputer:
             Dictionary with stock indices or None.
         """
         data = raw_data.get("stock_indices")
-        if not data or not data.get("items"):
-            return None
+        # 增加类型校验
+        if not isinstance(data, dict):
+            # 数据完全缺失，返回带标志的空结构
+            return {
+                "indices": [],
+                "updated": None,
+                "is_stale": False,
+                "is_data_missing": True,  # 标记数据获取失败
+            }
+
+        items_raw = data.get("items")
+        if not isinstance(items_raw, list):
+            return {
+                "indices": [],
+                "updated": None,
+                "is_stale": False,
+                "is_data_missing": True,
+            }
 
         items = []
-        for item in data["items"]:
+        for item in items_raw:
+            # 过滤非字典元素
+            if not isinstance(item, dict):
+                continue
+
             # Format price with proper decimal places and type safety
             price = item.get("price")
             if price is not None:
@@ -223,19 +265,29 @@ class DataComputer:
             else:
                 change_pct_str = "--"
 
+            # 布尔类型字段规范化
+            is_trading_day_raw = item.get("is_trading_day", True)
+            if isinstance(is_trading_day_raw, str):
+                is_trading_day = is_trading_day_raw.lower() not in ["false", "0", ""]
+            elif isinstance(is_trading_day_raw, (int, float)):
+                is_trading_day = bool(is_trading_day_raw)
+            else:
+                is_trading_day = bool(is_trading_day_raw)
+
             items.append({
-                "name": item.get("name", ""),
+                "name": item.get("name") or "",
                 "price": price_str,
                 "change_pct": change_pct_str,
-                "trend": item.get("trend", "flat"),
-                "market": item.get("market", ""),
-                "is_trading_day": item.get("is_trading_day", True),
+                "trend": item.get("trend") or "flat",
+                "market": item.get("market") or "",
+                "is_trading_day": is_trading_day,
             })
 
         return {
             "indices": items,
             "updated": data.get("updated"),
             "is_stale": data.get("is_stale", False),
+            "is_data_missing": False,  # 数据正常获取
         }
 
     def _compute_kfc(self, now: datetime, raw_data: dict[str, Any]) -> dict[str, Any] | None:
@@ -252,6 +304,7 @@ class DataComputer:
         if now.weekday() == 3:
             content = raw_data.get("kfc_copy")
             if content:
+                # 不截断文案，页面自适应内容高度
                 return {
                     "title": "CRAZY THURSDAY",
                     "sub_title": "V我50",
@@ -351,8 +404,8 @@ class DataComputer:
         fun_content = raw_data.get("fun_content")
         if fun_content and isinstance(fun_content, dict):
             return {
-                "title": fun_content.get("title", "🐟 摸鱼小贴士"),
-                "content": fun_content.get("content", self._DEFAULT_HISTORY)
+                "title": fun_content.get("title") or "🐟 摸鱼小贴士",
+                "content": fun_content.get("content") or self._DEFAULT_HISTORY
             }
         return {"title": "🐟 摸鱼小贴士", "content": self._DEFAULT_HISTORY}
 
@@ -405,9 +458,9 @@ class DataComputer:
                 # 规范化为 RFC3339 格式
                 normalized_updated = normalize_datetime(updated_str) if updated_str else None
                 return {
-                    "date": data.get("date"),
+                    "date": data.get("date") or "",
                     "updated": normalized_updated,
-                    "updated_at": data.get("updated_at") or data.get("api_updated_at"),
+                    "updated_at": data.get("updated_at") or data.get("api_updated_at") or "",
                 }
         return {}
 
@@ -426,20 +479,58 @@ class DataComputer:
 
         # 获取三种数据源
         legal_holidays = raw_data.get("holidays", [])
+
+        # CalendarService 返回值校验
         solar_festivals = CalendarService.get_upcoming_solar_festivals(today)
+        if not isinstance(solar_festivals, list):
+            solar_festivals = []
+
         lunar_festivals = CalendarService.get_upcoming_lunar_festivals(today)
+        if not isinstance(lunar_festivals, list):
+            lunar_festivals = []
 
         # 使用名称作为主键去重（法定假日优先）
         name_map: dict[str, dict[str, Any]] = {}
+
+        # 特殊节假日名称简化映射
+        # 用于处理地方性节假日等超长名称
+        special_name_simplify = {
+            "广西壮族自治区三月三": "三月三",
+            "西藏百万农奴解放纪念日": "农奴解放日",
+            "新疆肉孜节": "肉孜节",
+            "新疆古尔邦节": "古尔邦节",
+            "宁夏开斋节": "开斋节",
+            "宁夏古尔邦节": "古尔邦节",
+        }
+
+        def simplify_holiday_name(name: str) -> str:
+            """简化节假日名称，处理超长的地方性节假日名称."""
+            # 先检查特殊映射
+            if name in special_name_simplify:
+                return special_name_simplify[name]
+            # 通用规则：去除省份/自治区前缀
+            prefixes = [
+                "广西壮族自治区", "新疆维吾尔自治区", "西藏自治区",
+                "内蒙古自治区", "宁夏回族自治区", "新疆", "西藏",
+                "内蒙古", "宁夏", "广西",
+            ]
+            for prefix in prefixes:
+                if name.startswith(prefix):
+                    simplified = name[len(prefix):]
+                    if simplified:  # 确保简化后不为空
+                        return simplified
+            return name
 
         # 先加入法定假日（优先级最高）
         if legal_holidays and isinstance(legal_holidays, list):
             for h in legal_holidays:
                 if not isinstance(h, dict):
                     continue
-                name = h.get("name", "")
+                raw_name = h.get("name", "")
                 start_date = h.get("start_date", "")
-                if name and start_date:
+                if raw_name and start_date:
+                    # 简化节假日名称
+                    name = simplify_holiday_name(raw_name)
                     # 确保 duration 和 days_left 为 int 类型
                     try:
                         duration = int(h.get("duration", 1))
@@ -449,15 +540,23 @@ class DataComputer:
                         days_left = int(h.get("days_left", 0))
                     except (TypeError, ValueError):
                         days_left = 0
+
+                    # 布尔类型字段规范化
+                    is_off_day_raw = h.get("is_off_day", True)
+                    if isinstance(is_off_day_raw, str):
+                        is_off_day = is_off_day_raw.lower() not in ["false", "0", ""]
+                    else:
+                        is_off_day = bool(is_off_day_raw) if is_off_day_raw is not None else True
+
                     name_map[name] = {
                         "name": name,
                         "start_date": start_date,
-                        "end_date": h.get("end_date", start_date),
+                        "end_date": h.get("end_date") or start_date,
                         "duration": duration,
                         "days_left": days_left,
                         "is_legal_holiday": True,
                         "color": "#E67E22",
-                        "is_off_day": h.get("is_off_day", True),
+                        "is_off_day": is_off_day,
                     }
 
         # 检查名称是否与已有法定假日重复（基于核心词匹配）
@@ -495,14 +594,28 @@ class DataComputer:
 
         # 加入农历节日（如果该名称没有法定假日）
         for f in lunar_festivals:
-            name = f["name"]
+            if not isinstance(f, dict):
+                continue
+            name = f.get("name")
+            solar_date = f.get("solar_date")
+            days_left = f.get("days_left")
+            # 检查必需字段
+            if not name or not solar_date or days_left is None:
+                continue
+
+            # 确保 days_left 为 int 类型
+            try:
+                days_left = int(days_left)
+            except (TypeError, ValueError):
+                continue
+
             if name not in name_map and not is_duplicate_name(name):
                 name_map[name] = {
                     "name": name,
-                    "start_date": f["solar_date"],
-                    "end_date": f["solar_date"],
+                    "start_date": solar_date,
+                    "end_date": solar_date,
                     "duration": 1,
-                    "days_left": f["days_left"],
+                    "days_left": days_left,
                     "is_legal_holiday": False,
                     "color": None,
                     "is_off_day": True,
@@ -510,14 +623,28 @@ class DataComputer:
 
         # 加入公历节日（如果该名称没有）
         for f in solar_festivals:
-            name = f["name"]
+            if not isinstance(f, dict):
+                continue
+            name = f.get("name")
+            solar_date = f.get("solar_date")
+            days_left = f.get("days_left")
+            # 检查必需字段
+            if not name or not solar_date or days_left is None:
+                continue
+
+            # 确保 days_left 为 int 类型
+            try:
+                days_left = int(days_left)
+            except (TypeError, ValueError):
+                continue
+
             if name not in name_map and not is_duplicate_name(name):
                 name_map[name] = {
                     "name": name,
-                    "start_date": f["solar_date"],
-                    "end_date": f["solar_date"],
+                    "start_date": solar_date,
+                    "end_date": solar_date,
                     "duration": 1,
-                    "days_left": f["days_left"],
+                    "days_left": days_left,
                     "is_legal_holiday": False,
                     "color": None,
                     "is_off_day": True,

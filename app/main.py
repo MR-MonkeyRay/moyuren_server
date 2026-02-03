@@ -1,5 +1,6 @@
 """Moyuren API application entry point."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -110,6 +111,7 @@ async def lifespan(app: FastAPI):
     app.state.stock_index_service = stock_index_service
     app.state.image_renderer = image_renderer
     app.state.cache_cleaner = cache_cleaner
+    app.state.is_refreshing = False  # Initialize background refresh lock
 
     # 5. Initialize and start scheduler
     scheduler = TaskScheduler(config.scheduler, logger)
@@ -143,6 +145,7 @@ async def lifespan(app: FastAPI):
     # 6. Validate and generate initial image if needed
     state_path = Path(config.paths.state_path)
     need_regenerate = False
+    cache_is_valid_but_expired = False  # Track if cache is structurally valid but just expired
 
     if not state_path.exists():
         logger.info("No existing state file found")
@@ -151,6 +154,7 @@ async def lifespan(app: FastAPI):
         # Validate state file content
         try:
             import json
+            import time
             with state_path.open("r", encoding="utf-8") as f:
                 state_data = json.load(f)
             required_fields = ["filename", "date", "updated", "updated_at"]
@@ -158,18 +162,97 @@ async def lifespan(app: FastAPI):
             if missing_fields:
                 logger.warning(f"State file missing required fields: {missing_fields}")
                 need_regenerate = True
+            else:
+                # Check cache expiration
+                try:
+                    updated_at_ms = state_data.get("updated_at")
+                    if updated_at_ms is None:
+                        logger.warning("State file missing 'updated_at' field")
+                        need_regenerate = True
+                    # Validate updated_at type and range
+                    elif not isinstance(updated_at_ms, (int, float)):
+                        logger.warning(f"Invalid updated_at type: {type(updated_at_ms).__name__}, expected int or float")
+                        need_regenerate = True
+                    elif updated_at_ms < 0:
+                        logger.warning(f"Invalid updated_at value: {updated_at_ms} (negative timestamp)")
+                        need_regenerate = True
+                    else:
+                        current_time_ms = int(time.time() * 1000)
+
+                        # Check if updated_at is in the future (allow 1 minute tolerance for clock skew)
+                        if updated_at_ms > current_time_ms + 60000:
+                            logger.warning(f"Invalid updated_at value: {updated_at_ms} (future timestamp)")
+                            need_regenerate = True
+                        else:
+                            age_hours = max((current_time_ms - updated_at_ms) / (1000 * 3600), 0)
+
+                            # Validate TTL configuration and use default if invalid
+                            ttl_hours = config.cache.ttl_hours
+                            if not isinstance(ttl_hours, (int, float)) or ttl_hours <= 0:
+                                ttl_hours = 24  # Use default value
+                                logger.warning(f"Invalid cache TTL configuration: {config.cache.ttl_hours}, using default: {ttl_hours} hours")
+
+                            if age_hours > ttl_hours:
+                                logger.info(f"Cache expired: {age_hours:.1f} hours old, TTL is {ttl_hours} hours")
+                                need_regenerate = True
+                                cache_is_valid_but_expired = True  # Mark as valid structure, just expired
+                except (TypeError, ValueError, KeyError) as e:
+                    logger.warning(f"Failed to check cache expiration: {e}")
+                    need_regenerate = True
         except (json.JSONDecodeError, OSError) as e:
             logger.warning(f"State file invalid or unreadable: {e}")
             need_regenerate = True
 
     if need_regenerate:
-        logger.info("Generating initial image...")
-        # Remove invalid state file if exists
-        state_path.unlink(missing_ok=True)
-        try:
-            await generate_and_save_image(app)
-        except Exception as e:
-            logger.error(f"Initial image generation failed: {e}")
+        if cache_is_valid_but_expired:
+            # Strategy: Async background refresh (cache is valid but expired)
+            # User can temporarily use stale data, fast startup
+            logger.info("Cache expired but valid, triggering background refresh...")
+
+            async def _background_refresh():
+                """Background task wrapper with error handling and single-flight."""
+                if app.state.is_refreshing:
+                    logger.info("Background refresh already in progress, skipping")
+                    return
+                app.state.is_refreshing = True
+                try:
+                    await generate_and_save_image(app)
+                    logger.info("Background refresh completed successfully")
+                except asyncio.CancelledError:
+                    logger.info("Background refresh cancelled due to shutdown")
+                    raise
+                except Exception as e:
+                    logger.error(f"Background refresh failed: {e}")
+                    logger.warning("Stale cache will be used until next scheduled refresh")
+                finally:
+                    app.state.is_refreshing = False
+
+            task = asyncio.create_task(_background_refresh())
+            app.state.background_refresh_task = task  # Save reference for shutdown
+            logger.info("Background refresh task created, service starting immediately")
+        else:
+            # Strategy: Sync generation (cache is missing or invalid)
+            # Must generate now to ensure data availability
+            if state_path.exists():
+                # Invalid cache exists, remove it before regenerating
+                logger.info("Removing invalid cache file...")
+                try:
+                    if state_path.is_file():
+                        state_path.unlink()
+                    elif state_path.is_dir():
+                        logger.error(f"State path is a directory, not a file: {state_path}")
+                        import shutil
+                        shutil.rmtree(state_path)
+                except (OSError, IsADirectoryError) as e:
+                    logger.error(f"Failed to remove invalid cache: {e}")
+
+            logger.info("No valid cache found, generating initial image...")
+            try:
+                await generate_and_save_image(app)
+                logger.info("Initial image generated successfully")
+            except Exception as e:
+                logger.error(f"Initial image generation failed: {e}")
+                logger.warning("Service will start without cache, API will trigger on-demand generation")
 
     logger.info("Moyuren API started successfully")
 
@@ -177,6 +260,17 @@ async def lifespan(app: FastAPI):
 
     # ==================== Shutdown ====================
     logger.info("Shutting down Moyuren API...")
+
+    # Cancel background refresh task if running
+    if hasattr(app.state, "background_refresh_task"):
+        task = app.state.background_refresh_task
+        if not task.done():
+            logger.info("Cancelling background refresh task...")
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
     # Stop scheduler
     if hasattr(app.state, "scheduler"):

@@ -16,6 +16,10 @@ https://api.monkeyray.net/api/v1/moyuren
 
 - 每日定时生成摸鱼日历图片（支持多时间点）
 - 按需生成：启动时或请求时若无可用图片则自动生成
+- 智能缓存管理：
+  - 启动时自动检查缓存有效性（基于 TTL 配置）
+  - 混合更新策略：缓存过期时后台异步刷新（快速启动），无缓存时同步生成
+  - 自动清理过期缓存文件
 - 60 秒读懂世界新闻
   - 数据源：[60s-api](https://60s.viki.moe)
 - 农历信息与节气（干支年、生肖、二十四节气）
@@ -232,6 +236,7 @@ sudo chown -R 1000:1000 static state logs
 | `render.viewport_width` | `RENDER_VIEWPORT_WIDTH` | 视口宽度 |
 | `render.viewport_height` | `RENDER_VIEWPORT_HEIGHT` | 视口最小高度 |
 | `render.device_scale_factor` | `RENDER_DEVICE_SCALE_FACTOR` | 缩放因子 |
+| `render.use_china_cdn` | `RENDER_USE_CHINA_CDN` | 字体 CDN 开关（true: 大陆 CDN googleapis.cn, false: 国际 CDN googleapis.com） |
 | `cache.ttl_hours` | `CACHE_TTL_HOURS` | 缓存保留时长 |
 | `logging.level` | `LOG_LEVEL` | 日志级别 |
 | `holiday.mirror_urls` | `HOLIDAY_MIRROR_URLS` | GitHub 代理镜像站（逗号分隔） |
@@ -259,6 +264,10 @@ render:
   viewport_height: 1123
   device_scale_factor: 3
   jpeg_quality: 100
+  # 字体 CDN 配置
+  # true: 使用大陆 CDN (fonts.googleapis.cn)
+  # false: 使用国际 CDN (fonts.googleapis.com)
+  use_china_cdn: false
 
 holiday:
   # GitHub 代理镜像站前缀列表
