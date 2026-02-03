@@ -80,6 +80,7 @@ class RenderConfig(BaseModel):
     viewport_height: int = 1123
     device_scale_factor: int = 2
     jpeg_quality: int = 90
+    use_china_cdn: bool = True  # 是否使用大陆 CDN (fonts.loli.net)
 
     @field_validator("viewport_width", "viewport_height", "device_scale_factor", "jpeg_quality")
     @classmethod

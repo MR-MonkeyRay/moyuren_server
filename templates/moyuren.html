@@ -4,10 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>摸鱼日历 {{ date.year_month }} - 杂志风格版</title>
-    <!-- Google Fonts: 思源黑体(正文) + 霞鹜文楷(标题) + Poppins(数字/英文) - 使用国内镜像 -->
-    <link rel="preconnect" href="https://fonts.loli.net">
-    <link rel="preconnect" href="https://gstatic.loli.net" crossorigin>
-    <link href="https://fonts.loli.net/css2?family=JetBrains+Mono:wght@500;600;700&family=LXGW+WenKai:wght@400;700&family=Noto+Sans+SC:wght@400;500;700;900&family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- Google Fonts: 思源黑体(正文) + 霞鹜文楷(标题) + Poppins(数字/英文) -->
+    {% if use_china_cdn %}
+    <!-- 大陆 CDN: fonts.googleapis.cn -->
+    <link rel="preconnect" href="https://fonts.googleapis.cn" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic.cn" crossorigin>
+    <link href="https://fonts.googleapis.cn/css2?family=JetBrains+Mono:wght@500;600;700&family=LXGW+WenKai:wght@400;700&family=Noto+Sans+SC:wght@400;500;700;900&family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    {% else %}
+    <!-- 国际 CDN: fonts.googleapis.com -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700&family=LXGW+WenKai:wght@400;700&family=Noto+Sans+SC:wght@400;500;700;900&family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    {% endif %}
     <style>
         :root {
             /* 莫兰迪/杂志风配色 */
@@ -38,10 +46,10 @@
             --card-radius: 16px;
             --spacing: 16px;
 
-            /* 字体系统 */
-            --font-body: 'Noto Sans SC', 'PingFang SC', 'Helvetica Neue', sans-serif;
-            --font-title: 'LXGW WenKai', 'STKaiti', 'KaiTi', serif;
-            --font-number: 'Poppins', 'Helvetica Neue', sans-serif;
+            /* 字体系统 - 增加系统字体作为后备，确保 CDN 失败时仍能正常显示 */
+            --font-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', 'WenQuanYi Micro Hei', 'Helvetica Neue', Arial, sans-serif;
+            --font-title: 'LXGW WenKai', 'STKaiti', 'KaiTi', 'SimKai', 'FangSong', serif;
+            --font-number: 'Poppins', 'JetBrains Mono', 'SF Mono', 'Consolas', 'Helvetica Neue', Arial, sans-serif;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -51,7 +59,7 @@
             white-space: nowrap;
             overflow: hidden;
         }
-        .news-text, .history-content, .kfc-body {
+        .news-text, .history-content, .kfc-body, .h-date, .fallback-desc {
             overflow-wrap: break-word;
             word-break: break-word;
         }
@@ -326,6 +334,9 @@
             display: flex;
             align-items: center;
             text-align: justify;
+            /* 高度限制，防止超长内容 */
+            max-height: 120px;
+            overflow: hidden;
         }
         .joke-tag { font-size: 14px; color: #aaa; margin-top: auto; text-align: right; font-style: italic; }
 
@@ -378,6 +389,54 @@
             font-size: 10px;
             color: var(--text-light);
             font-family: var(--font-number);
+        }
+
+        /* 空状态样式 */
+        .news-empty, .holiday-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 16px;
+            color: var(--text-light);
+        }
+        .news-empty .empty-icon, .holiday-empty .empty-icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+            opacity: 0.8;
+        }
+        .news-empty .empty-text, .holiday-empty .empty-text {
+            font-size: 14px;
+            color: #999;
+        }
+
+        /* 降级模式横幅 */
+        .fallback-banner {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+            border-radius: 12px;
+            border: 1px solid #ffcc80;
+            margin-bottom: var(--spacing);
+        }
+        .fallback-icon {
+            font-size: 28px;
+            flex-shrink: 0;
+        }
+        .fallback-text {
+            flex: 1;
+        }
+        .fallback-title {
+            font-size: 15px;
+            font-weight: bold;
+            color: #e65100;
+            margin-bottom: 2px;
+        }
+        .fallback-desc {
+            font-size: 12px;
+            color: #ff8f00;
         }
 
         /* 右侧列容器 */
@@ -740,10 +799,10 @@
             line-height: 1.5;
             color: #555;
             text-align: justify;
-            /* 移除高度限制，完整显示内容 */
             font-style: italic;
             white-space: pre-wrap;
             word-break: break-word;
+            /* 自适应内容高度，不截断 */
         }
 
         /* 响应式布局 - 移动端适配 */
@@ -844,6 +903,17 @@
             </div>
         </div>
 
+        <!-- 降级模式提示横幅 -->
+        {% if is_fallback_mode %}
+        <div class="fallback-banner" role="alert">
+            <span class="fallback-icon">🌐</span>
+            <div class="fallback-text">
+                <div class="fallback-title">网线被挖断了</div>
+                <div class="fallback-desc">数据获取失败，但摸鱼不能停！以下为离线内容</div>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- 第三排：新闻与假期 -->
         <div class="row-main">
             <div class="box news-card">
@@ -851,6 +921,11 @@
                 <ul class="news-list" id="news-list">
                     {% for item in news_list %}
                     <li class="news-item"><span class="news-num">{{ item.num }}</span><span class="news-text">{{ item.text }}</span></li>
+                    {% else %}
+                    <li class="news-empty">
+                        <span class="empty-icon">📭</span>
+                        <span class="empty-text">今日无大事，专心摸鱼</span>
+                    </li>
                     {% endfor %}
                 </ul>
                 {% if news_meta and news_meta.updated %}
@@ -886,9 +961,15 @@
                     {% endif %}
                     {% else %}
                     <div class="market-closed">
+                        {% if stock_indices and stock_indices.is_data_missing %}
+                        <span class="market-closed-icon" role="img" aria-label="警告">⚠️</span>
+                        <div class="market-closed-text">数据更新失败</div>
+                        <div class="market-closed-desc">请稍后再试</div>
+                        {% else %}
                         <span class="market-closed-icon" role="img" aria-label="咖啡">☕️</span>
                         <div class="market-closed-text">今日休市</div>
                         <div class="market-closed-desc">抛开K线，享受生活</div>
+                        {% endif %}
                     </div>
                     {% endif %}
                 </div>
@@ -924,6 +1005,11 @@
                                 <div class="h-unit">DAYS</div>
                                 {% endif %}
                             </div>
+                        </div>
+                        {% else %}
+                        <div class="holiday-empty">
+                            <span class="empty-icon">📅</span>
+                            <span class="empty-text">暂无假期数据</span>
                         </div>
                         {% endfor %}
                     </div>

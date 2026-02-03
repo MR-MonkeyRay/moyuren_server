@@ -8,22 +8,67 @@ from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, TemplateError
+from markupsafe import Markup, escape
 from playwright.async_api import async_playwright
 from app.core.config import RenderConfig
 from app.core.errors import RenderError
 
 
-def format_datetime(value: str) -> str:
-    """Format RFC3339 datetime to friendly display format."""
+def format_datetime(value: str | datetime | int | float | None) -> str:
+    """Format RFC3339 datetime to friendly display format.
+
+    Supports:
+    - RFC3339 strings (e.g., "2026-02-01T07:22:32+08:00")
+    - datetime objects
+    - Unix timestamps (int/float, excluding bool)
+    - None or invalid values (returns "--")
+    """
+    # 处理 None
+    if value is None:
+        return "--"
+
+    # 处理 datetime 对象
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M")
+
+    # 处理数字（时间戳），排除 bool（bool 是 int 的子类）
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            dt = datetime.fromtimestamp(value)
+            return dt.strftime("%Y-%m-%d %H:%M")
+        except (ValueError, OSError):
+            return "--"
+
+    # 处理字符串
+    if isinstance(value, str):
+        if not value.strip():
+            return "--"
+        try:
+            # Handle 'Z' suffix (UTC timezone indicator)
+            normalized = value.replace("Z", "+00:00") if value.endswith("Z") else value
+            dt = datetime.fromisoformat(normalized)
+            return dt.strftime("%Y-%m-%d %H:%M")
+        except (ValueError, TypeError):
+            return "--"
+
+    # 其他类型
+    return "--"
+
+
+def nl2br(value: str | None) -> Markup:
+    """Convert newlines to HTML <br> tags.
+
+    Args:
+        value: Text with newlines.
+
+    Returns:
+        Markup object with <br> tags (safe for HTML output).
+    """
     if not value:
-        return "--"
-    try:
-        # Handle 'Z' suffix (UTC timezone indicator)
-        normalized = value.replace("Z", "+00:00") if value.endswith("Z") else value
-        dt = datetime.fromisoformat(normalized)
-        return dt.strftime("%Y-%m-%d %H:%M")
-    except (ValueError, TypeError):
-        return "--"
+        return Markup("")
+    # 先转义 HTML 特殊字符，再将换行转为 <br>
+    escaped = escape(str(value))
+    return Markup(str(escaped).replace("\n", "<br>\n"))
 
 
 class ImageRenderer:
@@ -52,10 +97,14 @@ class ImageRenderer:
         # Ensure static directory exists
         self.static_dir.mkdir(parents=True, exist_ok=True)
 
-        # Setup Jinja2 environment
+        # Setup Jinja2 environment with autoescape for XSS protection
         template_dir = str(Path(template_path).parent)
-        self.jinja_env = Environment(loader=FileSystemLoader(template_dir))
+        self.jinja_env = Environment(
+            loader=FileSystemLoader(template_dir),
+            autoescape=True,  # 启用自动转义，防止 XSS
+        )
         self.jinja_env.filters["format_datetime"] = format_datetime
+        self.jinja_env.filters["nl2br"] = nl2br  # 换行转 <br> 过滤器
         self.template_name = Path(template_path).name
 
     async def render(self, data: dict[str, Any]) -> str:
@@ -97,7 +146,12 @@ class ImageRenderer:
         """
         try:
             template = self.jinja_env.get_template(self.template_name)
-            return template.render(**data)
+            # 添加渲染配置到模板上下文
+            render_context = {
+                **data,
+                "use_china_cdn": self.render_config.use_china_cdn,
+            }
+            return template.render(**render_context)
         except TemplateError as e:
             self.logger.error(f"Template rendering failed: {e}")
             raise RenderError(
