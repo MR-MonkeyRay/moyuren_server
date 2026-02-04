@@ -85,7 +85,7 @@ sudo chown -R 1000:1000 static state logs
 ```json
 {
   "date": "2026-02-01",
-  "updated": "2026-02-01T07:22:32+08:00",
+  "updated": "2026/02/01 07:22:32",
   "updated_at": 1738372952000,
   "image": "https://api.monkeyray.net/static/moyuren_20260201_072232.jpg"
 }
@@ -94,7 +94,7 @@ sudo chown -R 1000:1000 static state logs
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
 | `date` | string | 图片日期 (YYYY-MM-DD) |
-| `updated` | string | 生成时间 (RFC3339 格式，如 2026-02-01T07:22:32+08:00) |
+| `updated` | string | 生成时间 (如 2026/02/01 07:22:32) |
 | `updated_at` | number | 生成时间戳（13 位毫秒） |
 | `image` | string | 图片完整 URL |
 
@@ -113,7 +113,7 @@ sudo chown -R 1000:1000 static state logs
 ```json
 {
   "date": "2026-02-01",
-  "updated": "2026-02-01T07:22:32+08:00",
+  "updated": "2026/02/01 07:22:32",
   "updated_at": 1738372952000,
   "image": "https://api.monkeyray.net/static/moyuren_20260201_072232.jpg",
   "weekday": "星期日",
@@ -203,7 +203,7 @@ sudo chown -R 1000:1000 static state logs
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
 | `date` | string | 图片日期 (YYYY-MM-DD) |
-| `updated` | string | 生成时间 (RFC3339 格式) |
+| `updated` | string | 生成时间 (如 2026/02/01 07:22:32) |
 | `updated_at` | number | 生成时间戳（13 位毫秒） |
 | `image` | string | 图片完整 URL |
 | `weekday` | string | 星期几（中文） |

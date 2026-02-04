@@ -65,8 +65,12 @@ async def main():
         stock_index_service = StockIndexService(config.stock_index)
 
     data_computer = DataComputer()
+
+    # Get templates configuration
+    templates_config = config.get_templates_config()
+
     image_renderer = ImageRenderer(
-        template_path=config.paths.template_path,
+        templates_config=templates_config,
         static_dir=config.paths.static_dir,
         render_config=config.render,
         logger=logger,
@@ -177,7 +181,7 @@ async def main():
         "timestamp": now.isoformat(),
         "filename": filename,
         # New time fields
-        "updated": now.isoformat(timespec='seconds'),
+        "updated": now.strftime("%Y/%m/%d %H:%M:%S"),
         "updated_at": int(now.timestamp() * 1000),
         # New content fields
         "weekday": date_info.get("week_cn", ""),

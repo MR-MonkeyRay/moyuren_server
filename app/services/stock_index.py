@@ -122,7 +122,7 @@ class StockIndexService:
 
                 result = {
                     "items": items,
-                    "updated": now.isoformat(timespec='seconds'),
+                    "updated": now.strftime("%Y/%m/%d %H:%M:%S"),
                     "updated_at": int(now.timestamp() * 1000),
                     "trading_day": trading_days,
                     "is_stale": False,
@@ -279,7 +279,7 @@ class StockIndexService:
         """Get placeholder data when API fails."""
         return {
             "items": [],
-            "updated": now.isoformat(timespec='seconds'),
+            "updated": now.strftime("%Y/%m/%d %H:%M:%S"),
             "updated_at": int(now.timestamp() * 1000),
             "trading_day": {"A": False, "HK": False, "US": False},
             "is_stale": True,

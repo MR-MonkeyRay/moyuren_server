@@ -14,6 +14,7 @@ from filelock import FileLock, Timeout
 
 from app.core.errors import StorageError
 from app.services.calendar import get_display_timezone
+from app.services.state import migrate_state
 
 
 class GenerationBusyError(Exception):
@@ -33,8 +34,12 @@ def _get_async_lock() -> asyncio.Lock:
     return _async_lock
 
 
-def _read_latest_filename(state_path: Path) -> str | None:
+def _read_latest_filename(state_path: Path, template_name: str | None = None) -> str | None:
     """读取 state 文件中的最新文件名
+
+    Args:
+        state_path: Path to state file.
+        template_name: Optional template name to look up.
 
     Returns:
         文件名，如果读取失败则返回 None
@@ -42,12 +47,36 @@ def _read_latest_filename(state_path: Path) -> str | None:
     try:
         with state_path.open("r", encoding="utf-8") as f:
             data = json.load(f)
+            if not isinstance(data, dict):
+                return None
+
+            # Check if this is v1 format (no version or version=1)
+            version = data.get("version")
+            is_v1 = version is None or version == 1
+
+            # For v1 state: only return filename if requesting default template
+            # This prevents returning wrong template's file when multi-template is used
+            if is_v1:
+                # v1 state only has one template (the default "moyuren")
+                # If requesting a different template, force regeneration
+                if template_name and template_name != "moyuren":
+                    return None
+                return data.get("filename")
+
+            # v2 format: look up in templates map
+            if template_name:
+                templates = data.get("templates")
+                if isinstance(templates, dict):
+                    template_entry = templates.get(template_name)
+                    if isinstance(template_entry, dict):
+                        return template_entry.get("filename")
+                return None
             return data.get("filename")
     except (FileNotFoundError, json.JSONDecodeError, KeyError, OSError):
         return None
 
 
-async def generate_and_save_image(app: FastAPI) -> str:
+async def generate_and_save_image(app: FastAPI, template_name: str | None = None) -> str:
     """Generate image and update state file.
 
     This function performs the complete image generation pipeline:
@@ -58,6 +87,7 @@ async def generate_and_save_image(app: FastAPI) -> str:
 
     Args:
         app: FastAPI application instance with services in app.state.
+        template_name: Optional template name to use for rendering.
 
     Returns:
         Generated image filename.
@@ -70,6 +100,11 @@ async def generate_and_save_image(app: FastAPI) -> str:
     logger = app.state.logger
     config = app.state.config
     state_path = Path(config.paths.state_path)
+
+    # Resolve template name
+    templates_config = config.get_templates_config()
+    template_item = templates_config.get_template(template_name)
+    resolved_template_name = template_item.name
 
     # 获取进程内锁
     async_lock = _get_async_lock()
@@ -89,9 +124,9 @@ async def generate_and_save_image(app: FastAPI) -> str:
                 if state_path.exists():
                     mtime = state_path.stat().st_mtime
                     if time.time() - mtime < 5:
-                        filename = _read_latest_filename(state_path)
+                        filename = _read_latest_filename(state_path, resolved_template_name)
                         if filename:
-                            logger.info("State file recently updated, skipping generation")
+                            logger.info(f"State file recently updated for template '{resolved_template_name}', skipping generation")
                             return filename
                         # 如果读取失败，继续正常生成流程
                         logger.warning("State file exists but unreadable, proceeding with generation")
@@ -146,7 +181,10 @@ async def generate_and_save_image(app: FastAPI) -> str:
                 logger.info("Template data computed")
 
                 # 3. Render image
-                filename = await app.state.image_renderer.render(template_data)
+                filename = await app.state.image_renderer.render(
+                    template_data,
+                    template_name=resolved_template_name,
+                )
                 logger.info(f"Image rendered: {filename}")
 
                 # 4. Update state/latest.json atomically
@@ -156,6 +194,7 @@ async def generate_and_save_image(app: FastAPI) -> str:
                     template_data=template_data,
                     raw_data=raw_data,
                     config=config,
+                    template_name=resolved_template_name,
                 )
 
                 # 5. Clean up old cache (run in thread to avoid blocking)
@@ -181,6 +220,7 @@ async def _update_state_file(
     template_data: dict,
     raw_data: dict,
     config: Any,
+    template_name: str,
 ) -> None:
     """Atomically update the state file with latest image information.
 
@@ -190,6 +230,7 @@ async def _update_state_file(
         template_data: Template data dictionary from DataComputer.
         raw_data: Raw data dictionary containing original API responses.
         config: Application config for reading render dimensions.
+        template_name: Template name used for rendering.
 
     Raises:
         StorageError: If file write fails.
@@ -245,21 +286,26 @@ async def _update_state_file(
         if kfc_content_raw and isinstance(kfc_content_raw, dict):
             kfc_content = kfc_content_raw.get("content")
 
-        state_data = {
+        # Prepare timestamps
+        updated_str = now.strftime("%Y/%m/%d %H:%M:%S")
+        updated_at_ms = int(now.timestamp() * 1000)
+
+        # Public data (shared across templates)
+        public_data = {
             "date": now.strftime("%Y-%m-%d"),
             "timestamp": now.isoformat(),
-            "filename": filename,
-            # New time fields
-            "updated": now.isoformat(timespec='seconds'),
-            "updated_at": int(now.timestamp() * 1000),
-            # New content fields
+            "updated": updated_str,
+            "updated_at": updated_at_ms,
             "weekday": date_info.get("week_cn", ""),
             "lunar_date": date_info.get("lunar_date", ""),
             "fun_content": fun_content,
             "countdowns": countdowns,
             "is_crazy_thursday": now.weekday() == 3,
             "kfc_content": kfc_content,
-            # Full rendering data fields
+        }
+
+        # Template-specific data
+        template_specific_data = {
             "date_info": template_data.get("date"),
             "weekend": template_data.get("weekend"),
             "solar_term": template_data.get("solar_term"),
@@ -273,6 +319,43 @@ async def _update_state_file(
             ],
             "kfc_content_full": template_data.get("kfc_content"),
             "stock_indices": raw_data.get("stock_indices"),
+        }
+
+        # Read existing state to merge template entries
+        existing_templates: dict[str, Any] = {}
+        existing_template_data: dict[str, Any] = {}
+        if state_file.exists():
+            try:
+                with state_file.open("r", encoding="utf-8") as f:
+                    existing_state = json.load(f)
+                if isinstance(existing_state, dict):
+                    # Always use "moyuren" as default for v1 migration to preserve existing cache
+                    existing_state = migrate_state(existing_state, default_template="moyuren")
+                    if isinstance(existing_state.get("templates"), dict):
+                        existing_templates.update(existing_state["templates"])
+                    if isinstance(existing_state.get("template_data"), dict):
+                        existing_template_data.update(existing_state["template_data"])
+            except (OSError, json.JSONDecodeError, ValueError):
+                pass
+
+        # Update current template entry
+        existing_templates[template_name] = {
+            "filename": filename,
+            "updated": updated_str,
+            "updated_at": updated_at_ms,
+        }
+        existing_template_data[template_name] = template_specific_data
+
+        # Build v2 state data with backward compatibility
+        state_data = {
+            "version": 2,
+            "public": public_data,
+            "templates": existing_templates,
+            "template_data": existing_template_data,
+            # Backward compatible fields (flat structure)
+            **public_data,
+            "filename": filename,
+            **template_specific_data,
         }
 
         # Atomic write: temp file + rename

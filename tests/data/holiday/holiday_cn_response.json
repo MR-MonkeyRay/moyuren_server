@@ -1,0 +1,32 @@
+[
+  {
+    "name": "春节",
+    "start_date": "2026-02-15",
+    "end_date": "2026-02-23",
+    "duration": 9,
+    "days_left": 11,
+    "is_legal_holiday": true,
+    "color": "#E74C3C",
+    "is_off_day": true
+  },
+  {
+    "name": "清明节",
+    "start_date": "2026-04-04",
+    "end_date": "2026-04-06",
+    "duration": 3,
+    "days_left": 59,
+    "is_legal_holiday": true,
+    "color": "#27AE60",
+    "is_off_day": true
+  },
+  {
+    "name": "劳动节",
+    "start_date": "2026-05-01",
+    "end_date": "2026-05-05",
+    "duration": 5,
+    "days_left": 86,
+    "is_legal_holiday": true,
+    "color": "#E67E22",
+    "is_off_day": true
+  }
+]

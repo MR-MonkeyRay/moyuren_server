@@ -132,18 +132,18 @@ async def _read_state_file(state_path: Path, logger) -> tuple[dict | None, JSONR
             logger.warning("State file has empty filename or date, will regenerate")
             return None, None
 
-        # Validate updated is RFC3339 format
+        # Validate updated format (YYYY/MM/DD HH:MM:SS)
         from datetime import datetime
         updated_str = state_data.get("updated")
         if not updated_str or not isinstance(updated_str, str):
             logger.warning("State file has invalid updated field, will regenerate")
             return None, None
 
-        # Try parsing RFC3339 format
+        # Try parsing YYYY/MM/DD HH:MM:SS format
         try:
-            datetime.fromisoformat(updated_str)
+            datetime.strptime(updated_str, "%Y/%m/%d %H:%M:%S")
         except (ValueError, TypeError):
-            logger.warning(f"State file updated field not RFC3339 format: {updated_str}, will regenerate")
+            logger.warning(f"State file updated field not in expected format: {updated_str}, will regenerate")
             return None, None
 
         # Validate updated_at is positive integer
@@ -206,7 +206,7 @@ async def get_moyuren(request: Request) -> JSONResponse:
 
     Returns simplified metadata of the latest generated image including:
     - date: Image date in YYYY-MM-DD format
-    - updated: Generation time in RFC3339 format (e.g., 2026-02-01T07:22:32+08:00)
+    - updated: Generation time (e.g., 2025/01/13 07:22:32)
     - updated_at: Generation timestamp in milliseconds (13 digits)
     - image: Full URL to the image file
 
@@ -254,7 +254,7 @@ async def get_moyuren_detail(request: Request) -> JSONResponse:
 
     Returns detailed content information including:
     - date: Image date in YYYY-MM-DD format
-    - updated: Generation time in RFC3339 format (e.g., 2026-02-01T07:22:32+08:00)
+    - updated: Generation time (e.g., 2025/01/13 07:22:32)
     - updated_at: Generation timestamp in milliseconds (13 digits)
     - image: Full URL to the image file
     - weekday: Weekday in Chinese (e.g., 星期日)

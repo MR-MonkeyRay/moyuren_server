@@ -14,8 +14,9 @@ from app.core.config import load_config
 from app.core.logging import setup_logging
 from app.services.generator import generate_and_save_image
 from app.core.scheduler import TaskScheduler
+from app.services.browser import browser_manager
 from app.services.cache import CacheCleaner
-from app.services.compute import DataComputer
+from app.services.compute import DataComputer, DomainDataAggregator, TemplateAdapter
 from app.services.fetcher import DataFetcher
 from app.services.fun_content import FunContentService
 from app.services.kfc import KfcService
@@ -44,7 +45,11 @@ async def lifespan(app: FastAPI):
     logger.info("Configuration loaded successfully")
     logger.info("Logging initialized")
 
-    # 2.1 Initialize timezones
+    # 2.1 Configure browser manager
+    browser_manager.configure(logger)
+    app.state.browser_manager = browser_manager
+
+    # 2.2 Initialize timezones
     init_timezones(
         business_tz=config.timezone.business,
         display_tz=config.timezone.display
@@ -67,7 +72,10 @@ async def lifespan(app: FastAPI):
         logger=logger,
     )
 
-    data_computer = DataComputer()
+    # Initialize data computation components
+    domain_aggregator = DomainDataAggregator()
+    template_adapter = TemplateAdapter()
+    data_computer = DataComputer(domain_aggregator, template_adapter)
 
     holiday_cache_dir = Path(config.paths.state_path).parent / "holidays"
     holiday_service = HolidayService(
@@ -89,8 +97,11 @@ async def lifespan(app: FastAPI):
     if config.stock_index:
         stock_index_service = StockIndexService(config.stock_index)
 
+    # Get templates configuration
+    templates_config = config.get_templates_config()
+
     image_renderer = ImageRenderer(
-        template_path=config.paths.template_path,
+        templates_config=templates_config,
         static_dir=config.paths.static_dir,
         render_config=config.render,
         logger=logger,
@@ -105,11 +116,14 @@ async def lifespan(app: FastAPI):
     # Store services in app.state for access in tasks
     app.state.data_fetcher = data_fetcher
     app.state.data_computer = data_computer
+    app.state.domain_aggregator = domain_aggregator
+    app.state.template_adapter = template_adapter
     app.state.holiday_service = holiday_service
     app.state.fun_content_service = fun_content_service
     app.state.kfc_service = kfc_service
     app.state.stock_index_service = stock_index_service
     app.state.image_renderer = image_renderer
+    app.state.templates_config = templates_config
     app.state.cache_cleaner = cache_cleaner
     app.state.is_refreshing = False  # Initialize background refresh lock
 
@@ -275,6 +289,13 @@ async def lifespan(app: FastAPI):
     # Stop scheduler
     if hasattr(app.state, "scheduler"):
         app.state.scheduler.shutdown()
+
+    # Shutdown browser manager
+    if hasattr(app.state, "browser_manager"):
+        try:
+            await app.state.browser_manager.shutdown()
+        except Exception as e:
+            logger.warning(f"Failed to shutdown browser manager: {e}")
 
     logger.info("Moyuren API stopped")
 

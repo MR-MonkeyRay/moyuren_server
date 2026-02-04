@@ -1,0 +1,30 @@
+{
+  "items": [
+    {
+      "name": "上证指数",
+      "price": 3200.50,
+      "change_pct": 1.25,
+      "trend": "up",
+      "market": "A",
+      "is_trading_day": true
+    },
+    {
+      "name": "深证成指",
+      "price": 10500.00,
+      "change_pct": -0.50,
+      "trend": "down",
+      "market": "A",
+      "is_trading_day": true
+    },
+    {
+      "name": "创业板指",
+      "price": 2100.00,
+      "change_pct": 0.00,
+      "trend": "flat",
+      "market": "A",
+      "is_trading_day": true
+    }
+  ],
+  "updated": "2026-02-04T10:00:00+08:00",
+  "is_stale": false
+}

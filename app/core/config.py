@@ -1,10 +1,15 @@
 """Configuration management module."""
 
 import os
+import re
 import yaml
 from pathlib import Path
-from typing import Any
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from typing import Any, ClassVar
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
+
+
+# Pattern for valid template names: alphanumeric, underscore, hyphen only
+_TEMPLATE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 class ServerConfig(BaseModel):
@@ -88,6 +93,99 @@ class RenderConfig(BaseModel):
         if v <= 0:
             raise ValueError("must be positive")
         return v
+
+
+class ViewportConfig(BaseModel):
+    """Viewport configuration for template rendering."""
+    width: int = 794
+    height: int = 1123
+    device_scale_factor: int = 2
+
+    @field_validator("width", "height", "device_scale_factor")
+    @classmethod
+    def validate_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("must be positive")
+        return v
+
+
+class ThemeConfig(BaseModel):
+    """Theme configuration for template rendering."""
+    primary_color: str | None = None
+    background_color: str | None = None
+    accent_color: str | None = None
+    show_kfc: bool | None = None
+    show_stock: bool | None = None
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
+class TemplateItemConfig(BaseModel):
+    """Single template configuration."""
+    name: str
+    path: str
+    viewport: ViewportConfig | None = None
+    theme: ThemeConfig | None = None
+    jpeg_quality: int | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if not v:
+            raise ValueError("name cannot be empty")
+        if not _TEMPLATE_NAME_PATTERN.match(v):
+            raise ValueError("name must contain only alphanumeric characters, underscores, and hyphens")
+        return v
+
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, v: str) -> str:
+        if not v:
+            raise ValueError("path cannot be empty")
+        return v
+
+    @field_validator("jpeg_quality")
+    @classmethod
+    def validate_jpeg_quality(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        if v <= 0 or v > 100:
+            raise ValueError("jpeg_quality must be between 1 and 100")
+        return v
+
+
+class TemplatesConfig(BaseModel):
+    """Multi-template configuration."""
+    default: str | None = None
+    items: list[TemplateItemConfig] = Field(default_factory=list)
+
+    @field_validator("items")
+    @classmethod
+    def validate_items(cls, v: list[TemplateItemConfig]) -> list[TemplateItemConfig]:
+        if not v:
+            return v
+        names = [item.name for item in v]
+        if len(set(names)) != len(names):
+            raise ValueError("template names must be unique")
+        return v
+
+    @model_validator(mode="after")
+    def validate_default_in_items(self) -> "TemplatesConfig":
+        """Validate that default template exists in items."""
+        if self.default is not None and self.items:
+            names = [item.name for item in self.items]
+            if self.default not in names:
+                raise ValueError(f"default template '{self.default}' not found in items: {names}")
+        return self
+
+    def get_template(self, name: str | None = None) -> TemplateItemConfig:
+        """Get template configuration by name."""
+        if not self.items:
+            raise ValueError("templates.items cannot be empty")
+        resolved_name = name or self.default or self.items[0].name
+        for item in self.items:
+            if item.name == resolved_name:
+                return item
+        raise ValueError(f"Template not found: {resolved_name}")
 
 
 class LoggingConfig(BaseModel):
@@ -216,11 +314,37 @@ class AppConfig(BaseModel):
     fetch: FetchConfig
     render: RenderConfig
     logging: LoggingConfig
+    templates: TemplatesConfig | None = None
     timezone: TimezoneConfig = Field(default_factory=TimezoneConfig)
     holiday: HolidayConfig = Field(default_factory=HolidayConfig)
     fun_content: FunContentConfig
     crazy_thursday: CrazyThursdayConfig | None = None
     stock_index: StockIndexConfig | None = None
+
+    def get_templates_config(self) -> TemplatesConfig:
+        """Get templates configuration with backward compatibility."""
+        if self.templates:
+            templates = self.templates
+        else:
+            # Backward compatibility: create default template from paths.template_path
+            templates = TemplatesConfig(
+                default="moyuren",
+                items=[
+                    TemplateItemConfig(
+                        name="moyuren",
+                        path=self.paths.template_path,
+                        viewport=ViewportConfig(
+                            width=self.render.viewport_width,
+                            height=self.render.viewport_height,
+                            device_scale_factor=self.render.device_scale_factor,
+                        ),
+                        jpeg_quality=self.render.jpeg_quality,
+                    )
+                ],
+            )
+        if templates.default is None and templates.items:
+            templates.default = templates.items[0].name
+        return templates
 
 
 def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
