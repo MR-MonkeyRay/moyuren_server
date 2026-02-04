@@ -65,8 +65,12 @@ async def main():
         stock_index_service = StockIndexService(config.stock_index)
 
     data_computer = DataComputer()
+
+    # Get templates configuration
+    templates_config = config.get_templates_config()
+
     image_renderer = ImageRenderer(
-        template_path=config.paths.template_path,
+        templates_config=templates_config,
         static_dir=config.paths.static_dir,
         render_config=config.render,
         logger=logger,

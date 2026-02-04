@@ -18,29 +18,48 @@
     {% endif %}
     <style>
         :root {
-            /* 莫兰迪/杂志风配色 */
-            --bg-body: #E0E5EC;
-            --bg-paper: #F7F9F9;
+            /* --- 基础背景 --- */
+            --bg-body: #E0E5EC;          /* 保持不变：拟态核心背景 */
+            --bg-paper: #F1F5F9;         /* 优化：更清冷的亮白，提升卡片质感 */
 
-            --text-dark: #2C3E50;
-            --text-grey: #7F8C8D;
-            --text-light: #95A5A6;
+            /* --- 文字系统 (Slate 色系) --- */
+            --text-dark: #1E293B;        /* Slate 800 - 重要标题 */
+            --text-grey: #475569;        /* Slate 600 - 正文内容 */
+            --text-light: #64748B;       /* Slate 500 - 辅助信息，满足无障碍标准 */
 
-            --accent-blue: #D6EAF8;
-            --accent-blue-text: #2E86C1;
+            /* --- 功能色板 --- */
+            /* 蓝色 - 信息/序号 */
+            --blue-main: #1D4ED8;        /* Blue 700 - WCAG AA compliant */
+            --blue-bg: #EFF6FF;          /* 极淡蓝背景 */
 
-            --accent-green: #D5F5E3;
-            --accent-green-text: #27AE60;
+            /* 绿色 - 成功/下跌(A股) */
+            --green-main: #059669;       /* Emerald 600 - WCAG AA compliant */
+            --green-bg: #ECFDF5;
 
-            --accent-pink: #FADBD8;
-            --accent-pink-text: #C0392B;
+            /* 红色 - 紧急/KFC/上涨(A股) */
+            --red-main: #DC2626;         /* Red 600 - WCAG AA compliant */
+            --red-bg: #FEF2F2;
 
-            /* 股票涨跌颜色 - 莫兰迪柔和版 (WCAG AA compliant) */
-            --color-up: #C0392B;
-            --color-up-bg: rgba(192, 57, 43, 0.08);
-            --color-down: #1E8449;
-            --color-down-bg: rgba(30, 132, 73, 0.08);
-            --color-flat: #7F8C8D;
+            /* 橙色 - 警告/倒计时 */
+            --orange-main: #EA580C;      /* Orange 600 - WCAG AA compliant */
+            --orange-bg: #FFF7ED;
+
+            /* --- 语义化映射（兼容旧变量名） --- */
+            --accent-blue: var(--blue-bg);
+            --accent-blue-text: var(--blue-main);
+
+            --accent-green: var(--green-bg);
+            --accent-green-text: var(--green-main);
+
+            --accent-pink: var(--red-bg);
+            --accent-pink-text: var(--red-main);
+
+            /* --- 股票专用 (A股标准) --- */
+            --color-up: var(--red-main);
+            --color-up-bg: rgba(220, 38, 38, 0.1);
+            --color-down: var(--green-main);
+            --color-down-bg: rgba(5, 150, 105, 0.1);
+            --color-flat: var(--text-light);
             --color-flat-bg: #F7F9F9;
 
             --card-radius: 16px;
@@ -170,7 +189,7 @@
             font-size: 80px; font-weight: 800; color: var(--text-dark); line-height: 1;
             font-family: var(--font-number);
             /* 大日期数字阴影 */
-            text-shadow: 3px 3px 6px rgba(44, 62, 80, 0.15);
+            text-shadow: 3px 3px 6px rgba(30, 41, 59, 0.15);
         }
         .ym-text {
             font-size: 22px; color: var(--text-grey); font-weight: 500;
@@ -184,24 +203,30 @@
             display: inline-block; margin-bottom: 8px;
             /* 胶囊标签阴影 */
             box-shadow:
-                3px 3px 8px rgba(46, 134, 193, 0.2),
+                3px 3px 8px rgba(29, 78, 216, 0.2),
                 -2px -2px 6px rgba(255,255,255,0.8),
                 inset 0 1px 0 rgba(255,255,255,0.5);
         }
         .lunar-text { font-size: 16px; color: var(--text-grey); }
         
         .weekend-wrap { margin-top: 10px; font-size: 14px; color: var(--text-grey); display: flex; align-items: baseline; justify-content: flex-end; }
-        .weekend-num { font-size: 20px; font-weight: 800; color: #E67E22; margin: 0 4px; }
-        /* 周末当天特殊样式 - 温暖杏色，慵懒惬意 */
+        .weekend-num { font-size: 20px; font-weight: 800; color: var(--orange-main); margin: 0 4px; }
+        /* 周末当天特殊样式 - 温暖、杂志感 */
         .weekend-wrap.is-weekend {
-            background: linear-gradient(135deg, #F5CBA7 0%, #E67E22 100%);
+            /* Magazine Style: Soft Warmth */
+            background: linear-gradient(145deg, #FFF7ED, #FFEDD5);
+            color: #9A3412; /* Dark Orange/Brown for contrast */
             padding: 8px 16px;
             border-radius: 12px;
             justify-content: center;
             font-weight: 600;
-            color: white;
-            box-shadow: 0 4px 12px rgba(230, 126, 34, 0.3);
-            text-shadow: 0 1px 2px rgba(0,0,0,0.15);
+            /* 细微边框增加精致感 */
+            border: 1px solid rgba(251, 146, 60, 0.2);
+            /* 拟态浮起效果 */
+            box-shadow:
+                4px 4px 10px rgba(251, 146, 60, 0.1),
+                -4px -4px 10px rgba(255, 255, 255, 0.8);
+            text-shadow: none;
         }
 
         /* --- 第二排：信息 (弹性) --- */
@@ -231,7 +256,7 @@
             font-size: 32px; font-weight: 700; color: var(--accent-green-text); line-height: 1.2;
             font-family: var(--font-title);
             /* 节气名称文字阴影 */
-            text-shadow: 1px 1px 3px rgba(39, 174, 96, 0.2);
+            text-shadow: 1px 1px 3px rgba(5, 150, 105, 0.2);
             max-width: 100%;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -259,18 +284,19 @@
             font-size: 24px; font-weight: 700; color: var(--text-dark); margin: 0 4px;
             font-family: var(--font-number);
             /* 数字阴影 */
-            text-shadow: 1px 1px 2px rgba(44, 62, 80, 0.1);
+            text-shadow: 1px 1px 2px rgba(30, 41, 59, 0.1);
         }
         /* 节气当天样式 - 鼠尾草绿，自然雅致 */
         .days-label.today {
             font-weight: 600;
-            color: #2C3E50;
-            background: linear-gradient(135deg, #A2D9CE 0%, #48C9B0 100%);
+            color: var(--green-main);
+            background: linear-gradient(135deg, #ECFDF5 0%, #A7F3D0 100%);
             padding: 6px 14px;
             border-radius: 20px;
             box-shadow:
-                0 4px 12px rgba(72, 201, 176, 0.3),
+                0 4px 12px rgba(5, 150, 105, 0.2),
                 inset 0 1px 0 rgba(255,255,255,0.4);
+            margin-bottom: 12px;
         }
 
         .yi-ji-row {
@@ -303,12 +329,12 @@
             box-shadow: 1px 1px 3px rgba(0,0,0,0.08);
         }
         .tag.yi {
-            background: #E8F8F5; color: #1ABC9C;
-            box-shadow: 2px 2px 6px rgba(26, 188, 156, 0.15), -1px -1px 3px rgba(255,255,255,0.8);
+            background: var(--green-bg); color: var(--green-main);
+            box-shadow: 2px 2px 6px rgba(5, 150, 105, 0.15), -1px -1px 3px rgba(255,255,255,0.8);
         }
         .tag.ji {
-            background: #FDEDEC; color: #E74C3C;
-            box-shadow: 2px 2px 6px rgba(231, 76, 60, 0.15), -1px -1px 3px rgba(255,255,255,0.8);
+            background: var(--red-bg); color: var(--red-main);
+            box-shadow: 2px 2px 6px rgba(220, 38, 38, 0.15), -1px -1px 3px rgba(255,255,255,0.8);
         }
 
         .yi-ji-text {
@@ -373,7 +399,7 @@
             color: var(--accent-blue-text); font-size: 14px; width: 1.5em; flex-shrink: 0; font-weight: 800;
             font-family: var(--font-number);
             /* 序号微阴影 */
-            text-shadow: 0 1px 2px rgba(46, 134, 193, 0.15);
+            text-shadow: 0 1px 2px rgba(29, 78, 216, 0.15);
         }
         .news-text {
             color: #444;
@@ -542,9 +568,11 @@
         }
         .market-footer {
             margin-top: 12px;
+            padding-top: 8px;
+            border-top: 1px dashed rgba(0,0,0,0.1);
             text-align: right;
-            font-size: 11px;
-            color: #BDC3C7;
+            font-size: 10px;
+            color: var(--text-light);
             font-family: var(--font-number);
         }
         .market-closed {
@@ -607,9 +635,9 @@
         /* 法定节假日 - 突出 */
         .holiday-item.legal {
             background: linear-gradient(135deg, #FFF5E6 0%, #FFEDD5 100%);
-            border-left: 3px solid #E67E22;
+            border-left: 3px solid var(--orange-main);
             box-shadow:
-                3px 3px 10px rgba(230, 126, 34, 0.15),
+                3px 3px 10px rgba(234, 88, 12, 0.15),
                 -2px -2px 6px rgba(255,255,255,0.8);
         }
         /* 非法定节假日 - 淡化 */
@@ -637,40 +665,44 @@
 
         /* 倒计时颜色 */
         .h-num.urgent {
-            color: #E74C3C;
-            text-shadow: 1px 1px 4px rgba(231, 76, 60, 0.25);
+            color: var(--red-main);
+            text-shadow: 1px 1px 4px rgba(220, 38, 38, 0.25);
         }  /* ≤7天 红色 */
         .h-num.soon {
-            color: #E67E22;
-            text-shadow: 1px 1px 4px rgba(230, 126, 34, 0.25);
+            color: var(--orange-main);
+            text-shadow: 1px 1px 4px rgba(234, 88, 12, 0.25);
         }    /* 7-30天 橙色 */
-        .h-num.later { color: #2C3E50; }   /* >30天 深灰色 */
-        .holiday-item.normal .h-num { color: #95A5A6; text-shadow: none; } /* 非法定假日统一用浅色 */
+        .h-num.later { color: var(--text-dark); }   /* >30天 深灰色 */
+        .holiday-item.normal .h-num { color: var(--text-light); text-shadow: none; } /* 非法定假日统一用浅色 */
         /* 节假日当天样式 */
-        .h-num.today { font-size: 24px; color: #E74C3C; }
+        .h-num.today { font-size: 24px; color: var(--red-main); }
 
-        /* 节假日当天卡片样式 - 珊瑚红，欢快喜庆 */
+        /* 节假日当天卡片样式 - 优雅、喜庆 */
         .holiday-item.is-today {
-            background: linear-gradient(135deg, #F1948A 0%, #E74C3C 100%);
-            border: none;
-            border-left: none;
-            box-shadow: 0 4px 12px rgba(231, 76, 60, 0.4);
+            /* Magazine Style: Elegant Festive */
+            background: linear-gradient(145deg, #FEF2F2, #FEE2E2);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-left: 1px solid rgba(239, 68, 68, 0.2);
+            box-shadow:
+                4px 4px 10px rgba(220, 38, 38, 0.1),
+                -4px -4px 10px rgba(255, 255, 255, 0.8);
             transform: translateY(-1px);
         }
-        .holiday-item.is-today .h-name,
-        .holiday-item.is-today .h-num.today,
-        .holiday-item.is-today .h-unit {
-            color: white;
-        }
-        .holiday-item.is-today .h-date {
-            color: rgba(255, 255, 255, 0.9);
-        }
         .holiday-item.is-today .h-name {
-            text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            color: #991B1B; /* Dark Red */
+            font-weight: 700;
+            text-shadow: none;
+        }
+        .holiday-item.is-today .h-num.today {
+            color: #DC2626; /* Red Main */
         }
         .holiday-item.is-today .h-unit {
+            color: #B91C1C;
             font-weight: 600;
             font-size: 11px;
+        }
+        .holiday-item.is-today .h-date {
+            color: #991B1B;
         }
 
         /* 补班日基础样式 */
@@ -680,21 +712,29 @@
             color: #566573;
         }
 
-        /* 补班日当天样式 - 浅灰蓝，沉稳冷静 */
+        /* 补班日当天样式 - 冷静、专业 */
         .holiday-item.workday.is-today {
-            background: linear-gradient(135deg, #BDC3C7 0%, #7F8C8D 100%);
-            border: none;
-            border-left: none;
-            box-shadow: 0 4px 12px rgba(127, 140, 141, 0.3);
+            /* Magazine Style: Cool & Professional */
+            background: linear-gradient(145deg, #F1F5F9, #E2E8F0);
+            border: 1px solid rgba(148, 163, 184, 0.4);
+            border-left: 1px solid rgba(148, 163, 184, 0.4);
+            box-shadow:
+                4px 4px 10px rgba(148, 163, 184, 0.2),
+                -4px -4px 10px rgba(255, 255, 255, 0.8);
             transform: translateY(-1px);
         }
 
-        .holiday-item.workday.is-today .h-name,
-        .holiday-item.workday.is-today .h-date,
+        .holiday-item.workday.is-today .h-name {
+            color: var(--text-dark);
+            text-shadow: none;
+        }
+        .holiday-item.workday.is-today .h-date {
+            color: var(--text-grey);
+        }
         .holiday-item.workday.is-today .h-num,
         .holiday-item.workday.is-today .h-unit {
-            color: #FFFFFF;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            color: var(--text-grey);
+            text-shadow: none;
         }
 
         .holiday-item.workday .h-name {
@@ -718,9 +758,8 @@
             flex-wrap: wrap;
             gap: 6px;
             font-size: 9px;
-            color: var(--text-light);
+            color: #888888;
             letter-spacing: 0.03em;
-            opacity: 0.9;
         }
         .footer-secondary > span {
             overflow-wrap: anywhere;
@@ -736,13 +775,13 @@
             padding: 20px;
             /* KFC 卡片新拟态阴影 */
             box-shadow:
-                6px 6px 14px rgba(192, 57, 43, 0.1),
+                6px 6px 14px rgba(220, 38, 38, 0.1),
                 -4px -4px 10px rgba(255,255,255,0.9),
                 inset 0 1px 0 rgba(255,255,255,0.5);
             border: 1px solid rgba(255,255,255,0.8);
             /* 稍微加一点红色氛围 */
             background: linear-gradient(135deg, #fffcfc 0%, #fff5f5 100%);
-            border-left: 4px solid #C0392B; /* 肯德基红 */
+            border-left: 4px solid var(--red-main); /* 肯德基红 */
             margin-bottom: 8px;
         }
 
@@ -751,7 +790,7 @@
             align-items: center;
             gap: 12px;
             margin-bottom: 12px;
-            border-bottom: 1px dashed rgba(192, 57, 43, 0.2);
+            border-bottom: 1px dashed rgba(220, 38, 38, 0.2);
             padding-bottom: 10px;
         }
 
@@ -766,7 +805,7 @@
             border-radius: 12px;
             /* 图标阴影 */
             box-shadow:
-                3px 3px 8px rgba(192, 57, 43, 0.15),
+                3px 3px 8px rgba(220, 38, 38, 0.15),
                 -2px -2px 6px rgba(255,255,255,0.8);
         }
 
@@ -778,17 +817,17 @@
         .kfc-title-en {
             font-size: 18px;
             font-weight: 900;
-            color: #C0392B;
+            color: var(--red-main);
             letter-spacing: 1px;
             font-family: var(--font-number);
             line-height: 1;
             /* KFC 标题阴影 */
-            text-shadow: 1px 1px 3px rgba(192, 57, 43, 0.2);
+            text-shadow: 1px 1px 3px rgba(220, 38, 38, 0.2);
         }
 
         .kfc-title-cn {
             font-size: 12px;
-            color: #E74C3C;
+            color: var(--red-main);
             letter-spacing: 4px;
             font-weight: bold;
             margin-top: 4px;
@@ -957,7 +996,7 @@
                         {% endfor %}
                     </ul>
                     {% if stock_indices.updated %}
-                    <div class="market-footer">数据更新: {{ stock_indices.updated | format_datetime }}</div>
+                    <div class="market-footer">数据更新于 {{ stock_indices.updated | format_datetime }}</div>
                     {% endif %}
                     {% else %}
                     <div class="market-closed">

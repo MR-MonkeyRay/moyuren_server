@@ -143,8 +143,8 @@ def normalize_datetime(value: str, default_tz: timezone | None = None) -> str | 
     return None
 
 
-class DataComputer:
-    """Data transformer that converts raw API data to template context."""
+class DomainDataAggregator:
+    """Aggregate domain data from raw API responses."""
 
     # Week day mappings
     _WEEK_CN = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
@@ -165,8 +165,8 @@ class DataComputer:
         {"num": 5, "text": "工作中遇到困难时，深呼吸，放轻松。"},
     ]
 
-    def compute(self, raw_data: dict[str, Any]) -> dict[str, Any]:
-        """Transform raw API data into template context.
+    def aggregate(self, raw_data: dict[str, Any]) -> dict[str, Any]:
+        """Aggregate raw API data into domain data.
 
         Args:
             raw_data: Dictionary mapping endpoint names to their fetched data.
@@ -653,3 +653,78 @@ class DataComputer:
         # 按 days_left 排序并返回前10个
         result = sorted(name_map.values(), key=lambda x: x["days_left"])
         return result[:10]
+
+
+class TemplateAdapter:
+    """Template adapter for filling defaults and shaping output."""
+
+    def adapt(self, domain_data: dict[str, Any]) -> dict[str, Any]:
+        """Adapt domain data for template rendering.
+
+        Args:
+            domain_data: Domain data from DomainDataAggregator.
+
+        Returns:
+            Adapted data with defaults filled in.
+        """
+        data = dict(domain_data)
+
+        if not data.get("history"):
+            data["history"] = {"title": "🐟 摸鱼小贴士", "content": DomainDataAggregator._DEFAULT_HISTORY}
+        if not data.get("news_list"):
+            data["news_list"] = DomainDataAggregator._DEFAULT_NEWS
+        if data.get("news_meta") is None:
+            data["news_meta"] = {}
+        if data.get("holidays") is None:
+            data["holidays"] = []
+        if "is_fallback_mode" not in data:
+            news_list = data.get("news_list") or []
+            history = data.get("history") or {}
+            stock_indices = data.get("stock_indices")
+            data["is_fallback_mode"] = (
+                news_list == DomainDataAggregator._DEFAULT_NEWS
+                and (stock_indices is None or stock_indices.get("is_data_missing"))
+                and history.get("content") == DomainDataAggregator._DEFAULT_HISTORY
+            )
+
+        return data
+
+
+class DataComputer:
+    """Backward compatible wrapper for data computation."""
+
+    def __init__(
+        self,
+        aggregator: DomainDataAggregator | None = None,
+        adapter: TemplateAdapter | None = None,
+    ) -> None:
+        """Initialize DataComputer with optional aggregator and adapter.
+
+        Args:
+            aggregator: Domain data aggregator instance.
+            adapter: Template adapter instance.
+        """
+        self._aggregator = aggregator or DomainDataAggregator()
+        self._adapter = adapter or TemplateAdapter()
+
+    def compute(self, raw_data: dict[str, Any]) -> dict[str, Any]:
+        """Compute template context from raw data.
+
+        Args:
+            raw_data: Raw API data dictionary.
+
+        Returns:
+            Template context dictionary.
+        """
+        domain_data = self._aggregator.aggregate(raw_data)
+        return self._adapter.adapt(domain_data)
+
+    @property
+    def aggregator(self) -> DomainDataAggregator:
+        """Get the domain data aggregator."""
+        return self._aggregator
+
+    @property
+    def adapter(self) -> TemplateAdapter:
+        """Get the template adapter."""
+        return self._adapter
