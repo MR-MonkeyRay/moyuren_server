@@ -15,6 +15,11 @@ from app.core.config import RenderConfig, TemplatesConfig, TemplateItemConfig
 class TestFormatDatetime:
     """Tests for format_datetime function."""
 
+    def test_new_format_string(self) -> None:
+        """Test new format string (YYYY/MM/DD HH:MM:SS)."""
+        result = format_datetime("2026/02/04 10:30:00")
+        assert result == "2026-02-04 10:30"
+
     def test_rfc3339_string(self) -> None:
         """Test RFC3339 string formatting."""
         result = format_datetime("2026-02-04T10:30:00+08:00")

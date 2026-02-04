@@ -181,7 +181,7 @@ async def main():
         "timestamp": now.isoformat(),
         "filename": filename,
         # New time fields
-        "updated": now.isoformat(timespec='seconds'),
+        "updated": now.strftime("%Y/%m/%d %H:%M:%S"),
         "updated_at": int(now.timestamp() * 1000),
         # New content fields
         "weekday": date_info.get("week_cn", ""),

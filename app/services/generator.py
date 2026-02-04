@@ -287,14 +287,14 @@ async def _update_state_file(
             kfc_content = kfc_content_raw.get("content")
 
         # Prepare timestamps
-        updated_iso = now.isoformat(timespec="seconds")
+        updated_str = now.strftime("%Y/%m/%d %H:%M:%S")
         updated_at_ms = int(now.timestamp() * 1000)
 
         # Public data (shared across templates)
         public_data = {
             "date": now.strftime("%Y-%m-%d"),
             "timestamp": now.isoformat(),
-            "updated": updated_iso,
+            "updated": updated_str,
             "updated_at": updated_at_ms,
             "weekday": date_info.get("week_cn", ""),
             "lunar_date": date_info.get("lunar_date", ""),
@@ -341,7 +341,7 @@ async def _update_state_file(
         # Update current template entry
         existing_templates[template_name] = {
             "filename": filename,
-            "updated": updated_iso,
+            "updated": updated_str,
             "updated_at": updated_at_ms,
         }
         existing_template_data[template_name] = template_specific_data

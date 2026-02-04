@@ -23,12 +23,12 @@ class TestImageMeta:
         """Test valid ImageMeta creation."""
         meta = ImageMeta(
             date="2026-02-04",
-            timestamp="2026-02-04T10:00:00+08:00",
+            updated="2026/02/04 10:00:00",
             image="https://example.com/image.jpg"
         )
 
         assert meta.date == "2026-02-04"
-        assert meta.timestamp == "2026-02-04T10:00:00+08:00"
+        assert meta.updated == "2026/02/04 10:00:00"
         assert meta.image == "https://example.com/image.jpg"
 
     def test_invalid_date_format_raises_error(self) -> None:
@@ -36,7 +36,7 @@ class TestImageMeta:
         with pytest.raises(ValidationError) as exc_info:
             ImageMeta(
                 date="04-02-2026",  # Wrong format
-                timestamp="2026-02-04T10:00:00+08:00",
+                updated="2026/02/04 10:00:00",
                 image="https://example.com/image.jpg"
             )
 
@@ -47,39 +47,40 @@ class TestImageMeta:
         with pytest.raises(ValidationError) as exc_info:
             ImageMeta(
                 date="2026-13-01",  # Invalid month
-                timestamp="2026-02-04T10:00:00+08:00",
+                updated="2026/02/04 10:00:00",
                 image="https://example.com/image.jpg"
             )
 
         assert "date must be in YYYY-MM-DD format" in str(exc_info.value)
 
-    def test_invalid_timestamp_format_raises_error(self) -> None:
-        """Test invalid timestamp format raises ValidationError."""
+    def test_invalid_updated_format_raises_error(self) -> None:
+        """Test invalid updated format raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
             ImageMeta(
                 date="2026-02-04",
-                timestamp="not a timestamp",
+                updated="not a timestamp",
                 image="https://example.com/image.jpg"
             )
 
-        assert "timestamp must be in ISO format" in str(exc_info.value)
+        assert "updated must be in YYYY/MM/DD HH:MM:SS format" in str(exc_info.value)
 
-    def test_timestamp_with_z_suffix_is_valid(self) -> None:
-        """Test timestamp with Z suffix is valid."""
-        meta = ImageMeta(
-            date="2026-02-04",
-            timestamp="2026-02-04T02:00:00Z",
-            image="https://example.com/image.jpg"
-        )
+    def test_updated_with_wrong_separator_raises_error(self) -> None:
+        """Test updated with wrong separator raises ValidationError."""
+        with pytest.raises(ValidationError) as exc_info:
+            ImageMeta(
+                date="2026-02-04",
+                updated="2026-02-04 10:00:00",  # Wrong separator (- instead of /)
+                image="https://example.com/image.jpg"
+            )
 
-        assert meta.timestamp == "2026-02-04T02:00:00Z"
+        assert "updated must be in YYYY/MM/DD HH:MM:SS format" in str(exc_info.value)
 
     def test_missing_required_field_raises_error(self) -> None:
         """Test missing required field raises ValidationError."""
         with pytest.raises(ValidationError):
             ImageMeta(
                 date="2026-02-04",
-                timestamp="2026-02-04T10:00:00+08:00"
+                updated="2026/02/04 10:00:00"
                 # Missing image field
             )
 
@@ -91,7 +92,7 @@ class TestMoyurenResponse:
         """Test MoyurenResponse inherits from ImageMeta."""
         response = MoyurenResponse(
             date="2026-02-04",
-            timestamp="2026-02-04T10:00:00+08:00",
+            updated="2026/02/04 10:00:00",
             image="https://example.com/image.jpg"
         )
 
@@ -105,13 +106,13 @@ class TestMoyurenImageResponse:
         """Test valid MoyurenImageResponse creation."""
         response = MoyurenImageResponse(
             date="2026-02-04",
-            updated="2026-02-04T10:00:00+08:00",
+            updated="2026/02/04 10:00:00",
             updated_at=1738634400000,
             image="https://example.com/image.jpg"
         )
 
         assert response.date == "2026-02-04"
-        assert response.updated == "2026-02-04T10:00:00+08:00"
+        assert response.updated == "2026/02/04 10:00:00"
         assert response.updated_at == 1738634400000
         assert response.image == "https://example.com/image.jpg"
 

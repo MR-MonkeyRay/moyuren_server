@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 class ImageMeta(BaseModel):
     """Image metadata model."""
     date: str = Field(..., description="Date string in YYYY-MM-DD format")
-    timestamp: str = Field(..., description="ISO format timestamp")
+    updated: str = Field(..., description="Generation time (e.g., 2025/01/13 07:22:32)")
     image: str = Field(..., description="URL to the generated image")
 
     @field_validator("date")
@@ -21,14 +21,14 @@ class ImageMeta(BaseModel):
             raise ValueError("date must be in YYYY-MM-DD format") from e
         return v
 
-    @field_validator("timestamp")
+    @field_validator("updated")
     @classmethod
-    def validate_iso_format(cls, v: str) -> str:
-        """Validate ISO format timestamp."""
+    def validate_updated_format(cls, v: str) -> str:
+        """Validate updated time format (YYYY/MM/DD HH:MM:SS)."""
         try:
-            datetime.fromisoformat(v.replace("Z", "+00:00"))
+            datetime.strptime(v, "%Y/%m/%d %H:%M:%S")
         except ValueError as e:
-            raise ValueError("timestamp must be in ISO format") from e
+            raise ValueError("updated must be in YYYY/MM/DD HH:MM:SS format") from e
         return v
 
 
@@ -40,7 +40,7 @@ class MoyurenResponse(ImageMeta):
 class MoyurenImageResponse(BaseModel):
     """Response model for moyuren image metadata API."""
     date: str = Field(..., description="Image date in YYYY-MM-DD format")
-    updated: str = Field(..., description="Generation time in RFC3339 format (e.g., 2026-02-01T07:22:32+08:00)")
+    updated: str = Field(..., description="Generation time (e.g., 2025/01/13 07:22:32)")
     updated_at: int = Field(..., description="Generation timestamp in milliseconds (13 digits)")
     image: str = Field(..., description="Full URL to the image file")
 
@@ -93,7 +93,7 @@ class GuideSchema(BaseModel):
 class NewsMetaSchema(BaseModel):
     """News source metadata."""
     date: Optional[str] = Field(None, description="News date")
-    updated: Optional[str] = Field(None, description="News update time in RFC3339 format (e.g., 2026-02-01T07:22:32+08:00)")
+    updated: Optional[str] = Field(None, description="News update time (e.g., 2025/01/13 07:22:32)")
     updated_at: Optional[int] = Field(None, description="News update timestamp in milliseconds")
 
 
@@ -130,7 +130,7 @@ class StockIndexItemSchema(BaseModel):
 class StockIndicesSchema(BaseModel):
     """Stock indices data schema."""
     items: list[StockIndexItemSchema] = Field(default_factory=list, description="List of stock indices")
-    updated: str = Field(..., description="Last update time in RFC3339 format (e.g., 2026-02-01T07:22:32+08:00)")
+    updated: str = Field(..., description="Last update time (e.g., 2025/01/13 07:22:32)")
     updated_at: int = Field(..., description="Update timestamp in milliseconds")
     trading_day: dict[str, bool] = Field(..., description="Trading day status by market")
     is_stale: bool = Field(..., description="Whether data is stale/cached")
@@ -146,7 +146,7 @@ class CountdownSchema(BaseModel):
 class MoyurenDetailResponse(BaseModel):
     """Response model for moyuren detail API."""
     date: str = Field(..., description="Image date in YYYY-MM-DD format")
-    updated: str = Field(..., description="Generation time in RFC3339 format (e.g., 2026-02-01T07:22:32+08:00)")
+    updated: str = Field(..., description="Generation time (e.g., 2025/01/13 07:22:32)")
     updated_at: int = Field(..., description="Generation timestamp in milliseconds (13 digits)")
     image: str = Field(..., description="Full URL to the image file")
     weekday: str = Field(..., description="Weekday in Chinese (e.g., 星期日)")

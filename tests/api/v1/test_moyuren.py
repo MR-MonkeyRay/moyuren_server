@@ -24,7 +24,7 @@ class TestMoyurenAPI:
             "public": {
                 "date": "2026-02-04",
                 "timestamp": "2026-02-04T10:00:00+08:00",
-                "updated": "2026-02-04T10:00:00+08:00",
+                "updated": "2026/02/04 10:00:00",
                 "updated_at": 1738634400000,
                 "weekday": "星期三",
                 "lunar_date": "正月初七",
@@ -36,7 +36,7 @@ class TestMoyurenAPI:
             "templates": {
                 "moyuren": {
                     "filename": "moyuren_20260204.jpg",
-                    "updated": "2026-02-04T10:00:00+08:00",
+                    "updated": "2026/02/04 10:00:00",
                     "updated_at": 1738634400000,
                 }
             },
@@ -44,7 +44,7 @@ class TestMoyurenAPI:
             # Backward compatible fields
             "date": "2026-02-04",
             "timestamp": "2026-02-04T10:00:00+08:00",
-            "updated": "2026-02-04T10:00:00+08:00",
+            "updated": "2026/02/04 10:00:00",
             "updated_at": 1738634400000,
             "filename": "moyuren_20260204.jpg",
         }
@@ -141,19 +141,19 @@ class TestMoyurenAPI:
                 "version": 2,
                 "date": "2026-02-04",
                 "timestamp": "2026-02-04T10:00:00+08:00",
-                "updated": "2026-02-04T10:00:00+08:00",
+                "updated": "2026/02/04 10:00:00",
                 "updated_at": 1738634400000,
                 "filename": "moyuren_20260204.jpg",
                 "public": {
                     "date": "2026-02-04",
                     "timestamp": "2026-02-04T10:00:00+08:00",
-                    "updated": "2026-02-04T10:00:00+08:00",
+                    "updated": "2026/02/04 10:00:00",
                     "updated_at": 1738634400000,
                 },
                 "templates": {
                     "moyuren": {
                         "filename": "moyuren_20260204.jpg",
-                        "updated": "2026-02-04T10:00:00+08:00",
+                        "updated": "2026/02/04 10:00:00",
                         "updated_at": 1738634400000,
                     }
                 },
@@ -216,13 +216,13 @@ class TestMoyurenAPI:
             "filename": "nonexistent.jpg",
             "date": "2026-02-04",
             "timestamp": "2026-02-04T10:00:00+08:00",
-            "updated": "2026-02-04T10:00:00+08:00",
+            "updated": "2026/02/04 10:00:00",
             "updated_at": 1738634400000,
             "public": {"date": "2026-02-04"},
             "templates": {
                 "moyuren": {
                     "filename": "nonexistent.jpg",
-                    "updated": "2026-02-04T10:00:00+08:00",
+                    "updated": "2026/02/04 10:00:00",
                     "updated_at": 1738634400000,
                 }
             },

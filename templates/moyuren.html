@@ -64,6 +64,7 @@
 
             --card-radius: 16px;
             --spacing: 16px;
+            --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.4);
 
             /* 字体系统 - 增加系统字体作为后备，确保 CDN 失败时仍能正常显示 */
             --font-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', 'WenQuanYi Micro Hei', 'Helvetica Neue', Arial, sans-serif;
@@ -211,21 +212,18 @@
         
         .weekend-wrap { margin-top: 10px; font-size: 14px; color: var(--text-grey); display: flex; align-items: baseline; justify-content: flex-end; }
         .weekend-num { font-size: 20px; font-weight: 800; color: var(--orange-main); margin: 0 4px; }
-        /* 周末当天特殊样式 - 温暖、杂志感 */
+        /* 周末当天特殊样式 - 柔和橙色系，与节气框统一风格 */
         .weekend-wrap.is-weekend {
-            /* Magazine Style: Soft Warmth */
-            background: linear-gradient(145deg, #FFF7ED, #FFEDD5);
-            color: #9A3412; /* Dark Orange/Brown for contrast */
+            background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);
+            color: #9A3412;
             padding: 8px 16px;
-            border-radius: 12px;
+            border-radius: var(--card-radius);
             justify-content: center;
             font-weight: 600;
-            /* 细微边框增加精致感 */
-            border: 1px solid rgba(251, 146, 60, 0.2);
-            /* 拟态浮起效果 */
+            border: none;
             box-shadow:
-                4px 4px 10px rgba(251, 146, 60, 0.1),
-                -4px -4px 10px rgba(255, 255, 255, 0.8);
+                0 4px 12px rgba(251, 146, 60, 0.2),
+                var(--highlight-inset);
             text-shadow: none;
         }
 
@@ -677,24 +675,24 @@
         /* 节假日当天样式 */
         .h-num.today { font-size: 24px; color: var(--red-main); }
 
-        /* 节假日当天卡片样式 - 优雅、喜庆 */
+        /* 节假日当天卡片样式 - 优雅红色系，与节气框统一风格 */
         .holiday-item.is-today {
-            /* Magazine Style: Elegant Festive */
-            background: linear-gradient(145deg, #FEF2F2, #FEE2E2);
-            border: 1px solid rgba(239, 68, 68, 0.2);
-            border-left: 1px solid rgba(239, 68, 68, 0.2);
+            background: linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%);
+            border: none;
+            border-left: none;
+            border-radius: var(--card-radius);
             box-shadow:
-                4px 4px 10px rgba(220, 38, 38, 0.1),
-                -4px -4px 10px rgba(255, 255, 255, 0.8);
+                0 4px 12px rgba(220, 38, 38, 0.15),
+                var(--highlight-inset);
             transform: translateY(-1px);
         }
         .holiday-item.is-today .h-name {
-            color: #991B1B; /* Dark Red */
+            color: #991B1B;
             font-weight: 700;
             text-shadow: none;
         }
         .holiday-item.is-today .h-num.today {
-            color: #DC2626; /* Red Main */
+            color: #DC2626;
         }
         .holiday-item.is-today .h-unit {
             color: #B91C1C;
@@ -712,15 +710,15 @@
             color: #566573;
         }
 
-        /* 补班日当天样式 - 冷静、专业 */
+        /* 补班日当天样式 - 冷静灰蓝色系，与节气框统一风格 */
         .holiday-item.workday.is-today {
-            /* Magazine Style: Cool & Professional */
-            background: linear-gradient(145deg, #F1F5F9, #E2E8F0);
-            border: 1px solid rgba(148, 163, 184, 0.4);
-            border-left: 1px solid rgba(148, 163, 184, 0.4);
+            background: linear-gradient(135deg, #F1F5F9 0%, #E2E8F0 100%);
+            border: none;
+            border-left: none;
+            border-radius: var(--card-radius);
             box-shadow:
-                4px 4px 10px rgba(148, 163, 184, 0.2),
-                -4px -4px 10px rgba(255, 255, 255, 0.8);
+                0 4px 12px rgba(148, 163, 184, 0.2),
+                var(--highlight-inset);
             transform: translateY(-1px);
         }
 

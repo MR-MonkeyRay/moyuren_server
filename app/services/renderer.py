@@ -15,9 +15,10 @@ from app.services.browser import browser_manager
 
 
 def format_datetime(value: str | datetime | int | float | None) -> str:
-    """Format RFC3339 datetime to friendly display format.
+    """Format datetime to friendly display format.
 
     Supports:
+    - New format strings (e.g., "2026/02/01 07:22:32")
     - RFC3339 strings (e.g., "2026-02-01T07:22:32+08:00")
     - datetime objects
     - Unix timestamps (int/float, excluding bool)
@@ -43,6 +44,12 @@ def format_datetime(value: str | datetime | int | float | None) -> str:
     if isinstance(value, str):
         if not value.strip():
             return "--"
+        try:
+            # Try new format first (YYYY/MM/DD HH:MM:SS)
+            dt = datetime.strptime(value, "%Y/%m/%d %H:%M:%S")
+            return dt.strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            pass
         try:
             # Handle 'Z' suffix (UTC timezone indicator)
             normalized = value.replace("Z", "+00:00") if value.endswith("Z") else value
