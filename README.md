@@ -230,15 +230,24 @@ sudo chown -R 1000:1000 static state logs
 
 | 配置项 | 环境变量 | 说明 |
 | ------ | -------- | ---- |
+| `server.host` | `SERVER_HOST` | 监听地址 |
 | `server.port` | `SERVER_PORT` | 服务端口 |
 | `server.base_domain` | `SERVER_BASE_DOMAIN` | 图片 URL 前缀 |
+| `paths.static_dir` | `PATHS_STATIC_DIR` | 图片输出目录 |
+| `paths.state_path` | `PATHS_STATE_PATH` | 最新图片状态文件路径 |
+| `paths.template_path` | - | 默认模板路径（单模板模式兼容字段） |
 | `scheduler.daily_times` | `SCHEDULER_DAILY_TIMES` | 生成时间（逗号分隔） |
 | `render.viewport_width` | `RENDER_VIEWPORT_WIDTH` | 视口宽度 |
 | `render.viewport_height` | `RENDER_VIEWPORT_HEIGHT` | 视口最小高度 |
 | `render.device_scale_factor` | `RENDER_DEVICE_SCALE_FACTOR` | 缩放因子 |
-| `render.use_china_cdn` | `RENDER_USE_CHINA_CDN` | 字体 CDN 开关（true: 大陆 CDN googleapis.cn, false: 国际 CDN googleapis.com） |
+| `render.jpeg_quality` | `RENDER_JPEG_QUALITY` | JPEG 质量（1-100） |
+| `render.use_china_cdn` | `RENDER_USE_CHINA_CDN` | 字体 CDN 开关（true: 大陆 CDN fonts.googleapis.cn, false: 国际 CDN fonts.googleapis.com） |
 | `cache.ttl_hours` | `CACHE_TTL_HOURS` | 缓存保留时长 |
 | `logging.level` | `LOG_LEVEL` | 日志级别 |
+| `logging.file` | `LOG_FILE` | 日志文件路径（空字符串表示只输出到标准输出） |
+| `timezone.business` | - | 业务时区（节假日/节气/周末判断） |
+| `timezone.display` | - | 显示时区（图片时间戳、API 响应时间；支持 `local`） |
+| `fetch.api_endpoints` | - | 外部数据源端点配置（如新闻） |
 | `holiday.mirror_urls` | `HOLIDAY_MIRROR_URLS` | GitHub 代理镜像站（逗号分隔） |
 | `holiday.timeout_sec` | `HOLIDAY_TIMEOUT_SEC` | 节假日数据请求超时 |
 | `fun_content.timeout_sec` | - | 趣味内容 API 超时 |
@@ -246,18 +255,43 @@ sudo chown -R 1000:1000 static state logs
 | `crazy_thursday.enabled` | - | 是否启用疯狂星期四功能 |
 | `crazy_thursday.url` | - | KFC 文案 API 地址 |
 | `crazy_thursday.timeout_sec` | - | KFC API 超时时间 |
+| `templates.default` | - | 默认模板名（多模板模式） |
+| `templates.items` | - | 模板列表（多模板模式，支持 viewport/theme/jpeg_quality 覆盖） |
+| `stock_index.quote_url` | - | 大盘指数行情接口地址 |
+| `stock_index.secids` | - | 指数列表（东方财富 secid） |
+| `stock_index.timeout_sec` | - | 行情请求超时（秒） |
+| `stock_index.market_timezones` | - | 各市场时区配置（A/HK/US） |
+| `stock_index.cache_ttl_sec` | - | 行情缓存 TTL（秒） |
 
 ### 配置示例
 
 ```yaml
 server:
+  host: "0.0.0.0"
   port: 8000
   base_domain: "https://example.com"
+
+timezone:
+  business: "Asia/Shanghai"
+  display: "local"
+
+paths:
+  static_dir: "static"
+  template_path: "templates/moyuren.html"
+  state_path: "state/latest.json"
 
 scheduler:
   daily_times:
     - "06:00"
     - "18:00"
+
+fetch:
+  api_endpoints:
+    - name: "news"
+      url: "https://60s.viki.moe/v2/60s"
+      timeout_sec: 10
+      params:
+        "force-update": "false"
 
 render:
   viewport_width: 794
@@ -288,6 +322,10 @@ fun_content:
       url: "https://60s.viki.moe/v2/hitokoto"
       data_path: "data.hitokoto"
       display_title: "💬 一言"
+
+logging:
+  level: "INFO"
+  file: "logs/app.log"
 ```
 
 ## 目录结构
@@ -305,6 +343,9 @@ moyuren_server/
 │   │   ├── kfc.py        # 疯狂星期四服务
 │   │   ├── calendar.py   # 日历计算
 │   │   ├── compute.py    # 数据计算
+│   │   ├── stock_index.py # 大盘指数服务
+│   │   ├── browser.py    # Playwright 浏览器管理
+│   │   ├── state.py      # 状态文件读写
 │   │   ├── renderer.py   # 图片渲染
 │   │   ├── generator.py  # 图片生成流水线
 │   │   └── cache.py      # 缓存清理
@@ -318,6 +359,10 @@ moyuren_server/
 │   ├── detail_crazy_thursday.json # 疯狂星期四响应示例
 │   ├── detail_holiday.json        # 节假日响应示例
 │   └── detail_solar_term.json     # 节气当天响应示例
+├── static/               # 图片输出目录（可配置）
+├── state/                # 状态文件目录（latest.json）
+├── logs/                 # 日志目录
+├── tests/                # 测试
 ├── config.yaml           # 配置文件
 └── docker-compose.yaml   # Docker 编排
 ```
