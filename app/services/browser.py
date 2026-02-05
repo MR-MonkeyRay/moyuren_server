@@ -28,6 +28,18 @@ class BrowserManager:
         """Configure the browser manager with a logger instance."""
         self._logger = logger_instance
 
+    async def warmup(self) -> None:
+        """Pre-initialize the browser to avoid cold start latency.
+
+        This method can be called during application startup to ensure
+        the browser is ready before the first render request.
+
+        Raises:
+            RuntimeError: If browser manager is shutting down.
+        """
+        await self._ensure_browser()
+        self._logger.info("Browser warmup completed")
+
     async def _ensure_browser(self) -> None:
         """Ensure browser is initialized (lazy loading).
 
@@ -49,6 +61,17 @@ class BrowserManager:
                 self._browser = await pw.chromium.launch(headless=True)
                 self._playwright = pw
                 self._logger.info("Chromium browser launched")
+            except asyncio.CancelledError:
+                # Handle cancellation during browser initialization
+                self._logger.info("Browser initialization cancelled")
+                if pw is not None:
+                    try:
+                        await pw.stop()
+                    except Exception as stop_err:
+                        self._logger.warning(f"Failed to stop Playwright after cancellation: {stop_err}")
+                self._playwright = None
+                self._browser = None
+                raise
             except Exception:
                 # Clean up playwright if browser launch failed
                 if pw is not None:
@@ -91,6 +114,11 @@ class BrowserManager:
                 viewport={"width": width, "height": height},
                 device_scale_factor=device_scale_factor,
             )
+        except asyncio.CancelledError:
+            # Handle cancellation - must rollback _active_pages counter
+            async with self._lock:
+                self._active_pages -= 1
+            raise
         except Exception:
             async with self._lock:
                 self._active_pages -= 1

@@ -3,11 +3,14 @@
 import logging
 import random
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import httpx
 
 from app.core.config import FunContentConfig, FunContentEndpointConfig
+from app.services.calendar import today_business
+from app.services.daily_cache import DailyCache
 
 logger = logging.getLogger(__name__)
 
@@ -117,3 +120,40 @@ class FunContentService:
             else:
                 return None
         return data
+
+
+class CachedFunContentService(DailyCache[dict[str, str]]):
+    """带日级缓存的趣味内容服务。
+
+    继承 DailyCache，为 FunContentService 提供日级缓存能力。
+    缓存在每日零点自动过期，网络获取失败时返回过期缓存。
+    """
+
+    def __init__(
+        self,
+        config: FunContentConfig,
+        logger: logging.Logger,
+        cache_dir: Path,
+    ) -> None:
+        """初始化带缓存的趣味内容服务。
+
+        Args:
+            config: 趣味内容配置
+            logger: 日志记录器
+            cache_dir: 缓存目录路径
+        """
+        super().__init__("fun_content", cache_dir, logger)
+        self._service = FunContentService(config)
+
+    async def fetch_fresh(self) -> dict[str, str] | None:
+        """从网络获取新鲜数据。
+
+        Returns:
+            趣味内容字典（包含 title 和 content），如果获取失败返回 None
+        """
+        try:
+            return await self._service.fetch_content(today_business())
+        except Exception as e:
+            self.logger.error(f"Failed to fetch fun content: {e}")
+            return None
+

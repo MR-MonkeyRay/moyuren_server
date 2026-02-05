@@ -2,9 +2,12 @@
 
 import logging
 import httpx
+from pathlib import Path
 from typing import Any
 
 from app.core.config import CrazyThursdayConfig
+from app.services.calendar import today_business
+from app.services.daily_cache import DailyCache
 
 logger = logging.getLogger(__name__)
 
@@ -63,5 +66,45 @@ class KfcService:
                 logger.warning(f"HTTP {e.response.status_code} from KFC endpoint")
             except Exception as e:
                 logger.warning(f"Failed to fetch KFC content: {e}")
-            
+
         return None
+
+
+class CachedKfcService(DailyCache[str]):
+    """带日级缓存的 KFC 服务。
+
+    继承 DailyCache，为 KfcService 提供日级缓存能力。
+    仅在周四获取 KFC 文案，缓存在每日零点自动过期。
+    """
+
+    def __init__(
+        self,
+        config: CrazyThursdayConfig,
+        logger: logging.Logger,
+        cache_dir: Path,
+    ) -> None:
+        """初始化带缓存的 KFC 服务。
+
+        Args:
+            config: 疯狂星期四配置
+            logger: 日志记录器
+            cache_dir: 缓存目录路径
+        """
+        super().__init__("kfc", cache_dir, logger)
+        self._service = KfcService(config)
+
+    async def fetch_fresh(self) -> str | None:
+        """从网络获取新鲜数据（仅周四获取）。
+
+        Returns:
+            KFC 文案字符串，如果不是周四或获取失败返回 None
+        """
+        # 仅周四获取 KFC 文案
+        if today_business().weekday() != 3:
+            return None
+        try:
+            return await self._service.fetch_kfc_copy()
+        except Exception as e:
+            self.logger.error(f"Failed to fetch KFC content: {e}")
+            return None
+

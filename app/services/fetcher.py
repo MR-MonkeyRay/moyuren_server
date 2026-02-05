@@ -2,12 +2,14 @@
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Any
 
 import httpx
 
 from app.core.config import FetchEndpointConfig
 from app.core.errors import FetchError
+from app.services.daily_cache import DailyCache
 
 
 class DataFetcher:
@@ -75,3 +77,40 @@ class DataFetcher:
         results = await asyncio.gather(*tasks)
 
         return {ep.name: result for ep, result in zip(self.endpoints, results)}
+
+
+class CachedDataFetcher(DailyCache[dict[str, Any]]):
+    """带日级缓存的数据获取器。
+
+    继承 DailyCache，为 DataFetcher 提供日级缓存能力。
+    缓存在每日零点自动过期，网络获取失败时返回过期缓存。
+    """
+
+    def __init__(
+        self,
+        endpoints: list[FetchEndpointConfig],
+        logger: logging.Logger,
+        cache_dir: Path,
+    ) -> None:
+        """初始化带缓存的数据获取器。
+
+        Args:
+            endpoints: API 端点配置列表
+            logger: 日志记录器
+            cache_dir: 缓存目录路径
+        """
+        super().__init__("news", cache_dir, logger)
+        self._fetcher = DataFetcher(endpoints, logger)
+
+    async def fetch_fresh(self) -> dict[str, Any] | None:
+        """从网络获取新鲜数据。
+
+        Returns:
+            获取的数据字典，如果获取失败返回 None
+        """
+        try:
+            return await self._fetcher.fetch_all()
+        except Exception as e:
+            self.logger.error(f"Failed to fetch data: {e}")
+            return None
+

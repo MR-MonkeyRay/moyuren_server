@@ -17,9 +17,11 @@ https://api.monkeyray.net/api/v1/moyuren
 - 每日定时生成摸鱼日历图片（支持多时间点）
 - 按需生成：启动时或请求时若无可用图片则自动生成
 - 智能缓存管理：
-  - 启动时自动检查缓存有效性（基于 TTL 配置）
+  - 日级缓存：数据源独立缓存，次日自动过期
+  - 启动预热：应用启动时并行预热所有缓存
   - 混合更新策略：缓存过期时后台异步刷新（快速启动），无缓存时同步生成
-  - 自动清理过期缓存文件
+  - 降级策略：网络失败时返回过期缓存
+  - 自动清理过期图片文件
 - 60 秒读懂世界新闻
   - 数据源：[60s-api](https://60s.viki.moe)
 - 农历信息与节气（干支年、生肖、二十四节气）
@@ -263,6 +265,32 @@ sudo chown -R 1000:1000 static state logs
 | `stock_index.market_timezones` | - | 各市场时区配置（A/HK/US） |
 | `stock_index.cache_ttl_sec` | - | 行情缓存 TTL（秒） |
 
+### 缓存目录结构
+
+```
+state/
+├── holidays/          # 节假日原始年度数据缓存
+│   ├── 2025.json
+│   ├── 2026.json
+│   └── 2027.json
+├── cache/             # 日级缓存目录
+│   ├── news.json      # 新闻数据
+│   ├── fun_content.json  # 趣味内容
+│   ├── kfc.json       # KFC 文案（仅周四有效）
+│   └── holidays.json  # 聚合后的节假日列表
+├── latest.json        # 最新图片状态
+└── .generation.lock   # 生成锁文件
+```
+
+日级缓存文件格式：
+```json
+{
+  "date": "2026-02-05",
+  "data": { ... },
+  "fetched_at": 1738713600000
+}
+```
+
 ### 配置示例
 
 ```yaml
@@ -337,6 +365,7 @@ moyuren_server/
 │   ├── api/v1/           # API 路由
 │   ├── core/             # 配置、调度、错误处理
 │   ├── services/         # 业务逻辑
+│   │   ├── daily_cache.py # 日级缓存抽象基类
 │   │   ├── fetcher.py    # 数据获取
 │   │   ├── holiday.py    # 节假日服务
 │   │   ├── fun_content.py # 趣味内容服务

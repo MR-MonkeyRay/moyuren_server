@@ -17,13 +17,13 @@ from app.core.scheduler import TaskScheduler
 from app.services.browser import browser_manager
 from app.services.cache import CacheCleaner
 from app.services.compute import DataComputer, DomainDataAggregator, TemplateAdapter
-from app.services.fetcher import DataFetcher
-from app.services.fun_content import FunContentService
-from app.services.kfc import KfcService
-from app.services.holiday import HolidayService
+from app.services.fetcher import CachedDataFetcher
+from app.services.fun_content import CachedFunContentService
+from app.services.kfc import CachedKfcService
+from app.services.holiday import CachedHolidayService
 from app.services.stock_index import StockIndexService
 from app.services.renderer import ImageRenderer
-from app.services.calendar import init_timezones
+from app.services.calendar import init_timezones, today_business
 
 
 @asynccontextmanager
@@ -67,9 +67,14 @@ async def lifespan(app: FastAPI):
         app.mount("/static", StaticFiles(directory=config.paths.static_dir), name="static")
 
     # 4. Initialize services
-    data_fetcher = DataFetcher(
+    # 创建日级缓存目录
+    daily_cache_dir = Path(config.paths.state_path).parent / "cache"
+
+    # 初始化带缓存的数据获取器
+    data_fetcher = CachedDataFetcher(
         endpoints=config.fetch.api_endpoints,
         logger=logger,
+        cache_dir=daily_cache_dir,
     )
 
     # Initialize data computation components
@@ -77,25 +82,37 @@ async def lifespan(app: FastAPI):
     template_adapter = TemplateAdapter()
     data_computer = DataComputer(domain_aggregator, template_adapter)
 
-    holiday_cache_dir = Path(config.paths.state_path).parent / "holidays"
-    holiday_service = HolidayService(
+    # 初始化节假日服务（原始数据目录保持不变）
+    holiday_raw_cache_dir = Path(config.paths.state_path).parent / "holidays"
+    holiday_service = CachedHolidayService(
         logger=logger,
-        cache_dir=holiday_cache_dir,
+        cache_dir=daily_cache_dir,
+        raw_cache_dir=holiday_raw_cache_dir,
         mirror_urls=config.holiday.mirror_urls,
         timeout_sec=config.holiday.timeout_sec,
     )
 
-    fun_content_service = FunContentService(config.fun_content)
-    
-    # Initialize KFC service if config exists (handle cases where config might be missing temporarily)
+    # 初始化带缓存的趣味内容服务
+    fun_content_service = CachedFunContentService(
+        config=config.fun_content,
+        logger=logger,
+        cache_dir=daily_cache_dir,
+    )
+
+    # 初始化带缓存的 KFC 服务
     kfc_service = None
     if config.crazy_thursday:
-        kfc_service = KfcService(config.crazy_thursday)
+        kfc_service = CachedKfcService(
+            config=config.crazy_thursday,
+            logger=logger,
+            cache_dir=daily_cache_dir,
+        )
 
     # Initialize stock index service if config exists
     stock_index_service = None
     if config.stock_index:
         stock_index_service = StockIndexService(config.stock_index)
+
 
     # Get templates configuration
     templates_config = config.get_templates_config()
@@ -126,6 +143,25 @@ async def lifespan(app: FastAPI):
     app.state.templates_config = templates_config
     app.state.cache_cleaner = cache_cleaner
     app.state.is_refreshing = False  # Initialize background refresh lock
+
+    # 启动预热日级缓存
+    async def warmup_daily_cache():
+        """预热日级缓存"""
+        logger.info("Warming up daily cache...")
+        tasks = [
+            data_fetcher.get(),
+            fun_content_service.get(),
+            holiday_service.get(),
+        ]
+        if kfc_service:
+            tasks.append(kfc_service.get())
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.warning(f"Cache warmup task {i} failed: {result}")
+        logger.info("Daily cache warmup completed")
+
+    await warmup_daily_cache()
 
     # 5. Initialize and start scheduler
     scheduler = TaskScheduler(config.scheduler, logger)
@@ -191,25 +227,13 @@ async def lifespan(app: FastAPI):
                         logger.warning(f"Invalid updated_at value: {updated_at_ms} (negative timestamp)")
                         need_regenerate = True
                     else:
-                        current_time_ms = int(time.time() * 1000)
-
-                        # Check if updated_at is in the future (allow 1 minute tolerance for clock skew)
-                        if updated_at_ms > current_time_ms + 60000:
-                            logger.warning(f"Invalid updated_at value: {updated_at_ms} (future timestamp)")
+                        # 使用日期边界判断替代 TTL
+                        cached_date = state_data.get("date")
+                        today_str = today_business().isoformat()
+                        if cached_date != today_str:
+                            logger.info(f"Cache date mismatch: {cached_date} != {today_str}")
                             need_regenerate = True
-                        else:
-                            age_hours = max((current_time_ms - updated_at_ms) / (1000 * 3600), 0)
-
-                            # Validate TTL configuration and use default if invalid
-                            ttl_hours = config.cache.ttl_hours
-                            if not isinstance(ttl_hours, (int, float)) or ttl_hours <= 0:
-                                ttl_hours = 24  # Use default value
-                                logger.warning(f"Invalid cache TTL configuration: {config.cache.ttl_hours}, using default: {ttl_hours} hours")
-
-                            if age_hours > ttl_hours:
-                                logger.info(f"Cache expired: {age_hours:.1f} hours old, TTL is {ttl_hours} hours")
-                                need_regenerate = True
-                                cache_is_valid_but_expired = True  # Mark as valid structure, just expired
+                            cache_is_valid_but_expired = True
                 except (TypeError, ValueError, KeyError) as e:
                     logger.warning(f"Failed to check cache expiration: {e}")
                     need_regenerate = True
@@ -268,12 +292,36 @@ async def lifespan(app: FastAPI):
                 logger.error(f"Initial image generation failed: {e}")
                 logger.warning("Service will start without cache, API will trigger on-demand generation")
 
+    # 7. Browser warmup (background, non-blocking)
+    async def _browser_warmup():
+        """Background task to pre-initialize browser."""
+        try:
+            await browser_manager.warmup()
+        except asyncio.CancelledError:
+            logger.info("Browser warmup cancelled due to shutdown")
+            raise
+        except Exception as e:
+            logger.warning(f"Browser warmup failed: {e}")
+
+    app.state.browser_warmup_task = asyncio.create_task(_browser_warmup())
+
     logger.info("Moyuren API started successfully")
 
     yield
 
     # ==================== Shutdown ====================
     logger.info("Shutting down Moyuren API...")
+
+    # Cancel browser warmup task if running
+    if hasattr(app.state, "browser_warmup_task"):
+        task = app.state.browser_warmup_task
+        if not task.done():
+            logger.info("Cancelling browser warmup task...")
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
     # Cancel background refresh task if running
     if hasattr(app.state, "background_refresh_task"):

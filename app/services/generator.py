@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from filelock import FileLock, Timeout
 
 from app.core.errors import StorageError
-from app.services.calendar import get_display_timezone
+from app.services.calendar import get_display_timezone, today_business
 from app.services.state import migrate_state
 
 
@@ -76,6 +76,119 @@ def _read_latest_filename(state_path: Path, template_name: str | None = None) ->
         return None
 
 
+async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
+    """Fetch all data sources in parallel.
+
+    Uses asyncio.gather to fetch data from multiple sources concurrently,
+    significantly reducing total fetch time compared to sequential fetching.
+
+    Args:
+        app: FastAPI application instance with services in app.state.
+        logger: Logger instance for logging.
+
+    Returns:
+        Dictionary containing all fetched data with appropriate defaults for failures.
+    """
+    # Define fetch tasks
+    async def fetch_api_data():
+        try:
+            data = await app.state.data_fetcher.get()
+            return data if data is not None else {}
+        except Exception as e:
+            logger.warning(f"Failed to fetch API data: {e}")
+            return {}
+
+    async def fetch_holidays():
+        try:
+            holidays = await app.state.holiday_service.get()
+            return holidays if holidays is not None else []
+        except Exception as e:
+            logger.warning(f"Failed to fetch holidays: {e}")
+            return []
+
+    async def fetch_fun_content():
+        try:
+            return await app.state.fun_content_service.get()
+        except Exception as e:
+            logger.warning(f"Failed to fetch fun content: {e}")
+            return None
+
+    async def fetch_kfc():
+        if not app.state.kfc_service:
+            return None
+        try:
+            return await app.state.kfc_service.get()
+        except Exception as e:
+            logger.warning(f"Failed to fetch KFC content: {e}")
+            return None
+
+    async def fetch_stock_indices():
+        if not app.state.stock_index_service:
+            return None
+        try:
+            return await app.state.stock_index_service.fetch_indices()
+        except Exception as e:
+            logger.warning(f"Failed to fetch stock indices: {e}")
+            return None
+
+    # Execute all fetches in parallel
+    results = await asyncio.gather(
+        fetch_api_data(),
+        fetch_holidays(),
+        fetch_fun_content(),
+        fetch_kfc(),
+        fetch_stock_indices(),
+    )
+
+    # Merge results into raw_data with type safety
+    # Ensure raw_data is a dict (DailyCache.get() might return non-dict if corrupted)
+    if not isinstance(results[0], dict):
+        logger.warning(f"raw_data is not dict (got {type(results[0]).__name__}), using empty dict")
+        raw_data = {}
+    else:
+        raw_data = results[0]
+    raw_data["holidays"] = results[1]
+    raw_data["fun_content"] = results[2]
+    raw_data["kfc_copy"] = results[3]
+    raw_data["stock_indices"] = results[4]
+
+    # Log fetch results (count actual API data keys, excluding merged fields)
+    api_keys = [k for k in raw_data if k not in ("holidays", "fun_content", "kfc_copy", "stock_indices")]
+    logger.info(f"Fetched data: {len(api_keys)} API endpoints, parallel fetch completed")
+    if results[1]:
+        logger.info(f"Fetched {len(results[1])} holidays")
+    if results[2] and isinstance(results[2], dict):
+        logger.info(f"Fetched fun content: {results[2].get('title')}")
+    if results[3]:
+        logger.info("Fetched KFC Crazy Thursday content")
+    if results[4] and isinstance(results[4], dict):
+        logger.info(f"Fetched {len(results[4].get('items', []))} stock indices")
+
+    return raw_data
+
+
+def _schedule_cache_cleanup(cache_cleaner, logger) -> None:
+    """Schedule cache cleanup as a fire-and-forget background task.
+
+    This function creates a background task for cache cleanup that doesn't
+    block the main generation flow. Errors are logged but don't affect
+    the caller.
+
+    Args:
+        cache_cleaner: CacheCleaner instance.
+        logger: Logger instance for logging.
+    """
+    async def _cleanup_task():
+        try:
+            deleted_count = await asyncio.to_thread(cache_cleaner.cleanup)
+            if deleted_count > 0:
+                logger.info(f"Cleaned up {deleted_count} expired cache file(s)")
+        except Exception as e:
+            logger.warning(f"Cache cleanup failed: {e}")
+
+    asyncio.create_task(_cleanup_task())
+
+
 async def generate_and_save_image(app: FastAPI, template_name: str | None = None) -> str:
     """Generate image and update state file.
 
@@ -133,48 +246,8 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
 
                 logger.info("Starting image generation...")
 
-                # 1. Fetch data from all endpoints
-                raw_data = await app.state.data_fetcher.fetch_all()
-                logger.info(f"Fetched data from {len(raw_data)} endpoints")
-
-                # 1.1 Fetch holiday data
-                try:
-                    holidays = await app.state.holiday_service.fetch_holidays()
-                    raw_data["holidays"] = holidays
-                    logger.info(f"Fetched {len(holidays)} holidays")
-                except Exception as e:
-                    logger.warning(f"Failed to fetch holidays, using default: {e}")
-                    raw_data["holidays"] = []
-
-                # 1.2 Fetch fun content
-                try:
-                    fun_content = await app.state.fun_content_service.fetch_content(date.today())
-                    raw_data["fun_content"] = fun_content
-                    logger.info(f"Fetched fun content: {fun_content.get('title')}")
-                except Exception as e:
-                    logger.warning(f"Failed to fetch fun content, using default: {e}")
-                    raw_data["fun_content"] = None
-
-                # 1.3 Fetch KFC Crazy Thursday content (Only on Thursday)
-                raw_data["kfc_copy"] = None
-                if app.state.kfc_service and date.today().weekday() == 3:
-                    try:
-                        kfc_copy = await app.state.kfc_service.fetch_kfc_copy()
-                        raw_data["kfc_copy"] = kfc_copy
-                        if kfc_copy:
-                            logger.info("Fetched KFC Crazy Thursday content")
-                    except Exception as e:
-                        logger.warning(f"Failed to fetch KFC content: {e}")
-
-                # 1.4 Fetch stock index data
-                raw_data["stock_indices"] = None
-                if app.state.stock_index_service:
-                    try:
-                        stock_indices = await app.state.stock_index_service.fetch_indices()
-                        raw_data["stock_indices"] = stock_indices
-                        logger.info(f"Fetched {len(stock_indices.get('items', []))} stock indices")
-                    except Exception as e:
-                        logger.warning(f"Failed to fetch stock indices: {e}")
+                # 1. Fetch all data sources in parallel (使用缓存服务)
+                raw_data = await _fetch_all_data_parallel(app, logger)
 
                 # 2. Compute template context
                 template_data = app.state.data_computer.compute(raw_data)
@@ -197,10 +270,8 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
                     template_name=resolved_template_name,
                 )
 
-                # 5. Clean up old cache (run in thread to avoid blocking)
-                deleted_count = await asyncio.to_thread(app.state.cache_cleaner.cleanup)
-                if deleted_count > 0:
-                    logger.info(f"Cleaned up {deleted_count} expired cache file(s)")
+                # 5. Clean up old cache (fire-and-forget, non-blocking)
+                _schedule_cache_cleanup(app.state.cache_cleaner, logger)
 
                 return filename
             finally:
@@ -291,8 +362,10 @@ async def _update_state_file(
         updated_at_ms = int(now.timestamp() * 1000)
 
         # Public data (shared across templates)
+        # Use today_business() for date to ensure consistency with cache validation in main.py
+        business_date = today_business()
         public_data = {
-            "date": now.strftime("%Y-%m-%d"),
+            "date": business_date.isoformat(),
             "timestamp": now.isoformat(),
             "updated": updated_str,
             "updated_at": updated_at_ms,
