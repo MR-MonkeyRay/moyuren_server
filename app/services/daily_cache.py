@@ -9,8 +9,9 @@ import os
 import tempfile
 import time
 from abc import ABC, abstractmethod
+from datetime import date
 from pathlib import Path
-from typing import Generic, TypeVar
+from typing import Callable, Generic, TypeVar
 
 from app.services.calendar import today_business
 
@@ -41,6 +42,7 @@ class DailyCache(ABC, Generic[T]):
         namespace: str,
         cache_dir: Path,
         logger: logging.Logger,
+        date_provider: Callable[[], date] | None = None,
     ) -> None:
         """初始化日级缓存。
 
@@ -48,10 +50,12 @@ class DailyCache(ABC, Generic[T]):
             namespace: 缓存命名空间
             cache_dir: 缓存目录路径
             logger: 日志记录器
+            date_provider: 日期提供函数，默认使用 today_business
         """
         self.namespace = namespace
         self.cache_dir = cache_dir
         self.logger = logger
+        self._date_provider = date_provider
 
         # 确保缓存目录存在
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -63,6 +67,17 @@ class DailyCache(ABC, Generic[T]):
             缓存文件路径
         """
         return self.cache_dir / f"{self.namespace}.json"
+
+    def cache_key(self) -> str:
+        """获取缓存键（子类可覆盖）。
+
+        默认使用 date_provider 提供的日期作为缓存边界。
+
+        Returns:
+            缓存键字符串（默认：YYYY-MM-DD）
+        """
+        provider = self._date_provider or today_business
+        return provider().isoformat()
 
     def is_cache_valid(self) -> bool:
         """检查缓存是否有效（未过期）。
@@ -88,7 +103,7 @@ class DailyCache(ABC, Generic[T]):
                 return False
 
             cache_date = cache_data.get("date")
-            today = today_business().isoformat()
+            today = self.cache_key()
 
             return cache_date == today
         except (json.JSONDecodeError, OSError) as e:
@@ -143,7 +158,7 @@ class DailyCache(ABC, Generic[T]):
         tmp_path: str | None = None
 
         cache_data = {
-            "date": today_business().isoformat(),
+            "date": self.cache_key(),
             "data": data,
             "fetched_at": int(time.time() * 1000),  # 毫秒时间戳
         }

@@ -108,3 +108,10 @@ class CachedKfcService(DailyCache[str]):
             self.logger.error(f"Failed to fetch KFC content: {e}")
             return None
 
+    async def get(self, force_refresh: bool = False) -> str | None:
+        """获取 KFC 文案（非周四直接返回 None，不走 stale 回退）"""
+        if today_business().weekday() != 3:
+            self.logger.debug("Not Thursday, skipping KFC content")
+            return None
+        return await super().get(force_refresh)
+

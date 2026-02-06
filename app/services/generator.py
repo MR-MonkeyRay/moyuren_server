@@ -34,6 +34,27 @@ def _get_async_lock() -> asyncio.Lock:
     return _async_lock
 
 
+def _read_state_file(state_path: Path) -> dict | None:
+    """读取 state 文件内容"""
+    try:
+        with state_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _is_recently_updated(state_data: dict, threshold_sec: int = 10) -> bool:
+    """检查 state 是否在阈值时间内更新"""
+    updated_at = state_data.get("updated_at")
+    if not isinstance(updated_at, (int, float)) or isinstance(updated_at, bool):
+        return False
+    if updated_at <= 0:
+        return False
+    updated_time = updated_at / 1000
+    return time.time() - updated_time < threshold_sec
+
+
 def _read_latest_filename(state_path: Path, template_name: str | None = None) -> str | None:
     """读取 state 文件中的最新文件名
 
@@ -89,10 +110,18 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
     Returns:
         Dictionary containing all fetched data with appropriate defaults for failures.
     """
+    # 优先使用服务容器，兼容旧方式
+    services = getattr(app.state, "services", None)
+    data_fetcher = services.data_fetcher if services else app.state.data_fetcher
+    holiday_service = services.holiday_service if services else app.state.holiday_service
+    fun_content_service = services.fun_content_service if services else app.state.fun_content_service
+    kfc_service = services.kfc_service if services else app.state.kfc_service
+    stock_index_service = services.stock_index_service if services else app.state.stock_index_service
+
     # Define fetch tasks
     async def fetch_api_data():
         try:
-            data = await app.state.data_fetcher.get()
+            data = await data_fetcher.get()
             return data if data is not None else {}
         except Exception as e:
             logger.warning(f"Failed to fetch API data: {e}")
@@ -100,7 +129,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
 
     async def fetch_holidays():
         try:
-            holidays = await app.state.holiday_service.get()
+            holidays = await holiday_service.get()
             return holidays if holidays is not None else []
         except Exception as e:
             logger.warning(f"Failed to fetch holidays: {e}")
@@ -108,25 +137,25 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
 
     async def fetch_fun_content():
         try:
-            return await app.state.fun_content_service.get()
+            return await fun_content_service.get()
         except Exception as e:
             logger.warning(f"Failed to fetch fun content: {e}")
             return None
 
     async def fetch_kfc():
-        if not app.state.kfc_service:
+        if not kfc_service:
             return None
         try:
-            return await app.state.kfc_service.get()
+            return await kfc_service.get()
         except Exception as e:
             logger.warning(f"Failed to fetch KFC content: {e}")
             return None
 
     async def fetch_stock_indices():
-        if not app.state.stock_index_service:
+        if not stock_index_service:
             return None
         try:
-            return await app.state.stock_index_service.fetch_indices()
+            return await stock_index_service.fetch_indices()
         except Exception as e:
             logger.warning(f"Failed to fetch stock indices: {e}")
             return None
@@ -225,23 +254,32 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
     # 获取文件锁路径
     lock_file = state_path.parent / ".generation.lock"
     lock_file.parent.mkdir(parents=True, exist_ok=True)
-    file_lock = FileLock(str(lock_file), timeout=60)
+    file_lock = FileLock(str(lock_file), timeout=5)
 
-    async with async_lock:
-        # 进程内锁保护 asyncio 并发
+    # 快速获取进程内锁（避免请求排队）
+    acquired = False
+    try:
+        await asyncio.wait_for(async_lock.acquire(), timeout=0.1)
+        acquired = True
+    except asyncio.TimeoutError:
+        logger.info("Image generation skipped: another request is generating (in-process)")
+        raise GenerationBusyError("Image generation already in progress")
+
+    try:
         try:
-            # 使用线程执行阻塞的文件锁获取
             await asyncio.to_thread(file_lock.acquire)
             try:
                 # 二次检查：获取锁后检查是否已有新生成的文件
                 if state_path.exists():
-                    mtime = state_path.stat().st_mtime
-                    if time.time() - mtime < 5:
-                        filename = _read_latest_filename(state_path, resolved_template_name)
+                    state_data = _read_state_file(state_path)
+                    if state_data and _is_recently_updated(state_data, threshold_sec=10):
+                        filename = _read_latest_filename(
+                            state_path,
+                            resolved_template_name,
+                        )
                         if filename:
                             logger.info(f"State file recently updated for template '{resolved_template_name}', skipping generation")
                             return filename
-                        # 如果读取失败，继续正常生成流程
                         logger.warning("State file exists but unreadable, proceeding with generation")
 
                 logger.info("Starting image generation...")
@@ -275,7 +313,6 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
 
                 return filename
             finally:
-                # 确保释放文件锁
                 try:
                     await asyncio.to_thread(file_lock.release)
                 except Exception as e:
@@ -283,6 +320,9 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
         except Timeout:
             logger.warning("Image generation skipped: another process is generating")
             raise GenerationBusyError("Image generation locked by another process")
+    finally:
+        if acquired:
+            async_lock.release()
 
 
 async def _update_state_file(

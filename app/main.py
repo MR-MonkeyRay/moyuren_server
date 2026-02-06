@@ -5,15 +5,19 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+import httpx
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.v1.moyuren import router as moyuren_router
 from app.core.config import load_config
+from app.core.errors import AppError, error_response, get_http_status
 from app.core.logging import setup_logging
 from app.services.generator import generate_and_save_image
 from app.core.scheduler import TaskScheduler
+from app.core.services import AppServices
 from app.services.browser import browser_manager
 from app.services.cache import CacheCleaner
 from app.services.compute import DataComputer, DomainDataAggregator, TemplateAdapter
@@ -70,11 +74,19 @@ async def lifespan(app: FastAPI):
     # 创建日级缓存目录
     daily_cache_dir = Path(config.paths.state_path).parent / "cache"
 
+    # 创建共享 HTTP 客户端（连接池复用）
+    http_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(30.0),
+        limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+    )
+    app.state.http_client = http_client
+
     # 初始化带缓存的数据获取器
     data_fetcher = CachedDataFetcher(
         endpoints=config.fetch.api_endpoints,
         logger=logger,
         cache_dir=daily_cache_dir,
+        http_client=http_client,
     )
 
     # Initialize data computation components
@@ -130,7 +142,19 @@ async def lifespan(app: FastAPI):
         logger=logger,
     )
 
-    # Store services in app.state for access in tasks
+    # 创建服务容器
+    app.state.services = AppServices(
+        data_fetcher=data_fetcher,
+        holiday_service=holiday_service,
+        fun_content_service=fun_content_service,
+        kfc_service=kfc_service,
+        stock_index_service=stock_index_service,
+        image_renderer=image_renderer,
+        data_computer=data_computer,
+        cache_cleaner=cache_cleaner,
+    )
+
+    # Store services in app.state for access in tasks (兼容层)
     app.state.data_fetcher = data_fetcher
     app.state.data_computer = data_computer
     app.state.domain_aggregator = domain_aggregator
@@ -307,45 +331,61 @@ async def lifespan(app: FastAPI):
 
     logger.info("Moyuren API started successfully")
 
-    yield
+    try:
+        yield
+    finally:
+        # ==================== Shutdown ====================
+        logger.info("Shutting down Moyuren API...")
 
-    # ==================== Shutdown ====================
-    logger.info("Shutting down Moyuren API...")
+        # Cancel browser warmup task if running
+        if hasattr(app.state, "browser_warmup_task"):
+            task = app.state.browser_warmup_task
+            if not task.done():
+                logger.info("Cancelling browser warmup task...")
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
-    # Cancel browser warmup task if running
-    if hasattr(app.state, "browser_warmup_task"):
-        task = app.state.browser_warmup_task
-        if not task.done():
-            logger.info("Cancelling browser warmup task...")
-            task.cancel()
+        # Cancel background refresh task if running
+        if hasattr(app.state, "background_refresh_task"):
+            task = app.state.background_refresh_task
+            if not task.done():
+                logger.info("Cancelling background refresh task...")
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        # Stop scheduler
+        if hasattr(app.state, "scheduler"):
+            app.state.scheduler.shutdown()
+
+        # Shutdown browser manager
+        if hasattr(app.state, "browser_manager"):
             try:
-                await task
-            except asyncio.CancelledError:
-                pass
+                await app.state.browser_manager.shutdown()
+            except Exception as e:
+                logger.warning(f"Failed to shutdown browser manager: {e}")
 
-    # Cancel background refresh task if running
-    if hasattr(app.state, "background_refresh_task"):
-        task = app.state.background_refresh_task
-        if not task.done():
-            logger.info("Cancelling background refresh task...")
-            task.cancel()
+        # Close shared HTTP client
+        if hasattr(app.state, "http_client"):
             try:
-                await task
-            except asyncio.CancelledError:
-                pass
+                await app.state.http_client.aclose()
+            except Exception as e:
+                logger.warning(f"Failed to close http client: {e}")
 
-    # Stop scheduler
-    if hasattr(app.state, "scheduler"):
-        app.state.scheduler.shutdown()
+        logger.info("Moyuren API stopped")
 
-    # Shutdown browser manager
-    if hasattr(app.state, "browser_manager"):
-        try:
-            await app.state.browser_manager.shutdown()
-        except Exception as e:
-            logger.warning(f"Failed to shutdown browser manager: {e}")
 
-    logger.info("Moyuren API stopped")
+async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+    """全局 AppError 异常处理器"""
+    return JSONResponse(
+        status_code=get_http_status(exc.code),
+        content=error_response(exc.code, exc.message, exc.detail),
+    )
 
 
 # Create FastAPI application
@@ -355,6 +395,8 @@ app = FastAPI(
     version=__version__,
     lifespan=lifespan,
 )
+
+app.add_exception_handler(AppError, app_error_handler)
 
 
 @app.api_route("/healthz", methods=["GET", "HEAD"])

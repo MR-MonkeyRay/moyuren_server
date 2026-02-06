@@ -15,15 +15,38 @@ from app.services.daily_cache import DailyCache
 class DataFetcher:
     """Asynchronous data fetcher for multiple API endpoints."""
 
-    def __init__(self, endpoints: list[FetchEndpointConfig], logger: logging.Logger) -> None:
+    def __init__(
+        self,
+        endpoints: list[FetchEndpointConfig],
+        logger: logging.Logger,
+        http_client: httpx.AsyncClient | None = None,
+    ) -> None:
         """Initialize the data fetcher.
 
         Args:
             endpoints: List of endpoint configurations.
             logger: Logger instance for logging request status.
+            http_client: Optional shared HTTP client for connection pooling.
         """
         self.endpoints = endpoints
         self.logger = logger
+        self._client = http_client
+
+    async def _fetch_with_client(
+        self,
+        client: httpx.AsyncClient,
+        endpoint: FetchEndpointConfig,
+    ) -> dict[str, Any] | None:
+        """Fetch data using the provided client."""
+        response = await client.get(
+            endpoint.url,
+            params=endpoint.params,
+            timeout=httpx.Timeout(endpoint.timeout_sec),
+        )
+        response.raise_for_status()
+        data = response.json()
+        self.logger.info(f"Successfully fetched from {endpoint.name}")
+        return data
 
     async def fetch_endpoint(self, endpoint: FetchEndpointConfig) -> dict[str, Any] | None:
         """Fetch data from a single endpoint.
@@ -37,17 +60,10 @@ class DataFetcher:
         try:
             self.logger.debug(f"Fetching from endpoint: {endpoint.name}")
 
+            if self._client is not None:
+                return await self._fetch_with_client(self._client, endpoint)
             async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    endpoint.url,
-                    params=endpoint.params,
-                    timeout=httpx.Timeout(endpoint.timeout_sec),
-                )
-                response.raise_for_status()
-
-                data = response.json()
-                self.logger.info(f"Successfully fetched from {endpoint.name}")
-                return data
+                return await self._fetch_with_client(client, endpoint)
 
         except httpx.TimeoutException:
             self.logger.warning(f"Timeout fetching from {endpoint.name}")
@@ -91,6 +107,7 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
         endpoints: list[FetchEndpointConfig],
         logger: logging.Logger,
         cache_dir: Path,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """初始化带缓存的数据获取器。
 
@@ -98,9 +115,10 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
             endpoints: API 端点配置列表
             logger: 日志记录器
             cache_dir: 缓存目录路径
+            http_client: 可选的共享 HTTP 客户端
         """
         super().__init__("news", cache_dir, logger)
-        self._fetcher = DataFetcher(endpoints, logger)
+        self._fetcher = DataFetcher(endpoints, logger, http_client=http_client)
 
     async def fetch_fresh(self) -> dict[str, Any] | None:
         """从网络获取新鲜数据。
