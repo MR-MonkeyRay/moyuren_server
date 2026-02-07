@@ -10,11 +10,6 @@
     "title": "😂 段子",
     "text": "立春到了，春天还会远吗？远，因为还要上班。"
   },
-  "countdowns": [
-    { "name": "春节", "date": "2026-02-15", "days_left": 11 },
-    { "name": "元宵节", "date": "2026-03-03", "days_left": 27 },
-    { "name": "清明节", "date": "2026-04-04", "days_left": 59 }
-  ],
   "is_crazy_thursday": false,
   "kfc_content": null,
   "date_info": {

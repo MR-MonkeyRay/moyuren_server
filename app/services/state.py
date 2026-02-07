@@ -41,7 +41,6 @@ def migrate_state(state_data: dict[str, Any], default_template: str = "moyuren")
         "weekday": state_data.get("weekday", ""),
         "lunar_date": state_data.get("lunar_date", ""),
         "fun_content": state_data.get("fun_content"),
-        "countdowns": state_data.get("countdowns", []),
         "is_crazy_thursday": state_data.get("is_crazy_thursday", False),
         "kfc_content": state_data.get("kfc_content"),
     }

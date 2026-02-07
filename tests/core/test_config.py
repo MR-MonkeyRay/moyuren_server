@@ -46,6 +46,12 @@ class TestSchedulerConfig:
         config = SchedulerConfig(daily_times=["06:00", "18:00"])
         assert len(config.daily_times) == 2
 
+    def test_valid_hourly_mode_config(self) -> None:
+        """Test valid hourly mode config."""
+        config = SchedulerConfig(mode="hourly", minute_of_hour=30)
+        assert config.mode == "hourly"
+        assert config.minute_of_hour == 30
+
     def test_invalid_time_format_raises_error(self) -> None:
         """Test invalid time format raises error."""
         with pytest.raises(ValidationError) as exc_info:
@@ -57,6 +63,19 @@ class TestSchedulerConfig:
         with pytest.raises(ValidationError) as exc_info:
             SchedulerConfig(daily_times=[])
         assert "cannot be empty" in str(exc_info.value)
+
+    def test_empty_daily_times_allowed_in_hourly_mode(self) -> None:
+        """Test empty daily times is allowed in hourly mode."""
+        config = SchedulerConfig(mode="hourly", daily_times=[], minute_of_hour=0)
+        assert config.mode == "hourly"
+        assert config.daily_times == []
+
+    @pytest.mark.parametrize("minute", [-1, 60])
+    def test_invalid_minute_of_hour_raises_error(self, minute: int) -> None:
+        """Test invalid minute_of_hour raises error."""
+        with pytest.raises(ValidationError) as exc_info:
+            SchedulerConfig(mode="hourly", minute_of_hour=minute)
+        assert "minute_of_hour must be between 0 and 59" in str(exc_info.value)
 
     def test_strips_whitespace(self) -> None:
         """Test strips whitespace from time strings."""

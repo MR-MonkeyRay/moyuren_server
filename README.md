@@ -14,7 +14,7 @@ https://api.monkeyray.net/api/v1/moyuren
 
 ## 功能
 
-- 每日定时生成摸鱼日历图片（支持多时间点）
+- 定时生成摸鱼日历图片（支持 daily/hourly 模式）
 - 按需生成：启动时或请求时若无可用图片则自动生成
 - 智能缓存管理：
   - 日级缓存：数据源独立缓存，次日自动过期
@@ -78,20 +78,42 @@ sudo chown -R 1000:1000 static state logs
 | GET | `/api/v1/moyuren/latest` | 直接获取最新图片文件（JPEG） |
 | GET | `/static/{filename}` | 静态图片文件 |
 
-> 注：当无可用图片时，API 会自动触发按需生成，请求会等待生成完成后返回结果（最长等待 60 秒）。
+> 注：当无可用图片时，API 会自动触发按需生成；若生成任务已在进行中，将返回 `503` 并附带 `Retry-After: 5` 响应头，建议稍后重试。
 
-### 响应示例
+### 端点详情
 
-#### GET /api/v1/moyuren - 图片元信息
+<details>
+<summary>GET /healthz - 健康检查</summary>
+
+返回服务健康状态，支持 GET 和 HEAD 方法。
+
+**响应示例**：
 
 ```json
 {
-  "date": "2026-02-01",
-  "updated": "2026/02/01 07:22:32",
-  "updated_at": 1738372952000,
-  "image": "https://api.monkeyray.net/static/moyuren_20260201_072232.jpg"
+  "status": "ok"
 }
 ```
+
+</details>
+
+<details>
+<summary>GET /api/v1/moyuren - 图片元信息（精简版）</summary>
+
+获取最新生成图片的基本元数据，包含日期、生成时间和图片 URL。
+
+**响应示例**：
+
+```json
+{
+  "date": "2026-02-06",
+  "updated": "2026/02/06 18:53:17",
+  "updated_at": 1770375197567,
+  "image": "https://api.monkeyray.net/static/moyuren_20260206_185317.jpg"
+}
+```
+
+**字段说明**：
 
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
@@ -100,7 +122,10 @@ sudo chown -R 1000:1000 static state logs
 | `updated_at` | number | 生成时间戳（13 位毫秒） |
 | `image` | string | 图片完整 URL |
 
-#### GET /api/v1/moyuren/latest - 直接获取图片
+</details>
+
+<details>
+<summary>GET /api/v1/moyuren/latest - 直接获取图片文件</summary>
 
 直接返回最新生成的 JPEG 图片文件，适用于：
 
@@ -108,77 +133,102 @@ sudo chown -R 1000:1000 static state logs
 - 在 Markdown 中使用 `![](https://api.monkeyray.net/api/v1/moyuren/latest)` 显示
 - 需要直接下载图片的场景
 
-**响应**：`image/jpeg` 格式的二进制图片数据
+**响应类型**：`image/jpeg`
 
-#### GET /api/v1/moyuren/detail - 内容详情
+</details>
 
-```json
+<details>
+<summary>GET /api/v1/moyuren/detail - 内容详情（完整版）</summary>
+
+获取图片的完整内容数据，包含日期信息、节假日、节气、趣味内容、大盘指数等所有渲染数据。
+
+**响应示例**：
+
+```jsonc
 {
-  "date": "2026-02-01",
-  "updated": "2026/02/01 07:22:32",
-  "updated_at": 1738372952000,
-  "image": "https://api.monkeyray.net/static/moyuren_20260201_072232.jpg",
-  "weekday": "星期日",
-  "lunar_date": "正月初四",
+  "date": "2026-02-06",
+  "updated": "2026/02/06 18:53:17",
+  "updated_at": 1770375197567,
+  "image": "https://api.monkeyray.net/static/moyuren_20260206_185317.jpg",
+  "weekday": "星期五",
+  "lunar_date": "腊月十九",
   "fun_content": {
     "type": "dad_joke",
     "title": "🤣 冷笑话",
-    "text": "程序员为什么喜欢黑暗模式？因为光会吸引 Bug。"
+    "text": "为什么喝醉以后觉得别人都变矮了？因为喝高了。"
   },
-  "countdowns": [
-    { "name": "春节", "date": "2026-02-17", "days_left": 16 }
-  ],
   "is_crazy_thursday": false,
   "kfc_content": null,
   "date_info": {
     "year_month": "2026.02",
-    "day": "1",
-    "week_cn": "星期日",
-    "week_en": "Sun",
+    "day": "6",
+    "week_cn": "星期五",
+    "week_en": "Fri",
     "lunar_year": "乙巳年",
-    "lunar_date": "正月初四",
+    "lunar_date": "腊月十九",
     "zodiac": "蛇",
     "constellation": "水瓶座",
-    "moon_phase": "峨眉月",
+    "moon_phase": "残月",
     "festival_solar": null,
     "festival_lunar": null,
     "legal_holiday": null,
     "is_holiday": false
   },
   "weekend": {
-    "days_left": 5,
+    "days_left": 1,
     "is_weekend": false
   },
   "solar_term": {
-    "name": "立春",
-    "name_en": "Beginning of Spring",
-    "days_left": 3,
-    "date": "2026-02-04",
+    "name": "雨水",
+    "name_en": "Rain Water",
+    "days_left": 12,
+    "date": "2026-02-18",
     "is_today": false
   },
   "guide": {
-    "yi": ["摸鱼", "喝茶", "休息", "学习"],
-    "ji": ["加班", "开会", "焦虑", "提需求"]
+    "yi": [
+      "移徙",
+      "祭祀",
+      "开光",
+      "祈福"
+    ],
+    "ji": [
+      "嫁娶",
+      "安葬",
+      "破土",
+      "作梁"
+    ]
   },
   "news_list": [
-    "今日天气晴朗，适合摸鱼。",
-    "研究表明，适当休息有助于提高工作效率。"
+    "我国网民规模达 11.25 亿人，互联网普及率突破 80%，生成式人工智能用户规模达 6.02 亿人",
+    "腾讯游戏发布 2026 年寒假限玩日历：未成年玩家最多可玩 15 小时"
+    // ... 更多新闻
   ],
   "news_meta": {
-    "date": "2026-02-01",
-    "updated": "2026-02-01 06:00:00 CST",
-    "updated_at": 1738368000000
+    "date": "2026-02-06",
+    "updated": "2026-02-06T01:29:00+08:00",
+    "updated_at": 1770312596000
   },
   "holidays": [
     {
       "name": "春节",
-      "start_date": "2026-02-17",
+      "start_date": "2026-02-15",
       "end_date": "2026-02-23",
-      "duration": 7,
-      "days_left": 16,
+      "duration": 9,
+      "days_left": 9,
+      "is_legal_holiday": true,
+      "is_off_day": true
+    },
+    {
+      "name": "清明节",
+      "start_date": "2026-04-04",
+      "end_date": "2026-04-06",
+      "duration": 3,
+      "days_left": 57,
       "is_legal_holiday": true,
       "is_off_day": true
     }
+    // ... 更多节假日
   ],
   "kfc_content_full": null,
   "stock_indices": {
@@ -186,21 +236,38 @@ sudo chown -R 1000:1000 static state logs
       {
         "code": "000001",
         "name": "上证指数",
-        "price": 3250.12,
-        "change": 15.32,
-        "change_pct": 0.47,
-        "trend": "up",
+        "price": 4065.58,
+        "change": -10.34,
+        "change_pct": -0.25,
+        "trend": "down",
         "market": "A",
         "is_trading_day": true
+      },
+      {
+        "code": "HSI",
+        "name": "恒生指数",
+        "price": 26559.95,
+        "change": -325.29,
+        "change_pct": -1.21,
+        "trend": "down",
+        "market": "HK",
+        "is_trading_day": true
       }
+      // ... 更多指数
     ],
-    "updated": "2026-02-01 10:30",
-    "updated_at": 1738384200000,
-    "trading_day": { "A": true, "HK": true, "US": false },
+    "updated": "2026/02/06 18:53:14",
+    "updated_at": 1770375194513,
+    "trading_day": {
+      "A": true,
+      "HK": true,
+      "US": true
+    },
     "is_stale": false
   }
 }
 ```
+
+**字段说明**：
 
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
@@ -211,9 +278,8 @@ sudo chown -R 1000:1000 static state logs
 | `weekday` | string | 星期几（中文） |
 | `lunar_date` | string | 农历日期 |
 | `fun_content` | object | 趣味内容（type: dad_joke/hitokoto/duanzi/moyu_quote） |
-| `countdowns` | array | 节假日倒计时列表（精简版） |
 | `is_crazy_thursday` | boolean | 是否为周四 |
-| `kfc_content` | string | KFC 文案内容（仅周四有值） |
+| `kfc_content` | string \| null | KFC 文案内容（仅周四有值） |
 | `date_info` | object | 完整日期信息（年月、农历、生肖、星座、月相、节日） |
 | `weekend` | object | 周末倒计时（days_left, is_weekend） |
 | `solar_term` | object | 节气信息（名称、天数、日期） |
@@ -221,8 +287,37 @@ sudo chown -R 1000:1000 static state logs
 | `news_list` | array | 新闻文本列表 |
 | `news_meta` | object | 新闻元数据（date, updated, updated_at） |
 | `holidays` | array | 详细节假日列表（含法定假日标识、时长） |
-| `kfc_content_full` | object | 完整 KFC 对象（title, sub_title, content） |
-| `stock_indices` | object | 大盘指数数据（items: 指数列表, trading_day: 交易日状态） |
+| `kfc_content_full` | object \| null | 完整 KFC 对象（title, sub_title, content） |
+| `stock_indices` | object | 大盘指数数据（items: 指数列表, trading_day: 交易日状态, is_stale: 数据是否过期） |
+
+</details>
+
+<details>
+<summary>错误响应格式</summary>
+
+所有 API 端点在发生错误时返回统一的错误响应格式。
+
+**响应示例**：
+
+```json
+{
+  "error": {
+    "code": "STORAGE_4003",
+    "message": "No image available",
+    "detail": "State file not found"
+  }
+}
+```
+
+**常见错误码**：
+
+| HTTP 状态码 | 错误码 | 说明 |
+| ----------- | ------ | ---- |
+| 404 | `STORAGE_4003` | 无可用图片（state 文件不存在） |
+| 500 | `GENERATION_5001` | 图片生成失败 |
+| 503 | `GENERATION_5002` | 图片生成中（响应头包含 `Retry-After: 5`） |
+
+</details>
 
 ## 配置
 
@@ -238,7 +333,9 @@ sudo chown -R 1000:1000 static state logs
 | `paths.static_dir` | `PATHS_STATIC_DIR` | 图片输出目录 |
 | `paths.state_path` | `PATHS_STATE_PATH` | 最新图片状态文件路径 |
 | `paths.template_path` | - | 默认模板路径（单模板模式兼容字段） |
+| `scheduler.mode` | `SCHEDULER_MODE` | 调度模式（`daily` 或 `hourly`） |
 | `scheduler.daily_times` | `SCHEDULER_DAILY_TIMES` | 生成时间（逗号分隔） |
+| `scheduler.minute_of_hour` | `SCHEDULER_MINUTE_OF_HOUR` | 每小时模式下的触发分钟（0-59） |
 | `render.viewport_width` | `RENDER_VIEWPORT_WIDTH` | 视口宽度 |
 | `render.viewport_height` | `RENDER_VIEWPORT_HEIGHT` | 视口最小高度 |
 | `render.device_scale_factor` | `RENDER_DEVICE_SCALE_FACTOR` | 缩放因子 |
@@ -264,6 +361,14 @@ sudo chown -R 1000:1000 static state logs
 | `stock_index.timeout_sec` | - | 行情请求超时（秒） |
 | `stock_index.market_timezones` | - | 各市场时区配置（A/HK/US） |
 | `stock_index.cache_ttl_sec` | - | 行情缓存 TTL（秒） |
+
+### 调度配置说明
+
+- `scheduler.mode` 支持 `daily` 与 `hourly`
+- 当 `mode=hourly` 时，任务会在每小时的 `scheduler.minute_of_hour` 分触发
+- 当 `mode=daily` 时，任务会按 `scheduler.daily_times` 中每个 `HH:MM` 时间触发
+- `mode=hourly` 时 `daily_times` 会被忽略，建议保留以便快速回退到 `daily`
+- 环境变量覆盖：`SCHEDULER_MODE`、`SCHEDULER_DAILY_TIMES`、`SCHEDULER_MINUTE_OF_HOUR`
 
 ### 缓存目录结构
 
@@ -309,9 +414,18 @@ paths:
   state_path: "state/latest.json"
 
 scheduler:
+  mode: "daily"
   daily_times:
     - "06:00"
     - "18:00"
+  minute_of_hour: 0
+
+# 每小时模式示例（每小时第 0 分执行）
+# scheduler:
+#   mode: "hourly"
+#   daily_times:
+#     - "06:00"   # hourly 模式下会被忽略，仅用于回退 daily 时复用
+#   minute_of_hour: 0
 
 fetch:
   api_endpoints:

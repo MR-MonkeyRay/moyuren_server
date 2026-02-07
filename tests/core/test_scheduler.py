@@ -67,6 +67,37 @@ class TestTaskScheduler:
         job = scheduler.scheduler.get_job("test_job")
         assert job is not None
 
+    def test_add_hourly_job_with_explicit_minute(self, scheduler: TaskScheduler) -> None:
+        """Test add hourly job with explicit minute."""
+        mock_func = AsyncMock()
+
+        scheduler.add_hourly_job(
+            job_id="test_hourly_job",
+            func=mock_func,
+            minute=15,
+        )
+
+        job = scheduler.scheduler.get_job("test_hourly_job")
+        assert job is not None
+        trigger_str = str(job.trigger)
+        assert "minute='15'" in trigger_str or "15" in trigger_str
+
+    def test_add_hourly_job_uses_config_default(self, logger: logging.Logger) -> None:
+        """Test add hourly job uses config minute_of_hour by default."""
+        config = SchedulerConfig(mode="hourly", minute_of_hour=45)
+        scheduler = TaskScheduler(config=config, logger=logger)
+        mock_func = AsyncMock()
+
+        scheduler.add_hourly_job(
+            job_id="test_hourly_job",
+            func=mock_func,
+        )
+
+        job = scheduler.scheduler.get_job("test_hourly_job")
+        assert job is not None
+        trigger_str = str(job.trigger)
+        assert "minute='45'" in trigger_str or "45" in trigger_str
+
     async def test_add_daily_job_replaces_existing(self, scheduler: TaskScheduler) -> None:
         """Test add daily job replaces existing job.
 

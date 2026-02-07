@@ -4,7 +4,7 @@ import os
 import re
 import yaml
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 
@@ -28,14 +28,16 @@ class PathsConfig(BaseModel):
 
 class SchedulerConfig(BaseModel):
     """Scheduler configuration."""
-    daily_times: list[str] = ["06:00"]
+    mode: Literal["daily", "hourly"] = "daily"
+    daily_times: list[str] = Field(default_factory=lambda: ["06:00"])
+    minute_of_hour: int = 0
 
     @field_validator("daily_times")
     @classmethod
     def validate_daily_times(cls, v: list[str]) -> list[str]:
         if not v:
-            raise ValueError("daily_times cannot be empty")
-        import re
+            return v
+
         time_pattern = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
         result = []
         for time_str in v:
@@ -44,6 +46,19 @@ class SchedulerConfig(BaseModel):
                 raise ValueError(f"Invalid time format: {time_str}, expected HH:MM")
             result.append(time_str)
         return result
+
+    @field_validator("minute_of_hour")
+    @classmethod
+    def validate_minute_of_hour(cls, v: int) -> int:
+        if v < 0 or v > 59:
+            raise ValueError("minute_of_hour must be between 0 and 59")
+        return v
+
+    @model_validator(mode="after")
+    def validate_mode_specific(self) -> "SchedulerConfig":
+        if self.mode == "daily" and not self.daily_times:
+            raise ValueError("daily_times cannot be empty when mode is daily")
+        return self
 
 
 class CacheConfig(BaseModel):
@@ -374,11 +389,20 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
 
     # Scheduler configuration
     if "scheduler" in data:
+        if scheduler_mode := os.getenv("SCHEDULER_MODE"):
+            data["scheduler"]["mode"] = scheduler_mode.strip().lower()
+
         if daily_times := os.getenv("SCHEDULER_DAILY_TIMES"):
             # Support comma-separated times: "06:00,12:00,18:00"
             times = [t.strip() for t in daily_times.split(",") if t.strip()]
             if times:
                 data["scheduler"]["daily_times"] = times
+
+        if minute_of_hour := os.getenv("SCHEDULER_MINUTE_OF_HOUR"):
+            try:
+                data["scheduler"]["minute_of_hour"] = int(minute_of_hour)
+            except ValueError:
+                raise ValueError(f"Invalid SCHEDULER_MINUTE_OF_HOUR value: {minute_of_hour}")
 
     # Cache configuration
     if "cache" in data:

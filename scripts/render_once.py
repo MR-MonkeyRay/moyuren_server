@@ -161,16 +161,6 @@ async def main():
             "text": fun_content_raw.get("content", "")
         }
 
-    # Build countdowns
-    countdowns = []
-    for holiday in holidays_raw:
-        if isinstance(holiday, dict):
-            countdowns.append({
-                "name": holiday.get("name", ""),
-                "date": holiday.get("start_date", ""),
-                "days_left": holiday.get("days_left", 0)
-            })
-
     # Build KFC content
     kfc_content = None
     if kfc_content_raw and isinstance(kfc_content_raw, dict):
@@ -187,7 +177,6 @@ async def main():
         "weekday": date_info.get("week_cn", ""),
         "lunar_date": date_info.get("lunar_date", ""),
         "fun_content": fun_content,
-        "countdowns": countdowns,
         "is_crazy_thursday": now.weekday() == 3,
         "kfc_content": kfc_content,
         # Full rendering data fields

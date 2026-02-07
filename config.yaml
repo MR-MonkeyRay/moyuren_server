@@ -21,8 +21,18 @@ paths:
   state_path: "state/latest.json"
 
 scheduler:
+  # 调度模式：
+  # - "hourly"：每小时执行一次，在 minute_of_hour 分钟触发
+  # - "daily"：按 daily_times 列表中的时间点执行
+  mode: "hourly"
+
+  # 每日模式执行时间（HH:MM）
+  # 当 mode="hourly" 时该字段会被忽略，建议保留用于快速切回 daily
   daily_times:
   - "06:00"
+
+  # 每小时模式触发分钟，取值范围 0-59
+  minute_of_hour: 0
 
 cache:
   ttl_hours: 24

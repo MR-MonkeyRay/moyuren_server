@@ -136,12 +136,6 @@ class StockIndicesSchema(BaseModel):
     is_stale: bool = Field(..., description="Whether data is stale/cached")
 
 
-class CountdownSchema(BaseModel):
-    """Holiday countdown schema."""
-    name: str = Field(..., description="Holiday name")
-    date: str = Field(..., description="Holiday date in YYYY-MM-DD format")
-    days_left: int = Field(..., description="Days left until holiday")
-
 
 class MoyurenDetailResponse(BaseModel):
     """Response model for moyuren detail API."""
@@ -152,7 +146,6 @@ class MoyurenDetailResponse(BaseModel):
     weekday: str = Field(..., description="Weekday in Chinese (e.g., 星期日)")
     lunar_date: str = Field(..., description="Lunar calendar date")
     fun_content: Optional[FunContentSchema] = Field(None, description="Fun content (joke, quote, etc.)")
-    countdowns: list[CountdownSchema] = Field(default_factory=list, description="Holiday countdowns")
     is_crazy_thursday: bool = Field(..., description="Whether it's Thursday")
     kfc_content: Optional[str] = Field(None, description="KFC Crazy Thursday content (only on Thursday)")
     # Full rendering data fields

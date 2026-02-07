@@ -90,7 +90,6 @@ class TestMigrateState:
         assert result["version"] == STATE_VERSION
         assert result["public"]["date"] == ""
         assert result["public"]["timestamp"] == ""
-        assert result["public"]["countdowns"] == []
         assert result["public"]["is_crazy_thursday"] is False
 
     def test_v1_state_with_updated_field(self) -> None:

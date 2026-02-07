@@ -10,11 +10,6 @@
     "title": "🐟 摸鱼语录",
     "text": "周末不摸鱼，人生无意义。"
   },
-  "countdowns": [
-    { "name": "春节", "date": "2026-02-15", "days_left": 8 },
-    { "name": "元宵节", "date": "2026-03-03", "days_left": 24 },
-    { "name": "清明节", "date": "2026-04-04", "days_left": 56 }
-  ],
   "is_crazy_thursday": false,
   "kfc_content": null,
   "date_info": {

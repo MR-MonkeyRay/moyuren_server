@@ -198,19 +198,30 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Image generation task failed: {e}")
 
-    # Add daily image generation tasks for each configured time
-    for idx, time_str in enumerate(config.scheduler.daily_times):
-        try:
-            hour, minute = map(int, time_str.split(":"))
-            job_id = f"generate_moyuren_image_{idx}" if len(config.scheduler.daily_times) > 1 else "generate_moyuren_image"
-            scheduler.add_daily_job(
-                job_id=job_id,
-                func=generate_image_task,
-                hour=hour,
-                minute=minute,
-            )
-        except (ValueError, AttributeError) as e:
-            logger.warning(f"Invalid time format '{time_str}', skipping: {e}")
+    if config.scheduler.mode == "hourly":
+        scheduler.add_hourly_job(
+            job_id="generate_moyuren_image",
+            func=generate_image_task,
+            minute=config.scheduler.minute_of_hour,
+        )
+        logger.info(
+            f"Scheduler mode: hourly (minute={config.scheduler.minute_of_hour:02d})"
+        )
+    else:
+        # Add daily image generation tasks for each configured time
+        for idx, time_str in enumerate(config.scheduler.daily_times):
+            try:
+                hour, minute = map(int, time_str.split(":"))
+                job_id = f"generate_moyuren_image_{idx}" if len(config.scheduler.daily_times) > 1 else "generate_moyuren_image"
+                scheduler.add_daily_job(
+                    job_id=job_id,
+                    func=generate_image_task,
+                    hour=hour,
+                    minute=minute,
+                )
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"Invalid time format '{time_str}', skipping: {e}")
+        logger.info(f"Scheduler mode: daily (times={config.scheduler.daily_times})")
 
     scheduler.start()
     app.state.scheduler = scheduler

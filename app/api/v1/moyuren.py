@@ -245,7 +245,6 @@ async def get_moyuren_detail(request: Request) -> JSONResponse:
     - weekday: Weekday in Chinese (e.g., 星期日)
     - lunar_date: Lunar calendar date
     - fun_content: Fun content (joke, quote, etc.)
-    - countdowns: Holiday countdowns
     - is_crazy_thursday: Whether it's Thursday
     - kfc_content: KFC Crazy Thursday content (only on Thursday)
 
@@ -277,7 +276,6 @@ async def get_moyuren_detail(request: Request) -> JSONResponse:
         "weekday": state_data.get("weekday", ""),
         "lunar_date": state_data.get("lunar_date", ""),
         "fun_content": state_data.get("fun_content"),
-        "countdowns": state_data.get("countdowns", []),
         "is_crazy_thursday": state_data.get("is_crazy_thursday", False),
         "kfc_content": state_data.get("kfc_content"),
         # Full rendering data fields
