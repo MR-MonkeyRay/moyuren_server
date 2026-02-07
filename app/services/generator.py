@@ -396,7 +396,6 @@ async def _update_state_file(
         business_date = today_business()
         public_data = {
             "date": business_date.isoformat(),
-            "timestamp": now.isoformat(),
             "updated": updated_str,
             "updated_at": updated_at_ms,
             "weekday": date_info.get("week_cn", ""),

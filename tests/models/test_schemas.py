@@ -4,8 +4,6 @@ import pytest
 from pydantic import ValidationError
 
 from app.models.schemas import (
-    ImageMeta,
-    MoyurenResponse,
     MoyurenImageResponse,
     FunContentSchema,
     DateInfoSchema,
@@ -14,89 +12,6 @@ from app.models.schemas import (
     GuideSchema,
     NewsMetaSchema,
 )
-
-
-class TestImageMeta:
-    """Tests for ImageMeta model."""
-
-    def test_valid_image_meta(self) -> None:
-        """Test valid ImageMeta creation."""
-        meta = ImageMeta(
-            date="2026-02-04",
-            updated="2026/02/04 10:00:00",
-            image="https://example.com/image.jpg"
-        )
-
-        assert meta.date == "2026-02-04"
-        assert meta.updated == "2026/02/04 10:00:00"
-        assert meta.image == "https://example.com/image.jpg"
-
-    def test_invalid_date_format_raises_error(self) -> None:
-        """Test invalid date format raises ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
-            ImageMeta(
-                date="04-02-2026",  # Wrong format
-                updated="2026/02/04 10:00:00",
-                image="https://example.com/image.jpg"
-            )
-
-        assert "date must be in YYYY-MM-DD format" in str(exc_info.value)
-
-    def test_invalid_date_value_raises_error(self) -> None:
-        """Test invalid date value raises ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
-            ImageMeta(
-                date="2026-13-01",  # Invalid month
-                updated="2026/02/04 10:00:00",
-                image="https://example.com/image.jpg"
-            )
-
-        assert "date must be in YYYY-MM-DD format" in str(exc_info.value)
-
-    def test_invalid_updated_format_raises_error(self) -> None:
-        """Test invalid updated format raises ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
-            ImageMeta(
-                date="2026-02-04",
-                updated="not a timestamp",
-                image="https://example.com/image.jpg"
-            )
-
-        assert "updated must be in YYYY/MM/DD HH:MM:SS format" in str(exc_info.value)
-
-    def test_updated_with_wrong_separator_raises_error(self) -> None:
-        """Test updated with wrong separator raises ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
-            ImageMeta(
-                date="2026-02-04",
-                updated="2026-02-04 10:00:00",  # Wrong separator (- instead of /)
-                image="https://example.com/image.jpg"
-            )
-
-        assert "updated must be in YYYY/MM/DD HH:MM:SS format" in str(exc_info.value)
-
-    def test_missing_required_field_raises_error(self) -> None:
-        """Test missing required field raises ValidationError."""
-        with pytest.raises(ValidationError):
-            ImageMeta(
-                date="2026-02-04",
-                updated="2026/02/04 10:00:00"
-                # Missing image field
-            )
-
-
-class TestMoyurenResponse:
-    """Tests for MoyurenResponse model."""
-
-    def test_moyuren_response_inherits_image_meta(self) -> None:
-        """Test MoyurenResponse inherits from ImageMeta."""
-        response = MoyurenResponse(
-            date="2026-02-04",
-            updated="2026/02/04 10:00:00",
-            image="https://example.com/image.jpg"
-        )
-
-        assert isinstance(response, ImageMeta)
 
 
 class TestMoyurenImageResponse:

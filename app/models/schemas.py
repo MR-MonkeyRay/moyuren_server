@@ -1,40 +1,7 @@
 """Pydantic data models for request/response validation."""
 
-from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field, field_validator
-
-
-class ImageMeta(BaseModel):
-    """Image metadata model."""
-    date: str = Field(..., description="Date string in YYYY-MM-DD format")
-    updated: str = Field(..., description="Generation time (e.g., 2025/01/13 07:22:32)")
-    image: str = Field(..., description="URL to the generated image")
-
-    @field_validator("date")
-    @classmethod
-    def validate_date_format(cls, v: str) -> str:
-        """Validate date format."""
-        try:
-            datetime.strptime(v, "%Y-%m-%d")
-        except ValueError as e:
-            raise ValueError("date must be in YYYY-MM-DD format") from e
-        return v
-
-    @field_validator("updated")
-    @classmethod
-    def validate_updated_format(cls, v: str) -> str:
-        """Validate updated time format (YYYY/MM/DD HH:MM:SS)."""
-        try:
-            datetime.strptime(v, "%Y/%m/%d %H:%M:%S")
-        except ValueError as e:
-            raise ValueError("updated must be in YYYY/MM/DD HH:MM:SS format") from e
-        return v
-
-
-class MoyurenResponse(ImageMeta):
-    """Response model for moyuren image API."""
-    pass
+from pydantic import BaseModel, Field
 
 
 class MoyurenImageResponse(BaseModel):

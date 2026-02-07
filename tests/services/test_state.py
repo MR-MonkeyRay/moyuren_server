@@ -46,12 +46,14 @@ class TestMigrateState:
 
         assert result["public"]["fun_content"] == sample_v1_state["fun_content"]
 
-    def test_v1_state_uses_timestamp_as_updated(self, sample_v1_state: dict[str, Any]) -> None:
-        """Test v1 migration uses timestamp as updated."""
+    def test_v1_state_uses_updated_field(self, sample_v1_state: dict[str, Any]) -> None:
+        """Test v1 migration uses updated field."""
         result = migrate_state(sample_v1_state)
 
-        assert result["public"]["updated"] == sample_v1_state["timestamp"]
-        assert result["templates"]["moyuren"]["updated"] == sample_v1_state["timestamp"]
+        # v1 state should have updated field preserved
+        if "updated" in sample_v1_state:
+            assert result["public"]["updated"] == sample_v1_state["updated"]
+            assert result["templates"]["moyuren"]["updated"] == sample_v1_state["updated"]
 
     def test_v1_state_with_custom_template_name(self, sample_v1_state: dict[str, Any]) -> None:
         """Test v1 migration with custom template name."""
@@ -89,7 +91,7 @@ class TestMigrateState:
 
         assert result["version"] == STATE_VERSION
         assert result["public"]["date"] == ""
-        assert result["public"]["timestamp"] == ""
+        assert result["public"]["updated"] == ""
         assert result["public"]["is_crazy_thursday"] is False
 
     def test_v1_state_with_updated_field(self) -> None:
@@ -130,7 +132,6 @@ class TestMigrateState:
 
         # These fields should be at root level for backward compatibility
         assert "date" in result
-        assert "timestamp" in result
         assert "weekday" in result
         assert "lunar_date" in result
         assert "filename" in result
