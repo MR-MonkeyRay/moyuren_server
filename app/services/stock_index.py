@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import datetime, date
+from datetime import datetime
 from json import JSONDecodeError
 from typing import Any
 from zoneinfo import ZoneInfo

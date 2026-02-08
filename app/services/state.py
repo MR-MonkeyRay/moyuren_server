@@ -30,18 +30,16 @@ def migrate_state(state_data: dict[str, Any], default_template: str = "moyuren")
 
     # Extract v1 fields
     filename = state_data.get("filename", "")
-    updated = state_data.get("updated") or state_data.get("timestamp") or ""
+    updated = state_data.get("updated") or ""
     updated_at = state_data.get("updated_at") or 0
 
     public_data = {
         "date": state_data.get("date", ""),
-        "timestamp": state_data.get("timestamp", ""),
         "updated": updated,
         "updated_at": updated_at,
         "weekday": state_data.get("weekday", ""),
         "lunar_date": state_data.get("lunar_date", ""),
         "fun_content": state_data.get("fun_content"),
-        "countdowns": state_data.get("countdowns", []),
         "is_crazy_thursday": state_data.get("is_crazy_thursday", False),
         "kfc_content": state_data.get("kfc_content"),
     }

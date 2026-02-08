@@ -1,8 +1,7 @@
 """Tests for app/services/fetcher.py - data fetching service."""
 
 import logging
-from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -159,3 +158,29 @@ class TestDataFetcher:
         request = route.calls[0].request
         assert "page=1" in str(request.url)
         assert "limit=10" in str(request.url)
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_raises_on_result_length_mismatch(
+        self, logger: logging.Logger
+    ) -> None:
+        """Test fetch_all raises ValueError when gather returns mismatched length."""
+        endpoints = [
+            FetchEndpointConfig(name="news", url="https://api.example.com/news"),
+            FetchEndpointConfig(name="weather", url="https://api.example.com/weather"),
+        ]
+        fetcher = DataFetcher(endpoints=endpoints, logger=logger)
+
+        async def fake_gather(*coros_or_futures):
+            # Consume all coroutines to avoid RuntimeWarning
+            for coro in coros_or_futures:
+                try:
+                    await coro
+                except Exception:
+                    pass
+            # Return fewer results than endpoints to trigger zip(strict=True)
+            return [{"type": "news"}]
+
+        with patch.object(fetcher, "fetch_endpoint", new=AsyncMock(return_value={"ok": True})):
+            with patch("app.services.fetcher.asyncio.gather", side_effect=fake_gather):
+                with pytest.raises(ValueError, match=r"zip\(\)"):
+                    await fetcher.fetch_all()

@@ -196,7 +196,6 @@ def sample_v1_state() -> dict[str, Any]:
             "title": "🐟 摸鱼小贴士",
             "content": "工作再忙，也要记得摸鱼。"
         },
-        "countdowns": [],
         "is_crazy_thursday": False,
     }
 
@@ -214,7 +213,6 @@ def sample_v2_state() -> dict[str, Any]:
             "weekday": "星期三",
             "lunar_date": "正月初七",
             "fun_content": None,
-            "countdowns": [],
             "is_crazy_thursday": False,
             "kfc_content": None,
         },

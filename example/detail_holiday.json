@@ -10,11 +10,6 @@
     "title": "💬 一言",
     "text": "新年快乐，万事如意！"
   },
-  "countdowns": [
-    { "name": "元宵节", "date": "2026-03-03", "days_left": 14 },
-    { "name": "清明节", "date": "2026-04-04", "days_left": 46 },
-    { "name": "劳动节", "date": "2026-05-01", "days_left": 73 }
-  ],
   "is_crazy_thursday": false,
   "kfc_content": null,
   "date_info": {

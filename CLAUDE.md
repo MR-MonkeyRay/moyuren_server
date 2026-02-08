@@ -18,6 +18,7 @@
 | ---- | ---- | ---- |
 | 入口 | `app/main.py` | 应用生命周期、定时任务注册 |
 | API | `app/api/v1/moyuren.py` | REST 端点 |
+| 日级缓存 | `app/services/daily_cache.py` | 日级缓存抽象基类（自动过期、降级策略） |
 | 获取 | `app/services/fetcher.py` | 异步并行 HTTP 请求 |
 | 节假日 | `app/services/holiday.py` | 中国法定节假日数据获取与处理 |
 | 趣味内容 | `app/services/fun_content.py` | 随机获取冷笑话/一言/段子等趣味内容 |

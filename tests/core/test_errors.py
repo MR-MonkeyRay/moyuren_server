@@ -44,6 +44,11 @@ class TestErrorCode:
         assert ErrorCode.GENERATION_FAILED.value == "GENERATION_5001"
         assert ErrorCode.GENERATION_BUSY.value == "GENERATION_5002"
 
+    def test_error_code_str_representation_matches_value(self) -> None:
+        """StrEnum should stringify to raw code value."""
+        assert str(ErrorCode.CONFIG_LOAD_FAILED) == "CONFIG_1001"
+        assert isinstance(ErrorCode.CONFIG_LOAD_FAILED, str)
+
 
 class TestAppError:
     """Tests for AppError base class."""

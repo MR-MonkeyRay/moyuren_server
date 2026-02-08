@@ -1,40 +1,7 @@
 """Pydantic data models for request/response validation."""
 
-from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field, field_validator
-
-
-class ImageMeta(BaseModel):
-    """Image metadata model."""
-    date: str = Field(..., description="Date string in YYYY-MM-DD format")
-    updated: str = Field(..., description="Generation time (e.g., 2025/01/13 07:22:32)")
-    image: str = Field(..., description="URL to the generated image")
-
-    @field_validator("date")
-    @classmethod
-    def validate_date_format(cls, v: str) -> str:
-        """Validate date format."""
-        try:
-            datetime.strptime(v, "%Y-%m-%d")
-        except ValueError as e:
-            raise ValueError("date must be in YYYY-MM-DD format") from e
-        return v
-
-    @field_validator("updated")
-    @classmethod
-    def validate_updated_format(cls, v: str) -> str:
-        """Validate updated time format (YYYY/MM/DD HH:MM:SS)."""
-        try:
-            datetime.strptime(v, "%Y/%m/%d %H:%M:%S")
-        except ValueError as e:
-            raise ValueError("updated must be in YYYY/MM/DD HH:MM:SS format") from e
-        return v
-
-
-class MoyurenResponse(ImageMeta):
-    """Response model for moyuren image API."""
-    pass
+from pydantic import BaseModel, Field
 
 
 class MoyurenImageResponse(BaseModel):
@@ -136,12 +103,6 @@ class StockIndicesSchema(BaseModel):
     is_stale: bool = Field(..., description="Whether data is stale/cached")
 
 
-class CountdownSchema(BaseModel):
-    """Holiday countdown schema."""
-    name: str = Field(..., description="Holiday name")
-    date: str = Field(..., description="Holiday date in YYYY-MM-DD format")
-    days_left: int = Field(..., description="Days left until holiday")
-
 
 class MoyurenDetailResponse(BaseModel):
     """Response model for moyuren detail API."""
@@ -152,7 +113,6 @@ class MoyurenDetailResponse(BaseModel):
     weekday: str = Field(..., description="Weekday in Chinese (e.g., 星期日)")
     lunar_date: str = Field(..., description="Lunar calendar date")
     fun_content: Optional[FunContentSchema] = Field(None, description="Fun content (joke, quote, etc.)")
-    countdowns: list[CountdownSchema] = Field(default_factory=list, description="Holiday countdowns")
     is_crazy_thursday: bool = Field(..., description="Whether it's Thursday")
     kfc_content: Optional[str] = Field(None, description="KFC Crazy Thursday content (only on Thursday)")
     # Full rendering data fields

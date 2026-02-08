@@ -70,6 +70,34 @@ class TaskScheduler:
 
         self.logger.info(f"Added daily job '{job_id}' at {hour:02d}:{minute:02d}")
 
+    def add_hourly_job(
+        self,
+        job_id: str,
+        func: Callable,
+        minute: int | None = None,
+    ) -> None:
+        """Add an hourly scheduled job.
+
+        Args:
+            job_id: Unique identifier for the job.
+            func: Async function to execute.
+            minute: Minute of hour (0-59). If None, uses config.minute_of_hour.
+        """
+        if minute is None:
+            minute = self.config.minute_of_hour
+
+        trigger = CronTrigger(minute=minute)
+
+        self.scheduler.add_job(
+            func,
+            trigger=trigger,
+            id=job_id,
+            name=job_id,
+            replace_existing=True,
+        )
+
+        self.logger.info(f"Added hourly job '{job_id}' at minute {minute:02d}")
+
     def start(self) -> None:
         """Start the scheduler."""
         if not self.scheduler.running:

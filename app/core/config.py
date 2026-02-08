@@ -4,7 +4,7 @@ import os
 import re
 import yaml
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 
@@ -28,14 +28,16 @@ class PathsConfig(BaseModel):
 
 class SchedulerConfig(BaseModel):
     """Scheduler configuration."""
-    daily_times: list[str] = ["06:00"]
+    mode: Literal["daily", "hourly"] = "daily"
+    daily_times: list[str] = Field(default_factory=lambda: ["06:00"])
+    minute_of_hour: int = 0
 
     @field_validator("daily_times")
     @classmethod
     def validate_daily_times(cls, v: list[str]) -> list[str]:
         if not v:
-            raise ValueError("daily_times cannot be empty")
-        import re
+            return v
+
         time_pattern = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
         result = []
         for time_str in v:
@@ -44,6 +46,19 @@ class SchedulerConfig(BaseModel):
                 raise ValueError(f"Invalid time format: {time_str}, expected HH:MM")
             result.append(time_str)
         return result
+
+    @field_validator("minute_of_hour")
+    @classmethod
+    def validate_minute_of_hour(cls, v: int) -> int:
+        if v < 0 or v > 59:
+            raise ValueError("minute_of_hour must be between 0 and 59")
+        return v
+
+    @model_validator(mode="after")
+    def validate_mode_specific(self) -> "SchedulerConfig":
+        if self.mode == "daily" and not self.daily_times:
+            raise ValueError("daily_times cannot be empty when mode is daily")
+        return self
 
 
 class CacheConfig(BaseModel):
@@ -229,7 +244,6 @@ class TimezoneConfig(BaseModel):
         # 尝试解析 UTC±X 格式，并验证范围
         match = re.match(r'^UTC([+-])(\d{1,2})(?::(\d{2}))?$', v, re.IGNORECASE)
         if match:
-            sign = 1 if match.group(1) == '+' else -1
             hours = int(match.group(2))
             minutes = int(match.group(3) or 0)
             # 验证范围：小时 0-14，分钟 0-59，总偏移不超过 ±24 小时
@@ -367,49 +381,58 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
         if server_port := os.getenv("SERVER_PORT"):
             try:
                 data["server"]["port"] = int(server_port)
-            except ValueError:
-                raise ValueError(f"Invalid SERVER_PORT value: {server_port}")
+            except ValueError as err:
+                raise ValueError(f"Invalid SERVER_PORT value: {server_port}") from err
         if server_base_domain := os.getenv("SERVER_BASE_DOMAIN"):
             data["server"]["base_domain"] = server_base_domain
 
     # Scheduler configuration
     if "scheduler" in data:
+        if scheduler_mode := os.getenv("SCHEDULER_MODE"):
+            data["scheduler"]["mode"] = scheduler_mode.strip().lower()
+
         if daily_times := os.getenv("SCHEDULER_DAILY_TIMES"):
             # Support comma-separated times: "06:00,12:00,18:00"
             times = [t.strip() for t in daily_times.split(",") if t.strip()]
             if times:
                 data["scheduler"]["daily_times"] = times
 
+        if minute_of_hour := os.getenv("SCHEDULER_MINUTE_OF_HOUR"):
+            try:
+                data["scheduler"]["minute_of_hour"] = int(minute_of_hour)
+            except ValueError as err:
+                raise ValueError(f"Invalid SCHEDULER_MINUTE_OF_HOUR value: {minute_of_hour}") from err
+
     # Cache configuration
     if "cache" in data:
         if ttl_hours := os.getenv("CACHE_TTL_HOURS"):
             try:
                 data["cache"]["ttl_hours"] = int(ttl_hours)
-            except ValueError:
-                raise ValueError(f"Invalid CACHE_TTL_HOURS value: {ttl_hours}")
+            except ValueError as err:
+                raise ValueError(f"Invalid CACHE_TTL_HOURS value: {ttl_hours}") from err
 
     # Render configuration
     if "render" in data:
         if viewport_width := os.getenv("RENDER_VIEWPORT_WIDTH"):
             try:
                 data["render"]["viewport_width"] = int(viewport_width)
-            except ValueError:
-                raise ValueError(f"Invalid RENDER_VIEWPORT_WIDTH value: {viewport_width}")
+            except ValueError as err:
+                raise ValueError(f"Invalid RENDER_VIEWPORT_WIDTH value: {viewport_width}") from err
         if viewport_height := os.getenv("RENDER_VIEWPORT_HEIGHT"):
             try:
                 data["render"]["viewport_height"] = int(viewport_height)
-            except ValueError:
-                raise ValueError(f"Invalid RENDER_VIEWPORT_HEIGHT value: {viewport_height}")
+            except ValueError as err:
+                raise ValueError(f"Invalid RENDER_VIEWPORT_HEIGHT value: {viewport_height}") from err
         if device_scale_factor := os.getenv("RENDER_DEVICE_SCALE_FACTOR"):
             try:
                 data["render"]["device_scale_factor"] = int(device_scale_factor)
-            except ValueError:
-                raise ValueError(f"Invalid RENDER_DEVICE_SCALE_FACTOR value: {device_scale_factor}")
+            except ValueError as err:
+                raise ValueError(f"Invalid RENDER_DEVICE_SCALE_FACTOR value: {device_scale_factor}") from err
         if jpeg_quality := os.getenv("RENDER_JPEG_QUALITY"):
             try:
                 data["render"]["jpeg_quality"] = int(jpeg_quality)
-            except ValueError:
-                raise ValueError(f"Invalid RENDER_JPEG_QUALITY value: {jpeg_quality}")
+            except ValueError as err:
+                raise ValueError(f"Invalid RENDER_JPEG_QUALITY value: {jpeg_quality}") from err
 
         if use_china_cdn := os.getenv("RENDER_USE_CHINA_CDN"):
             data["render"]["use_china_cdn"] = use_china_cdn.lower() in ("true", "1", "yes")
@@ -432,8 +455,8 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
     if holiday_timeout := os.getenv("HOLIDAY_TIMEOUT_SEC"):
         try:
             data["holiday"]["timeout_sec"] = int(holiday_timeout)
-        except ValueError:
-            raise ValueError(f"Invalid HOLIDAY_TIMEOUT_SEC value: {holiday_timeout}")
+        except ValueError as err:
+            raise ValueError(f"Invalid HOLIDAY_TIMEOUT_SEC value: {holiday_timeout}") from err
 
     # Paths configuration
     if "paths" in data:

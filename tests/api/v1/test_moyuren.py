@@ -29,7 +29,6 @@ class TestMoyurenAPI:
                 "weekday": "星期三",
                 "lunar_date": "正月初七",
                 "fun_content": {"title": "🐟 摸鱼小贴士", "content": "测试内容"},
-                "countdowns": [],
                 "is_crazy_thursday": False,
                 "kfc_content": None,
             },

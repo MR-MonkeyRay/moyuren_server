@@ -1,6 +1,5 @@
 """Moyuren image API endpoints."""
 
-import asyncio
 import json
 import logging
 from pathlib import Path
@@ -30,30 +29,16 @@ async def _ensure_state_file_exists(request: Request, state_path: Path, logger) 
         try:
             await generate_and_save_image(request.app)
         except GenerationBusyError:
-            # 另一个进程正在生成，循环等待直到生成完成
-            logger.info("Generation in progress by another process, waiting...")
-            max_wait_seconds = 60
-
-            for wait_count in range(1, max_wait_seconds + 1):
-                # 先检查再等待，避免额外延迟
-                if state_path.exists():
-                    logger.info(f"Generation completed after {wait_count - 1} seconds")
-                    break
-                await asyncio.sleep(1)
-                # 每 10 秒记录一次进度，减少日志噪音
-                if wait_count % 10 == 0:
-                    logger.info(f"Still waiting for generation... ({wait_count}/{max_wait_seconds}s)")
-            else:
-                # 超时后返回 503
-                logger.warning(f"Generation timeout after {max_wait_seconds} seconds")
-                return JSONResponse(
-                    content=error_response(
-                        code=ErrorCode.GENERATION_BUSY,
-                        message="Image generation timeout",
-                        detail=f"Generation did not complete within {max_wait_seconds} seconds",
-                    ),
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
+            logger.info("Generation in progress, returning 503 with Retry-After")
+            return JSONResponse(
+                content=error_response(
+                    code=ErrorCode.GENERATION_BUSY,
+                    message="Image generation in progress",
+                    detail="Another process is generating the image",
+                ),
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                headers={"Retry-After": "5"},
+            )
         except Exception as e:
             logger.error(f"On-demand image generation failed: {e}")
             return JSONResponse(
@@ -260,7 +245,6 @@ async def get_moyuren_detail(request: Request) -> JSONResponse:
     - weekday: Weekday in Chinese (e.g., 星期日)
     - lunar_date: Lunar calendar date
     - fun_content: Fun content (joke, quote, etc.)
-    - countdowns: Holiday countdowns
     - is_crazy_thursday: Whether it's Thursday
     - kfc_content: KFC Crazy Thursday content (only on Thursday)
 
@@ -292,7 +276,6 @@ async def get_moyuren_detail(request: Request) -> JSONResponse:
         "weekday": state_data.get("weekday", ""),
         "lunar_date": state_data.get("lunar_date", ""),
         "fun_content": state_data.get("fun_content"),
-        "countdowns": state_data.get("countdowns", []),
         "is_crazy_thursday": state_data.get("is_crazy_thursday", False),
         "kfc_content": state_data.get("kfc_content"),
         # Full rendering data fields

@@ -10,12 +10,6 @@
     "title": "💬 一言",
     "text": "能者深藏不露。"
   },
-  "countdowns": [
-    { "name": "春节", "date": "2026-02-15", "days_left": 13 },
-    { "name": "元宵节", "date": "2026-03-03", "days_left": 29 },
-    { "name": "清明节", "date": "2026-04-04", "days_left": 61 },
-    { "name": "劳动节", "date": "2026-05-01", "days_left": 88 }
-  ],
   "is_crazy_thursday": false,
   "kfc_content": null,
   "date_info": {

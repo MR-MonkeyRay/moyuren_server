@@ -3,7 +3,6 @@
 import logging
 import os
 from pathlib import Path
-from typing import List
 
 
 class CacheCleaner:
@@ -52,7 +51,6 @@ class CacheCleaner:
         files.sort(key=lambda f: os.path.getmtime(f))
 
         # Keep the newest file regardless of age
-        newest_file = files[-1]
         candidates = files[:-1]  # Exclude newest from deletion
 
         # Calculate cutoff time

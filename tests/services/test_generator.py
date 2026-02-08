@@ -1,16 +1,16 @@
-"""Tests for app/services/generator.py - image generation service."""
-
+import asyncio
 import json
 from pathlib import Path
-from typing import Any
 from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
+from filelock import Timeout
 
 from app.services.generator import (
     GenerationBusyError,
     _get_async_lock,
     _read_latest_filename,
+    generate_and_save_image,
 )
 
 
@@ -148,3 +148,64 @@ class TestReadLatestFilename:
         result = _read_latest_filename(state_path)
 
         assert result == "test.jpg"
+
+
+class TestGenerationBusyErrorExceptionChain:
+    """Tests for exception chaining in generate_and_save_image."""
+
+    @staticmethod
+    def _build_app(tmp_path: Path) -> MagicMock:
+        """Build a minimal mock FastAPI app for generate_and_save_image."""
+        app = MagicMock()
+        app.state.logger = MagicMock()
+
+        state_path = tmp_path / "state" / "latest.json"
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+
+        template_item = MagicMock()
+        template_item.name = "moyuren"
+        templates_config = MagicMock()
+        templates_config.get_template.return_value = template_item
+
+        config = MagicMock()
+        config.paths.state_path = str(state_path)
+        config.get_templates_config.return_value = templates_config
+        app.state.config = config
+
+        return app
+
+    @pytest.mark.asyncio
+    async def test_busy_error_preserves_async_timeout_cause(
+        self, tmp_path: Path
+    ) -> None:
+        """Test generate_and_save_image preserves asyncio.TimeoutError as __cause__."""
+        app = self._build_app(tmp_path)
+
+        # Make async_lock.acquire() hang so wait_for raises TimeoutError
+        never_done: asyncio.Future[bool] = asyncio.Future()
+
+        mock_lock = MagicMock()
+        mock_lock.acquire = MagicMock(return_value=never_done)
+
+        with patch("app.services.generator._get_async_lock", return_value=mock_lock):
+            with pytest.raises(GenerationBusyError) as exc_info:
+                await generate_and_save_image(app)
+
+        assert isinstance(exc_info.value.__cause__, asyncio.TimeoutError)
+
+    @pytest.mark.asyncio
+    async def test_busy_error_preserves_filelock_timeout_cause(
+        self, tmp_path: Path
+    ) -> None:
+        """Test generate_and_save_image preserves filelock.Timeout as __cause__."""
+        app = self._build_app(tmp_path)
+
+        with patch("app.services.generator._get_async_lock", return_value=asyncio.Lock()):
+            with patch(
+                "app.services.generator.asyncio.to_thread",
+                new=AsyncMock(side_effect=Timeout("lock")),
+            ):
+                with pytest.raises(GenerationBusyError) as exc_info:
+                    await generate_and_save_image(app)
+
+        assert isinstance(exc_info.value.__cause__, Timeout)

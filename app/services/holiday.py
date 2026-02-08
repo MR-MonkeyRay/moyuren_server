@@ -3,13 +3,14 @@ import json
 import logging
 import os
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import httpx
 
 from app.services.calendar import get_business_timezone
+from app.services.daily_cache import DailyCache
 
 # GitHub 原始源（硬编码，不可配置）
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json"
@@ -173,7 +174,7 @@ class HolidayService:
             if not cache_file.exists():
                 return None
             
-            with open(cache_file, "r", encoding="utf-8") as f:
+            with open(cache_file, encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
             self._logger.warning(f"读取 {year} 年缓存失败: {e}")
@@ -317,3 +318,52 @@ class HolidayService:
             "color": None,
             "is_off_day": True,  # 正常假期都是休息日
         }
+
+
+class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
+    """带日级缓存的节假日服务。
+
+    原始年度数据仍保留在 state/holidays/ 目录，
+    聚合后的节假日列表缓存在 state/cache/holidays.json。
+
+    继承 DailyCache，为 HolidayService 提供日级缓存能力。
+    缓存在每日零点自动过期，网络获取失败时返回过期缓存。
+    """
+
+    def __init__(
+        self,
+        logger: logging.Logger,
+        cache_dir: Path,
+        raw_cache_dir: Path,
+        mirror_urls: list[str] | None = None,
+        timeout_sec: int = 10,
+    ) -> None:
+        """初始化带缓存的节假日服务。
+
+        Args:
+            logger: 日志记录器
+            cache_dir: 日级缓存目录（如 state/cache/）
+            raw_cache_dir: 原始年度数据目录（如 state/holidays/）
+            mirror_urls: 镜像源 URL 列表
+            timeout_sec: 请求超时时间（秒）
+        """
+        super().__init__("holidays", cache_dir, logger)
+        self._service = HolidayService(
+            logger=logger,
+            cache_dir=raw_cache_dir,
+            mirror_urls=mirror_urls,
+            timeout_sec=timeout_sec,
+        )
+
+    async def fetch_fresh(self) -> list[dict[str, Any]] | None:
+        """从网络获取新鲜数据。
+
+        Returns:
+            聚合后的节假日列表，如果获取失败返回 None
+        """
+        try:
+            return await self._service.fetch_holidays()
+        except Exception as e:
+            self.logger.error(f"Failed to fetch holidays: {e}")
+            return None
+
