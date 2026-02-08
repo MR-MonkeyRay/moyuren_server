@@ -137,7 +137,6 @@ async def main():
     # Extract data from template_data
     date_info = template_data.get("date", {})
     fun_content_raw = template_data.get("history", {})
-    holidays_raw = template_data.get("holidays", [])
     kfc_content_raw = template_data.get("kfc_content")
 
     # Build fun_content

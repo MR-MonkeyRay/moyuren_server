@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -174,7 +174,7 @@ class HolidayService:
             if not cache_file.exists():
                 return None
             
-            with open(cache_file, "r", encoding="utf-8") as f:
+            with open(cache_file, encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
             self._logger.warning(f"读取 {year} 年缓存失败: {e}")

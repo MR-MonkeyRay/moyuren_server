@@ -5,7 +5,7 @@ import json
 import os
 import tempfile
 import time
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -261,9 +261,9 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
     try:
         await asyncio.wait_for(async_lock.acquire(), timeout=0.1)
         acquired = True
-    except asyncio.TimeoutError:
+    except asyncio.TimeoutError as exc:
         logger.info("Image generation skipped: another request is generating (in-process)")
-        raise GenerationBusyError("Image generation already in progress")
+        raise GenerationBusyError("Image generation already in progress") from exc
 
     try:
         try:
@@ -317,9 +317,9 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
                     await asyncio.to_thread(file_lock.release)
                 except Exception as e:
                     logger.warning(f"Failed to release file lock: {e}")
-        except Timeout:
+        except Timeout as exc:
             logger.warning("Image generation skipped: another process is generating")
-            raise GenerationBusyError("Image generation locked by another process")
+            raise GenerationBusyError("Image generation locked by another process") from exc
     finally:
         if acquired:
             async_lock.release()
@@ -358,7 +358,6 @@ async def _update_state_file(
         # Extract data from template_data
         date_info = template_data.get("date", {})
         fun_content_raw = template_data.get("history", {})
-        holidays_raw = template_data.get("holidays", [])
         kfc_content_raw = template_data.get("kfc_content")
 
         # Build fun_content

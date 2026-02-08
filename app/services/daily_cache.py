@@ -3,6 +3,7 @@
 提供基于日期的缓存机制，支持自动过期和降级策略。
 """
 
+import contextlib
 import json
 import logging
 import os
@@ -191,10 +192,8 @@ class DailyCache(ABC, Generic[T]):
             )
             # 清理临时文件
             if tmp_path:
-                try:
+                with contextlib.suppress(OSError):
                     os.unlink(tmp_path)
-                except OSError:
-                    pass
 
     @abstractmethod
     async def fetch_fresh(self) -> T | None:

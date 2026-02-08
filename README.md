@@ -446,8 +446,7 @@ render:
   use_china_cdn: false
 
 holiday:
-  # GitHub 代理镜像站前缀列表
-  # 程序自动拼接为：https://ghfast.top/raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json
+  # GitHub 代理镜像站
   # 留空则直接使用 GitHub 原始源
   mirror_urls:
     - "https://ghfast.top/"

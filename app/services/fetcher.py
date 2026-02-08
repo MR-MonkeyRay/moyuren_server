@@ -8,7 +8,6 @@ from typing import Any
 import httpx
 
 from app.core.config import FetchEndpointConfig
-from app.core.errors import FetchError
 from app.services.daily_cache import DailyCache
 
 
@@ -92,7 +91,7 @@ class DataFetcher:
         tasks = [self.fetch_endpoint(ep) for ep in self.endpoints]
         results = await asyncio.gather(*tasks)
 
-        return {ep.name: result for ep, result in zip(self.endpoints, results)}
+        return {ep.name: result for ep, result in zip(self.endpoints, results, strict=True)}
 
 
 class CachedDataFetcher(DailyCache[dict[str, Any]]):

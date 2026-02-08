@@ -1,6 +1,7 @@
 """Moyuren API application entry point."""
 
 import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -354,10 +355,8 @@ async def lifespan(app: FastAPI):
             if not task.done():
                 logger.info("Cancelling browser warmup task...")
                 task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await task
-                except asyncio.CancelledError:
-                    pass
 
         # Cancel background refresh task if running
         if hasattr(app.state, "background_refresh_task"):
@@ -365,10 +364,8 @@ async def lifespan(app: FastAPI):
             if not task.done():
                 logger.info("Cancelling background refresh task...")
                 task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await task
-                except asyncio.CancelledError:
-                    pass
 
         # Stop scheduler
         if hasattr(app.state, "scheduler"):

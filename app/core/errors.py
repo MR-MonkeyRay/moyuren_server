@@ -1,10 +1,10 @@
 """Custom exception classes and error handling."""
 
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 
 
-class ErrorCode(str, Enum):
+class ErrorCode(StrEnum):
     """Error code enumeration."""
     # Config errors (1000-1099)
     CONFIG_LOAD_FAILED = "CONFIG_1001"
@@ -42,7 +42,7 @@ class AppError(Exception):
         self,
         message: str,
         code: ErrorCode,
-        detail: Optional[str] = None
+        detail: str | None = None
     ) -> None:
         self.message = message
         self.code = code
@@ -57,7 +57,7 @@ class ConfigError(AppError):
         self,
         message: str = "Configuration error",
         code: ErrorCode = ErrorCode.CONFIG_LOAD_FAILED,
-        detail: Optional[str] = None
+        detail: str | None = None
     ) -> None:
         super().__init__(message, code, detail)
 
@@ -69,7 +69,7 @@ class FetchError(AppError):
         self,
         message: str = "Fetch error",
         code: ErrorCode = ErrorCode.FETCH_REQUEST_FAILED,
-        detail: Optional[str] = None
+        detail: str | None = None
     ) -> None:
         super().__init__(message, code, detail)
 
@@ -81,7 +81,7 @@ class RenderError(AppError):
         self,
         message: str = "Render error",
         code: ErrorCode = ErrorCode.RENDER_PLAYWRIGHT_ERROR,
-        detail: Optional[str] = None
+        detail: str | None = None
     ) -> None:
         super().__init__(message, code, detail)
 
@@ -93,7 +93,7 @@ class StorageError(AppError):
         self,
         message: str = "Storage error",
         code: ErrorCode = ErrorCode.STORAGE_WRITE_FAILED,
-        detail: Optional[str] = None
+        detail: str | None = None
     ) -> None:
         super().__init__(message, code, detail)
 
@@ -101,7 +101,7 @@ class StorageError(AppError):
 def error_response(
     code: ErrorCode,
     message: str,
-    detail: Optional[str] = None
+    detail: str | None = None
 ) -> dict[str, Any]:
     """
     Create standardized error response.
