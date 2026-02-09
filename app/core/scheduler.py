@@ -1,8 +1,8 @@
 """Task scheduler module using APScheduler."""
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger

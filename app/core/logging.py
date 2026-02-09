@@ -3,12 +3,11 @@
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
 
 from app.core.config import LoggingConfig
 
 
-def setup_logging(config: LoggingConfig, logger_name: Optional[str] = None) -> logging.Logger:
+def setup_logging(config: LoggingConfig, logger_name: str | None = None) -> logging.Logger:
     """
     Configure logging with console handler and optional file handler.
 

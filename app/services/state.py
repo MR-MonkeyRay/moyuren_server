@@ -2,7 +2,6 @@
 
 from typing import Any
 
-
 STATE_VERSION = 2
 
 

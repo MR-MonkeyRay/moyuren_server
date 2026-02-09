@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from app.core.config import FunContentConfig, FunContentEndpointConfig
+from app.core.config import FunContentEndpoint, FunContentSource
 from app.services.calendar import today_business
 from app.services.daily_cache import DailyCache
 
@@ -23,7 +23,7 @@ class FunContentService:
         "content": "工作再忙，也要记得摸鱼。适当休息，效率更高！"
     }
 
-    def __init__(self, config: FunContentConfig):
+    def __init__(self, config: FunContentSource):
         """Initialize the service with configuration.
 
         Args:
@@ -55,7 +55,7 @@ class FunContentService:
         logger.warning("All fun content endpoints failed, using default")
         return self._DEFAULT_CONTENT.copy()
 
-    def _shuffle_by_date(self, target_date: date) -> list[FunContentEndpointConfig]:
+    def _shuffle_by_date(self, target_date: date) -> list[FunContentEndpoint]:
         """Shuffle endpoints using date as seed for consistent daily selection.
 
         Args:
@@ -71,7 +71,7 @@ class FunContentService:
         return endpoints
 
     async def _fetch_endpoint(
-        self, client: httpx.AsyncClient, endpoint: FunContentEndpointConfig
+        self, client: httpx.AsyncClient, endpoint: FunContentEndpoint
     ) -> dict[str, str] | None:
         """Fetch content from a single endpoint.
 
@@ -131,7 +131,7 @@ class CachedFunContentService(DailyCache[dict[str, str]]):
 
     def __init__(
         self,
-        config: FunContentConfig,
+        config: FunContentSource,
         logger: logging.Logger,
         cache_dir: Path,
     ) -> None:

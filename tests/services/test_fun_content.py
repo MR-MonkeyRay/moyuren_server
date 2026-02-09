@@ -1,14 +1,13 @@
 """Tests for app/services/fun_content.py - fun content fetching service."""
 
 from datetime import date
-from typing import Any
 
 import httpx
 import pytest
 import respx
 from httpx import Response
 
-from app.core.config import FunContentConfig, FunContentEndpointConfig
+from app.core.config import FunContentEndpoint, FunContentSource
 from app.services.fun_content import FunContentService
 
 
@@ -16,18 +15,18 @@ class TestFunContentService:
     """Tests for FunContentService class."""
 
     @pytest.fixture
-    def sample_config(self) -> FunContentConfig:
+    def sample_config(self) -> FunContentSource:
         """Create a sample fun content configuration."""
-        return FunContentConfig(
+        return FunContentSource(
             timeout_sec=5,
             endpoints=[
-                FunContentEndpointConfig(
+                FunContentEndpoint(
                     name="hitokoto",
                     url="https://api.example.com/hitokoto",
                     data_path="data.hitokoto",
                     display_title="💬 一言"
                 ),
-                FunContentEndpointConfig(
+                FunContentEndpoint(
                     name="joke",
                     url="https://api.example.com/joke",
                     data_path="data.content",
@@ -37,7 +36,7 @@ class TestFunContentService:
         )
 
     @pytest.fixture
-    def service(self, sample_config: FunContentConfig) -> FunContentService:
+    def service(self, sample_config: FunContentSource) -> FunContentService:
         """Create a FunContentService instance."""
         return FunContentService(config=sample_config)
 

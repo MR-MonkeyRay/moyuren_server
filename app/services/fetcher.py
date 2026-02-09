@@ -1,97 +1,81 @@
 """Data fetching service module."""
 
-import asyncio
 import logging
 from pathlib import Path
 from typing import Any
 
 import httpx
 
-from app.core.config import FetchEndpointConfig
+from app.core.config import NewsSource
 from app.services.daily_cache import DailyCache
 
 
 class DataFetcher:
-    """Asynchronous data fetcher for multiple API endpoints."""
+    """Asynchronous data fetcher for news API."""
 
     def __init__(
         self,
-        endpoints: list[FetchEndpointConfig],
+        source: NewsSource,
         logger: logging.Logger,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
-        """Initialize the data fetcher.
-
-        Args:
-            endpoints: List of endpoint configurations.
-            logger: Logger instance for logging request status.
-            http_client: Optional shared HTTP client for connection pooling.
-        """
-        self.endpoints = endpoints
+        self.source = source
         self.logger = logger
         self._client = http_client
 
     async def _fetch_with_client(
         self,
         client: httpx.AsyncClient,
-        endpoint: FetchEndpointConfig,
     ) -> dict[str, Any] | None:
         """Fetch data using the provided client."""
         response = await client.get(
-            endpoint.url,
-            params=endpoint.params,
-            timeout=httpx.Timeout(endpoint.timeout_sec),
+            str(self.source.url),
+            params=self.source.params,
+            timeout=httpx.Timeout(self.source.timeout_sec),
         )
         response.raise_for_status()
         data = response.json()
-        self.logger.info(f"Successfully fetched from {endpoint.name}")
+        self.logger.info(f"Successfully fetched from {self.source.type}")
         return data
 
-    async def fetch_endpoint(self, endpoint: FetchEndpointConfig) -> dict[str, Any] | None:
-        """Fetch data from a single endpoint.
-
-        Args:
-            endpoint: The endpoint configuration to fetch from.
+    async def fetch(self) -> dict[str, Any] | None:
+        """Fetch data from the news source.
 
         Returns:
             The response data as dict, or None if request fails.
         """
         try:
-            self.logger.debug(f"Fetching from endpoint: {endpoint.name}")
+            self.logger.debug(f"Fetching from source: {self.source.type}")
 
             if self._client is not None:
-                return await self._fetch_with_client(self._client, endpoint)
+                return await self._fetch_with_client(self._client)
             async with httpx.AsyncClient() as client:
-                return await self._fetch_with_client(client, endpoint)
+                return await self._fetch_with_client(client)
 
         except httpx.TimeoutException:
-            self.logger.warning(f"Timeout fetching from {endpoint.name}")
+            self.logger.warning(f"Timeout fetching from {self.source.type}")
             return None
         except httpx.HTTPStatusError as e:
             self.logger.warning(
-                f"HTTP error fetching from {endpoint.name}: {e.response.status_code}"
+                f"HTTP error fetching from {self.source.type}: {e.response.status_code}"
             )
             return None
         except httpx.RequestError as e:
-            self.logger.warning(f"Request error fetching from {endpoint.name}: {e}")
+            self.logger.warning(f"Request error fetching from {self.source.type}: {e}")
             return None
         except Exception as e:
-            self.logger.error(f"Unexpected error fetching from {endpoint.name}: {e}")
+            self.logger.error(f"Unexpected error fetching from {self.source.type}: {e}")
             return None
 
     async def fetch_all(self) -> dict[str, dict[str, Any] | None]:
-        """Fetch data from all configured endpoints in parallel.
+        """Fetch data and return in legacy format for backward compatibility.
 
         Returns:
-            A dictionary mapping endpoint names to their fetched data.
-            Failed endpoints will have None as value.
+            A dictionary mapping source name to fetched data.
         """
-        self.logger.info(f"Fetching from {len(self.endpoints)} endpoints")
-
-        tasks = [self.fetch_endpoint(ep) for ep in self.endpoints]
-        results = await asyncio.gather(*tasks)
-
-        return {ep.name: result for ep, result in zip(self.endpoints, results, strict=True)}
+        self.logger.info("Fetching news data")
+        result = await self.fetch()
+        return {"news": result}
 
 
 class CachedDataFetcher(DailyCache[dict[str, Any]]):
@@ -103,21 +87,13 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
 
     def __init__(
         self,
-        endpoints: list[FetchEndpointConfig],
+        source: NewsSource,
         logger: logging.Logger,
         cache_dir: Path,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
-        """初始化带缓存的数据获取器。
-
-        Args:
-            endpoints: API 端点配置列表
-            logger: 日志记录器
-            cache_dir: 缓存目录路径
-            http_client: 可选的共享 HTTP 客户端
-        """
         super().__init__("news", cache_dir, logger)
-        self._fetcher = DataFetcher(endpoints, logger, http_client=http_client)
+        self._fetcher = DataFetcher(source, logger, http_client=http_client)
 
     async def fetch_fresh(self) -> dict[str, Any] | None:
         """从网络获取新鲜数据。
@@ -130,4 +106,3 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
         except Exception as e:
             self.logger.error(f"Failed to fetch data: {e}")
             return None
-

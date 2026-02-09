@@ -4,23 +4,21 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.config import (
-    ServerConfig,
-    PathsConfig,
-    SchedulerConfig,
     CacheConfig,
-    FetchEndpointConfig,
-    RenderConfig,
-    ViewportConfig,
-    ThemeConfig,
-    TemplateItemConfig,
-    TemplatesConfig,
+    CrazyThursdaySource,
+    FunContentEndpoint,
+    FunContentSource,
+    HolidaySource,
     LoggingConfig,
+    NewsSource,
+    SchedulerConfig,
+    ServerConfig,
+    StockIndexSource,
+    TemplateItemConfig,
+    TemplateRenderConfig,
+    TemplatesConfig,
     TimezoneConfig,
-    HolidayConfig,
-    FunContentConfig,
-    FunContentEndpointConfig,
-    CrazyThursdayConfig,
-    StockIndexConfig,
+    ViewportConfig,
 )
 
 
@@ -103,52 +101,6 @@ class TestCacheConfig:
             CacheConfig(ttl_hours=-1)
 
 
-class TestFetchEndpointConfig:
-    """Tests for FetchEndpointConfig model."""
-
-    def test_valid_endpoint(self) -> None:
-        """Test valid endpoint configuration."""
-        config = FetchEndpointConfig(
-            name="news",
-            url="https://api.example.com/news",
-            timeout_sec=10,
-            params={"key": "value"}
-        )
-        assert config.name == "news"
-        assert config.timeout_sec == 10
-
-    def test_empty_name_raises_error(self) -> None:
-        """Test empty name raises error."""
-        with pytest.raises(ValidationError) as exc_info:
-            FetchEndpointConfig(name="", url="https://example.com")
-        assert "cannot be empty" in str(exc_info.value)
-
-    def test_empty_url_raises_error(self) -> None:
-        """Test empty URL raises error."""
-        with pytest.raises(ValidationError):
-            FetchEndpointConfig(name="test", url="")
-
-
-class TestRenderConfig:
-    """Tests for RenderConfig model."""
-
-    def test_valid_render_config(self) -> None:
-        """Test valid render configuration."""
-        config = RenderConfig(
-            viewport_width=800,
-            viewport_height=600,
-            device_scale_factor=2,
-            jpeg_quality=90
-        )
-        assert config.viewport_width == 800
-
-    def test_zero_width_raises_error(self) -> None:
-        """Test zero width raises error."""
-        with pytest.raises(ValidationError) as exc_info:
-            RenderConfig(viewport_width=0)
-        assert "must be positive" in str(exc_info.value)
-
-
 class TestTemplatesConfig:
     """Tests for TemplatesConfig model."""
 
@@ -157,8 +109,16 @@ class TestTemplatesConfig:
         config = TemplatesConfig(
             default="main",
             items=[
-                TemplateItemConfig(name="main", path="templates/main.html"),
-                TemplateItemConfig(name="alt", path="templates/alt.html"),
+                TemplateItemConfig(
+                    name="main",
+                    path="templates/main.html",
+                    viewport=ViewportConfig(width=800, height=600)
+                ),
+                TemplateItemConfig(
+                    name="alt",
+                    path="templates/alt.html",
+                    viewport=ViewportConfig(width=800, height=600)
+                ),
             ]
         )
         template = config.get_template("alt")
@@ -169,7 +129,11 @@ class TestTemplatesConfig:
         config = TemplatesConfig(
             default="main",
             items=[
-                TemplateItemConfig(name="main", path="templates/main.html"),
+                TemplateItemConfig(
+                    name="main",
+                    path="templates/main.html",
+                    viewport=ViewportConfig(width=800, height=600)
+                ),
             ]
         )
         template = config.get_template()
@@ -178,7 +142,13 @@ class TestTemplatesConfig:
     def test_get_template_not_found_raises_error(self) -> None:
         """Test get template not found raises error."""
         config = TemplatesConfig(
-            items=[TemplateItemConfig(name="main", path="templates/main.html")]
+            items=[
+                TemplateItemConfig(
+                    name="main",
+                    path="templates/main.html",
+                    viewport=ViewportConfig(width=800, height=600)
+                )
+            ]
         )
         with pytest.raises(ValueError, match="Template not found"):
             config.get_template("nonexistent")
@@ -188,8 +158,16 @@ class TestTemplatesConfig:
         with pytest.raises(ValidationError) as exc_info:
             TemplatesConfig(
                 items=[
-                    TemplateItemConfig(name="main", path="templates/main.html"),
-                    TemplateItemConfig(name="main", path="templates/other.html"),
+                    TemplateItemConfig(
+                        name="main",
+                        path="templates/main.html",
+                        viewport=ViewportConfig(width=800, height=600)
+                    ),
+                    TemplateItemConfig(
+                        name="main",
+                        path="templates/other.html",
+                        viewport=ViewportConfig(width=800, height=600)
+                    ),
                 ]
             )
         assert "unique" in str(exc_info.value)
@@ -252,12 +230,13 @@ class TestTimezoneConfig:
         assert "Invalid timezone offset" in str(exc_info.value)
 
 
-class TestHolidayConfig:
-    """Tests for HolidayConfig model."""
+class TestHolidaySource:
+    """Tests for HolidaySource model."""
 
     def test_valid_holiday_config(self) -> None:
         """Test valid holiday configuration."""
-        config = HolidayConfig(
+        config = HolidaySource(
+            type="holiday",
             mirror_urls=["https://mirror.example.com/"],
             timeout_sec=10
         )
@@ -266,15 +245,16 @@ class TestHolidayConfig:
     def test_zero_timeout_raises_error(self) -> None:
         """Test zero timeout raises error."""
         with pytest.raises(ValidationError):
-            HolidayConfig(timeout_sec=0)
+            HolidaySource(type="holiday", timeout_sec=0)
 
 
-class TestCrazyThursdayConfig:
-    """Tests for CrazyThursdayConfig model."""
+class TestCrazyThursdaySource:
+    """Tests for CrazyThursdaySource model."""
 
     def test_valid_config(self) -> None:
         """Test valid crazy thursday configuration."""
-        config = CrazyThursdayConfig(
+        config = CrazyThursdaySource(
+            type="crazy_thursday",
             enabled=True,
             url="https://api.example.com/kfc",
             timeout_sec=5
@@ -283,7 +263,8 @@ class TestCrazyThursdayConfig:
 
     def test_disabled_config(self) -> None:
         """Test disabled configuration."""
-        config = CrazyThursdayConfig(
+        config = CrazyThursdaySource(
+            type="crazy_thursday",
             enabled=False,
             url="https://api.example.com/kfc",
             timeout_sec=5
@@ -291,12 +272,13 @@ class TestCrazyThursdayConfig:
         assert config.enabled is False
 
 
-class TestStockIndexConfig:
-    """Tests for StockIndexConfig model."""
+class TestStockIndexSource:
+    """Tests for StockIndexSource model."""
 
     def test_valid_config(self) -> None:
         """Test valid stock index configuration."""
-        config = StockIndexConfig(
+        config = StockIndexSource(
+            type="stock_index",
             quote_url="https://api.example.com/quote",
             secids=["1.000001", "0.399001"],
             timeout_sec=5,
@@ -305,3 +287,75 @@ class TestStockIndexConfig:
         )
         assert len(config.secids) == 2
         assert config.cache_ttl_sec == 60
+
+
+class TestTemplateRenderConfig:
+    """Tests for TemplateRenderConfig model."""
+
+    def test_valid_config(self) -> None:
+        """Test valid template render configuration."""
+        config = TemplateRenderConfig(
+            device_scale_factor=2,
+            jpeg_quality=90,
+            use_china_cdn=True
+        )
+        assert config.device_scale_factor == 2
+        assert config.jpeg_quality == 90
+
+    def test_zero_scale_raises_error(self) -> None:
+        """Test zero device scale factor raises error."""
+        with pytest.raises(ValidationError) as exc_info:
+            TemplateRenderConfig(device_scale_factor=0)
+        assert "must be positive" in str(exc_info.value)
+
+    def test_invalid_jpeg_quality_raises_error(self) -> None:
+        """Test invalid JPEG quality raises error."""
+        with pytest.raises(ValidationError) as exc_info:
+            TemplateRenderConfig(jpeg_quality=101)
+        assert "must be between 1 and 100" in str(exc_info.value)
+
+
+class TestNewsSource:
+    """Tests for NewsSource model."""
+
+    def test_valid_config(self) -> None:
+        """Test valid news source configuration."""
+        config = NewsSource(
+            type="news",
+            url="https://api.example.com/news",
+            params={"key": "value"}
+        )
+        assert config.type == "news"
+        assert config.url == "https://api.example.com/news"
+
+    def test_empty_url_raises_error(self) -> None:
+        """Test empty URL raises error."""
+        with pytest.raises(ValidationError) as exc_info:
+            NewsSource(type="news", url="")
+        assert "cannot be empty" in str(exc_info.value)
+
+
+class TestFunContentSource:
+    """Tests for FunContentSource model."""
+
+    def test_valid_config(self) -> None:
+        """Test valid fun content source configuration."""
+        config = FunContentSource(
+            type="fun_content",
+            endpoints=[
+                FunContentEndpoint(
+                    name="joke",
+                    url="https://api.example.com/joke",
+                    data_path="data",
+                    display_title="笑话"
+                )
+            ]
+        )
+        assert config.type == "fun_content"
+        assert len(config.endpoints) == 1
+
+    def test_empty_endpoints_raises_error(self) -> None:
+        """Test empty endpoints raises error."""
+        with pytest.raises(ValidationError) as exc_info:
+            FunContentSource(type="fun_content", endpoints=[])
+        assert "cannot be empty" in str(exc_info.value)

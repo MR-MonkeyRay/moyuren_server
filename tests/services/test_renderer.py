@@ -1,15 +1,14 @@
 """Tests for app/services/renderer.py - image rendering service."""
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Any
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from markupsafe import Markup
 
-from app.services.renderer import format_datetime, nl2br, ImageRenderer
-from app.core.config import RenderConfig, TemplatesConfig, TemplateItemConfig
+from app.core.config import TemplateItemConfig, TemplateRenderConfig, TemplatesConfig, ViewportConfig
+from app.services.renderer import ImageRenderer, format_datetime, nl2br
 
 
 class TestFormatDatetime:
@@ -125,16 +124,15 @@ class TestImageRenderer:
                 TemplateItemConfig(
                     name="test",
                     path=str(template_file),
+                    viewport=ViewportConfig(width=800, height=600)
                 )
             ]
         )
 
     @pytest.fixture
-    def render_config(self) -> RenderConfig:
+    def render_config(self) -> TemplateRenderConfig:
         """Create a render configuration."""
-        return RenderConfig(
-            viewport_width=800,
-            viewport_height=600,
+        return TemplateRenderConfig(
             device_scale_factor=2,
             jpeg_quality=90,
             use_china_cdn=False
@@ -144,7 +142,7 @@ class TestImageRenderer:
     def renderer(
         self,
         templates_config: TemplatesConfig,
-        render_config: RenderConfig,
+        render_config: TemplateRenderConfig,
         tmp_path: Path,
         logger
     ) -> ImageRenderer:
@@ -161,13 +159,13 @@ class TestImageRenderer:
     def test_renderer_creates_static_dir(
         self,
         templates_config: TemplatesConfig,
-        render_config: RenderConfig,
+        render_config: TemplateRenderConfig,
         tmp_path: Path,
         logger
     ) -> None:
         """Test renderer creates static directory if not exists."""
         static_dir = tmp_path / "new_static"
-        renderer = ImageRenderer(
+        ImageRenderer(
             templates_config=templates_config,
             static_dir=str(static_dir),
             render_config=render_config,

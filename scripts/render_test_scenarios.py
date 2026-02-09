@@ -11,16 +11,21 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.core.config import load_config
+from app.core.config import (
+    FunContentSource,
+    HolidaySource,
+    NewsSource,
+    StockIndexSource,
+    load_config,
+)
 from app.core.logging import setup_logging
+from app.services.calendar import init_timezones
 from app.services.compute import DataComputer
 from app.services.fetcher import DataFetcher
 from app.services.fun_content import FunContentService
 from app.services.holiday import HolidayService
 from app.services.renderer import ImageRenderer
-from app.services.calendar import init_timezones
 from app.services.stock_index import StockIndexService
-
 
 # 占位符，运行时替换为实际日期
 _TODAY_PLACEHOLDER = "__TODAY__"
@@ -372,24 +377,28 @@ async def main():
     Path(config.paths.static_dir).mkdir(parents=True, exist_ok=True)
 
     # Initialize services
+    news_source = config.get_source(NewsSource)
     data_fetcher = DataFetcher(
-        endpoints=config.fetch.api_endpoints,
+        source=news_source,
         logger=logger,
     )
     holiday_cache_dir = Path(config.paths.state_path).parent / "holidays"
+    holiday_source = config.get_source(HolidaySource)
     holiday_service = HolidayService(
         logger=logger,
         cache_dir=holiday_cache_dir,
-        mirror_urls=config.holiday.mirror_urls,
-        timeout_sec=config.holiday.timeout_sec,
+        mirror_urls=holiday_source.mirror_urls if holiday_source else [],
+        timeout_sec=holiday_source.timeout_sec if holiday_source else 10,
     )
-    fun_content_service = FunContentService(config.fun_content)
+    fun_content_source = config.get_source(FunContentSource)
+    fun_content_service = FunContentService(fun_content_source)
     data_computer = DataComputer()
 
     # Initialize stock index service
     stock_index_service = None
-    if config.stock_index:
-        stock_index_service = StockIndexService(config.stock_index)
+    stock_index_source = config.get_source(StockIndexSource)
+    if stock_index_source:
+        stock_index_service = StockIndexService(stock_index_source)
 
     # Get templates configuration
     templates_config = config.get_templates_config()
@@ -397,7 +406,7 @@ async def main():
     image_renderer = ImageRenderer(
         templates_config=templates_config,
         static_dir=config.paths.static_dir,
-        render_config=config.render,
+        render_config=config.templates.config,
         logger=logger,
     )
 

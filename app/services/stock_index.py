@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 import exchange_calendars as xcals
 import httpx
 
-from app.core.config import StockIndexConfig
+from app.core.config import StockIndexSource
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ DEFAULT_TIMEZONE = "Asia/Shanghai"
 class StockIndexService:
     """Service for fetching stock market index data."""
 
-    def __init__(self, config: StockIndexConfig):
+    def __init__(self, config: StockIndexSource):
         """Initialize the service with configuration.
 
         Args:

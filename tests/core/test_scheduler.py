@@ -1,7 +1,7 @@
 """Tests for app/core/scheduler.py - task scheduler."""
 
 import logging
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 

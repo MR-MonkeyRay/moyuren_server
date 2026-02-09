@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-PORT=${SERVER_PORT:-8000}
-HOST=${SERVER_HOST:-0.0.0.0}
+PORT=${SERVER__PORT:-${SERVER_PORT:-8000}}
+HOST=${SERVER__HOST:-${SERVER_HOST:-0.0.0.0}}
 
 # 以 root 启动时：初始化目录权限后降权到 appuser
 if [ "$(id -u)" = "0" ]; then

@@ -10,7 +10,7 @@ import pytest
 import respx
 from httpx import Response
 
-from app.core.config import CrazyThursdayConfig
+from app.core.config import CrazyThursdaySource
 from app.services.kfc import CachedKfcService, KfcService
 
 
@@ -18,25 +18,25 @@ class TestKfcService:
     """Tests for KfcService class."""
 
     @pytest.fixture
-    def enabled_config(self) -> CrazyThursdayConfig:
+    def enabled_config(self) -> CrazyThursdaySource:
         """Create an enabled KFC configuration."""
-        return CrazyThursdayConfig(
+        return CrazyThursdaySource(
             enabled=True,
             url="https://api.example.com/kfc",
             timeout_sec=5
         )
 
     @pytest.fixture
-    def disabled_config(self) -> CrazyThursdayConfig:
+    def disabled_config(self) -> CrazyThursdaySource:
         """Create a disabled KFC configuration."""
-        return CrazyThursdayConfig(
+        return CrazyThursdaySource(
             enabled=False,
             url="https://api.example.com/kfc",
             timeout_sec=5
         )
 
     @pytest.fixture
-    def service(self, enabled_config: CrazyThursdayConfig) -> KfcService:
+    def service(self, enabled_config: CrazyThursdaySource) -> KfcService:
         """Create a KfcService instance with enabled config."""
         return KfcService(config=enabled_config)
 
@@ -90,7 +90,7 @@ class TestKfcService:
 
     @pytest.mark.asyncio
     async def test_fetch_kfc_copy_disabled_returns_none(
-        self, disabled_config: CrazyThursdayConfig
+        self, disabled_config: CrazyThursdaySource
     ) -> None:
         """Test disabled config returns None without making request."""
         service = KfcService(config=disabled_config)
@@ -186,9 +186,9 @@ class TestCachedKfcService:
     """Tests for CachedKfcService class."""
 
     @pytest.fixture
-    def config(self) -> CrazyThursdayConfig:
+    def config(self) -> CrazyThursdaySource:
         """Create an enabled KFC configuration."""
-        return CrazyThursdayConfig(
+        return CrazyThursdaySource(
             enabled=True,
             url="https://api.example.com/kfc",
             timeout_sec=5
@@ -208,7 +208,7 @@ class TestCachedKfcService:
 
     @pytest.fixture
     def service(
-        self, config: CrazyThursdayConfig, logger_instance: logging.Logger, cache_dir: Path
+        self, config: CrazyThursdaySource, logger_instance: logging.Logger, cache_dir: Path
     ) -> CachedKfcService:
         """Create a CachedKfcService instance."""
         return CachedKfcService(config=config, logger=logger_instance, cache_dir=cache_dir)
@@ -239,7 +239,7 @@ class TestCachedKfcService:
 
     @pytest.mark.asyncio
     async def test_get_uses_cache_on_thursday(
-        self, config: CrazyThursdayConfig, logger_instance: logging.Logger, cache_dir: Path
+        self, config: CrazyThursdaySource, logger_instance: logging.Logger, cache_dir: Path
     ) -> None:
         """Test get() uses cache on subsequent calls on Thursday."""
         service = CachedKfcService(config=config, logger=logger_instance, cache_dir=cache_dir)
@@ -263,7 +263,7 @@ class TestCachedKfcService:
 
     @pytest.mark.asyncio
     async def test_get_force_refresh_on_thursday(
-        self, config: CrazyThursdayConfig, logger_instance: logging.Logger, cache_dir: Path
+        self, config: CrazyThursdaySource, logger_instance: logging.Logger, cache_dir: Path
     ) -> None:
         """Test get() with force_refresh bypasses cache on Thursday."""
         service = CachedKfcService(config=config, logger=logger_instance, cache_dir=cache_dir)

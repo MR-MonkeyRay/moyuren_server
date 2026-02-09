@@ -2,11 +2,11 @@
 
 import logging
 import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from app import __version__, __github_url__
-from app.services.calendar import CalendarService, get_timezone_label, get_business_timezone, now_business
+from app import __github_url__, __version__
+from app.services.calendar import CalendarService, get_business_timezone, now_business
 
 logger = logging.getLogger(__name__)
 

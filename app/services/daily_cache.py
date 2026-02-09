@@ -10,9 +10,10 @@ import os
 import tempfile
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
-from typing import Callable, Generic, TypeVar
+from typing import Generic, TypeVar
 
 from app.services.calendar import today_business
 

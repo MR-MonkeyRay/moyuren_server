@@ -5,43 +5,37 @@ services:
     container_name: moyuren-server
     image: docker.io/monkeyray/moyuren-server:latest
     ports:
-      - "${SERVER_PORT:-8000}:${SERVER_PORT:-8000}"
+      - "${SERVER__PORT:-8000}:${SERVER__PORT:-8000}"
     volumes:
       - ./static:/app/static
       - ./state:/app/state
     environment:
-      # Timezone configuration
+      # Timezone configuration (system-level, not part of pydantic-settings)
       TZ: Asia/Shanghai
 
-      # Server configuration
-      SERVER_HOST: ${SERVER_HOST:-0.0.0.0}
-      SERVER_PORT: ${SERVER_PORT:-8000}
-      SERVER_BASE_DOMAIN: ${SERVER_BASE_DOMAIN:-http://127.0.0.1:8000}
+      # Server configuration (pydantic-settings with env_nested_delimiter="__")
+      SERVER__HOST: ${SERVER__HOST:-0.0.0.0}
+      SERVER__PORT: ${SERVER__PORT:-8000}
+      SERVER__BASE_DOMAIN: ${SERVER__BASE_DOMAIN:-http://127.0.0.1:8000}
 
-      # Scheduler configuration (comma-separated for multiple times)
-      SCHEDULER_DAILY_TIMES: ${SCHEDULER_DAILY_TIMES:-06:00}
+      # Scheduler configuration (JSON array format required)
+      SCHEDULER__DAILY_TIMES: '${SCHEDULER__DAILY_TIMES:-["06:00"]}'
 
       # Cache configuration
-      CACHE_TTL_HOURS: ${CACHE_TTL_HOURS:-24}
+      OUTPUT_CACHE__TTL_HOURS: ${OUTPUT_CACHE__TTL_HOURS:-24}
 
       # Logging configuration (default: stdout only)
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # LOG_FILE: ${LOG_FILE:-}  # 设置此变量可启用文件日志
+      LOGGING__LEVEL: ${LOGGING__LEVEL:-INFO}
+      # LOGGING__FILE: ${LOGGING__FILE:-}  # 设置此变量可启用文件日志
 
-      # Holiday configuration (GitHub proxy mirrors)
-      # 镜像站前缀列表，逗号分隔，如：https://ghfast.top/,https://mirror2.com/
-      # 留空则直接使用 GitHub 原始源
-      HOLIDAY_MIRROR_URLS: ${HOLIDAY_MIRROR_URLS:-https://ghfast.top/}
-      HOLIDAY_TIMEOUT_SEC: ${HOLIDAY_TIMEOUT_SEC:-10}
-
-      # Render configuration
-      # 字体 CDN 配置：true 使用大陆 CDN (fonts.googleapis.cn)，false 使用国际 CDN (fonts.googleapis.com)
-      # RENDER_USE_CHINA_CDN: ${RENDER_USE_CHINA_CDN:-false}
+      # Note: Holiday, fun_content, crazy_thursday, stock_index 等数据源配置
+      # 现在统一在 config.yaml 的 data_sources 列表中管理，无法通过环境变量覆盖单个项
+      # 如需修改这些配置，请直接编辑 config.yaml 文件
 
     restart: unless-stopped
 
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:${SERVER_PORT:-8000}/healthz"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:${SERVER__PORT:-8000}/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3

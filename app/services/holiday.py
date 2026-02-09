@@ -134,7 +134,7 @@ class HolidayService:
                 response.raise_for_status()
                 data = response.json()
                 self._logger.debug(f"成功从 {url} 获取 {year} 年节假日数据")
-                
+
                 # 成功获取后更新缓存
                 self._save_to_cache(year, data)
                 return data
@@ -173,7 +173,7 @@ class HolidayService:
             cache_file = self._cache_dir / f"{year}.json"
             if not cache_file.exists():
                 return None
-            
+
             with open(cache_file, encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:

@@ -139,7 +139,7 @@ class TestCacheCleaner:
         """Test cleaner creates directory if it doesn't exist."""
         non_existent = tmp_path / "new_static"
 
-        cleaner = CacheCleaner(
+        CacheCleaner(
             static_dir=str(non_existent),
             ttl_hours=24,
             logger=logger

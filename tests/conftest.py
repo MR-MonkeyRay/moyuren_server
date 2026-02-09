@@ -2,13 +2,13 @@
 
 import json
 import logging
-from datetime import datetime, timezone, timedelta
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 
 # --- Basic Utilities ---
 
@@ -22,7 +22,7 @@ def test_data_dir() -> Path:
 def load_json(test_data_dir: Path) -> Callable[[str], dict[str, Any]]:
     """Load JSON test data from file."""
     def _loader(rel_path: str) -> dict[str, Any]:
-        with open(test_data_dir / rel_path, "r", encoding="utf-8") as f:
+        with open(test_data_dir / rel_path, encoding="utf-8") as f:
             return json.load(f)
     return _loader
 

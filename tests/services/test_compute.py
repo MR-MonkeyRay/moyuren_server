@@ -1,15 +1,15 @@
 """Tests for app/services/compute.py - normalize_datetime and data aggregation."""
 
-from datetime import datetime, timezone, timedelta
-from unittest.mock import patch, MagicMock
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
 from app.services.compute import (
-    normalize_datetime,
     DomainDataAggregator,
     TemplateAdapter,
+    normalize_datetime,
 )
 
 

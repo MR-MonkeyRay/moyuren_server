@@ -1,8 +1,7 @@
 """Tests for app/services/browser.py - browser manager."""
 
-import asyncio
 import logging
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -31,7 +30,6 @@ class TestBrowserManager:
     @pytest.mark.asyncio
     async def test_ensure_browser_lazy_init(self, manager: BrowserManager) -> None:
         """Test _ensure_browser lazy initialization."""
-        mock_playwright = MagicMock()
         mock_browser = MagicMock()
 
         mock_playwright_instance = AsyncMock()

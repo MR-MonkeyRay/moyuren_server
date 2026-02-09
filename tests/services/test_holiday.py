@@ -4,12 +4,11 @@ import json
 import logging
 import os
 import time
-from datetime import date, datetime, timezone, timedelta
+from datetime import date
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import httpx
 import pytest
 import respx
 from httpx import Response

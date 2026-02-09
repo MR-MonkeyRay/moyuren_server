@@ -1,16 +1,14 @@
 """Tests for app/models/schemas.py - Pydantic data models."""
 
-import pytest
-from pydantic import ValidationError
 
 from app.models.schemas import (
-    MoyurenImageResponse,
-    FunContentSchema,
     DateInfoSchema,
-    WeekendSchema,
-    SolarTermSchema,
+    FunContentSchema,
     GuideSchema,
+    MoyurenImageResponse,
     NewsMetaSchema,
+    SolarTermSchema,
+    WeekendSchema,
 )
 
 

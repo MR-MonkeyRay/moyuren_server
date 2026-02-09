@@ -1,16 +1,15 @@
 """Tests for app/services/stock_index.py - stock index service."""
 
-import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 import respx
 from httpx import Response
 
-from app.core.config import StockIndexConfig
+from app.core.config import StockIndexSource
 from app.services.stock_index import StockIndexService
 
 
@@ -18,9 +17,9 @@ class TestStockIndexService:
     """Tests for StockIndexService class."""
 
     @pytest.fixture
-    def sample_config(self) -> StockIndexConfig:
+    def sample_config(self) -> StockIndexSource:
         """Create a sample stock index configuration."""
-        return StockIndexConfig(
+        return StockIndexSource(
             quote_url="https://api.example.com/quote",
             secids=["1.000001", "0.399001"],
             timeout_sec=5,
@@ -29,7 +28,7 @@ class TestStockIndexService:
         )
 
     @pytest.fixture
-    def service(self, sample_config: StockIndexConfig) -> StockIndexService:
+    def service(self, sample_config: StockIndexSource) -> StockIndexService:
         """Create a StockIndexService instance."""
         with patch("app.services.stock_index.xcals.get_calendar") as mock_cal:
             mock_calendar = MagicMock()

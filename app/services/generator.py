@@ -261,7 +261,7 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
     try:
         await asyncio.wait_for(async_lock.acquire(), timeout=0.1)
         acquired = True
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         logger.info("Image generation skipped: another request is generating (in-process)")
         raise GenerationBusyError("Image generation already in progress") from exc
 

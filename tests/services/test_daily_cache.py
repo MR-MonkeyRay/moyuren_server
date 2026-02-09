@@ -299,7 +299,7 @@ class TestDailyCache:
         cache_dir = tmp_path / "new_cache_dir"
         assert not cache_dir.exists()
 
-        cache = ConcreteDailyCache("test", cache_dir, logger)
+        ConcreteDailyCache("test", cache_dir, logger)
 
         # 缓存目录应该被创建
         assert cache_dir.exists()

@@ -4,7 +4,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
