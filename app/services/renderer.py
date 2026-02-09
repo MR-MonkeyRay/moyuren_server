@@ -206,11 +206,13 @@ class ImageRenderer:
         """
         page = None
         try:
-            page = await browser_manager.create_page({
-                "width": viewport.width,
-                "height": viewport.height,
-                "device_scale_factor": device_scale_factor,
-            })
+            page = await browser_manager.create_page(
+                {
+                    "width": viewport.width,
+                    "height": viewport.height,
+                    "device_scale_factor": device_scale_factor,
+                }
+            )
 
             # Set HTML content and wait for network idle
             await page.set_content(html_content, wait_until="networkidle")

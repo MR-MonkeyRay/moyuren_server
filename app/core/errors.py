@@ -6,6 +6,7 @@ from typing import Any
 
 class ErrorCode(StrEnum):
     """Error code enumeration."""
+
     # Config errors (1000-1099)
     CONFIG_LOAD_FAILED = "CONFIG_1001"
     CONFIG_VALIDATION_FAILED = "CONFIG_1002"
@@ -38,12 +39,7 @@ class ErrorCode(StrEnum):
 class AppError(Exception):
     """Base application error."""
 
-    def __init__(
-        self,
-        message: str,
-        code: ErrorCode,
-        detail: str | None = None
-    ) -> None:
+    def __init__(self, message: str, code: ErrorCode, detail: str | None = None) -> None:
         self.message = message
         self.code = code
         self.detail = detail
@@ -57,7 +53,7 @@ class ConfigError(AppError):
         self,
         message: str = "Configuration error",
         code: ErrorCode = ErrorCode.CONFIG_LOAD_FAILED,
-        detail: str | None = None
+        detail: str | None = None,
     ) -> None:
         super().__init__(message, code, detail)
 
@@ -66,10 +62,7 @@ class FetchError(AppError):
     """Data fetching related error."""
 
     def __init__(
-        self,
-        message: str = "Fetch error",
-        code: ErrorCode = ErrorCode.FETCH_REQUEST_FAILED,
-        detail: str | None = None
+        self, message: str = "Fetch error", code: ErrorCode = ErrorCode.FETCH_REQUEST_FAILED, detail: str | None = None
     ) -> None:
         super().__init__(message, code, detail)
 
@@ -81,7 +74,7 @@ class RenderError(AppError):
         self,
         message: str = "Render error",
         code: ErrorCode = ErrorCode.RENDER_PLAYWRIGHT_ERROR,
-        detail: str | None = None
+        detail: str | None = None,
     ) -> None:
         super().__init__(message, code, detail)
 
@@ -93,16 +86,12 @@ class StorageError(AppError):
         self,
         message: str = "Storage error",
         code: ErrorCode = ErrorCode.STORAGE_WRITE_FAILED,
-        detail: str | None = None
+        detail: str | None = None,
     ) -> None:
         super().__init__(message, code, detail)
 
 
-def error_response(
-    code: ErrorCode,
-    message: str,
-    detail: str | None = None
-) -> dict[str, Any]:
+def error_response(code: ErrorCode, message: str, detail: str | None = None) -> dict[str, Any]:
     """
     Create standardized error response.
 
@@ -114,12 +103,7 @@ def error_response(
     Returns:
         Dictionary with error information.
     """
-    response: dict[str, Any] = {
-        "error": {
-            "code": code.value,
-            "message": message
-        }
-    }
+    response: dict[str, Any] = {"error": {"code": code.value, "message": message}}
     if detail:
         response["error"]["detail"] = detail
     return response
@@ -131,7 +115,6 @@ ERROR_HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.CONFIG_VALIDATION_FAILED: 400,
     ErrorCode.CONFIG_MISSING_REQUIRED: 400,
     ErrorCode.STORAGE_NOT_FOUND: 404,
-
     # 5xx 服务端错误
     ErrorCode.CONFIG_LOAD_FAILED: 500,
     ErrorCode.FETCH_REQUEST_FAILED: 502,

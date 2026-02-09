@@ -17,11 +17,7 @@ class TestDataFetcher:
     @pytest.fixture
     def sample_endpoint(self) -> NewsSource:
         """Create a sample news source configuration."""
-        return NewsSource(
-            url="https://api.example.com/news",
-            timeout_sec=10,
-            params={"force-update": "false"}
-        )
+        return NewsSource(url="https://api.example.com/news", timeout_sec=10, params={"force-update": "false"})
 
     @pytest.fixture
     def fetcher(self, sample_endpoint: NewsSource, logger: logging.Logger) -> DataFetcher:
@@ -30,9 +26,7 @@ class TestDataFetcher:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_endpoint_success(
-        self, fetcher: DataFetcher, sample_endpoint: NewsSource
-    ) -> None:
+    async def test_fetch_endpoint_success(self, fetcher: DataFetcher, sample_endpoint: NewsSource) -> None:
         """Test successful endpoint fetch."""
         mock_data = {"code": 200, "data": {"news": ["Item 1", "Item 2"]}}
         respx.get(sample_endpoint.url).mock(return_value=Response(200, json=mock_data))
@@ -44,9 +38,7 @@ class TestDataFetcher:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_endpoint_timeout(
-        self, fetcher: DataFetcher, sample_endpoint: NewsSource
-    ) -> None:
+    async def test_fetch_endpoint_timeout(self, fetcher: DataFetcher, sample_endpoint: NewsSource) -> None:
         """Test endpoint fetch timeout returns None."""
         respx.get(sample_endpoint.url).mock(side_effect=httpx.TimeoutException("Timeout"))
 
@@ -56,9 +48,7 @@ class TestDataFetcher:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_endpoint_http_error(
-        self, fetcher: DataFetcher, sample_endpoint: NewsSource
-    ) -> None:
+    async def test_fetch_endpoint_http_error(self, fetcher: DataFetcher, sample_endpoint: NewsSource) -> None:
         """Test endpoint fetch HTTP error returns None."""
         respx.get(sample_endpoint.url).mock(return_value=Response(500))
 
@@ -68,9 +58,7 @@ class TestDataFetcher:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_endpoint_request_error(
-        self, fetcher: DataFetcher, sample_endpoint: NewsSource
-    ) -> None:
+    async def test_fetch_endpoint_request_error(self, fetcher: DataFetcher, sample_endpoint: NewsSource) -> None:
         """Test endpoint fetch request error returns None."""
         respx.get(sample_endpoint.url).mock(side_effect=httpx.ConnectError("Connection failed"))
 
@@ -80,9 +68,7 @@ class TestDataFetcher:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_endpoint_invalid_json(
-        self, fetcher: DataFetcher, sample_endpoint: NewsSource
-    ) -> None:
+    async def test_fetch_endpoint_invalid_json(self, fetcher: DataFetcher, sample_endpoint: NewsSource) -> None:
         """Test endpoint fetch with invalid JSON returns None."""
         respx.get(sample_endpoint.url).mock(return_value=Response(200, content=b"not json"))
 
@@ -97,9 +83,7 @@ class TestDataFetcher:
         source = NewsSource(url="https://api.example.com/news")
         fetcher = DataFetcher(source=source, logger=logger)
 
-        respx.get("https://api.example.com/news").mock(
-            return_value=Response(200, json={"type": "news"})
-        )
+        respx.get("https://api.example.com/news").mock(return_value=Response(200, json={"type": "news"}))
 
         result = await fetcher.fetch_all()
 
@@ -123,15 +107,10 @@ class TestDataFetcher:
     @pytest.mark.asyncio
     async def test_fetch_endpoint_with_params(self, logger: logging.Logger) -> None:
         """Test endpoint fetch includes query parameters."""
-        source = NewsSource(
-            url="https://api.example.com/news",
-            params={"key": "value", "limit": "10"}
-        )
+        source = NewsSource(url="https://api.example.com/news", params={"key": "value", "limit": "10"})
         fetcher = DataFetcher(source=source, logger=logger)
 
-        mock_route = respx.get("https://api.example.com/news").mock(
-            return_value=Response(200, json={"data": "test"})
-        )
+        mock_route = respx.get("https://api.example.com/news").mock(return_value=Response(200, json={"data": "test"}))
 
         await fetcher.fetch()
 

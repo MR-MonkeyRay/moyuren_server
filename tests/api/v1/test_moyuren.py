@@ -102,18 +102,14 @@ class TestMoyurenAPI:
         assert "date" in data
         assert "fun_content" in data
 
-    def test_get_moyuren_latest_success(
-        self, client: TestClient, app: FastAPI
-    ) -> None:
+    def test_get_moyuren_latest_success(self, client: TestClient, app: FastAPI) -> None:
         """Test successful GET /api/v1/moyuren/latest."""
         response = client.get("/api/v1/moyuren/latest")
 
         assert response.status_code == 200
         assert response.headers["content-type"] == "image/jpeg"
 
-    def test_get_moyuren_no_state_triggers_generation(
-        self, tmp_path: Path
-    ) -> None:
+    def test_get_moyuren_no_state_triggers_generation(self, tmp_path: Path) -> None:
         """Test GET /api/v1/moyuren triggers generation when no state."""
         app = FastAPI()
         app.include_router(router)
@@ -161,18 +157,13 @@ class TestMoyurenAPI:
             # Create image file
             (static_dir / "moyuren_20260204.jpg").write_bytes(b"fake")
 
-        with patch(
-            "app.api.v1.moyuren.generate_and_save_image",
-            side_effect=mock_generate
-        ):
+        with patch("app.api.v1.moyuren.generate_and_save_image", side_effect=mock_generate):
             client = TestClient(app)
             response = client.get("/api/v1/moyuren")
 
         assert response.status_code == 200
 
-    def test_get_moyuren_invalid_state_returns_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_get_moyuren_invalid_state_returns_error(self, tmp_path: Path) -> None:
         """Test GET /api/v1/moyuren with invalid state returns error."""
         app = FastAPI()
         app.include_router(router)
@@ -198,9 +189,7 @@ class TestMoyurenAPI:
 
         assert response.status_code == 500
 
-    def test_get_moyuren_latest_missing_image_returns_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_get_moyuren_latest_missing_image_returns_error(self, tmp_path: Path) -> None:
         """Test GET /api/v1/moyuren/latest with missing image returns error."""
         app = FastAPI()
         app.include_router(router)

@@ -18,10 +18,7 @@ logger = logging.getLogger(__name__)
 class FunContentService:
     """Service for fetching fun content from various APIs."""
 
-    _DEFAULT_CONTENT = {
-        "title": "🐟 摸鱼小贴士",
-        "content": "工作再忙，也要记得摸鱼。适当休息，效率更高！"
-    }
+    _DEFAULT_CONTENT = {"title": "🐟 摸鱼小贴士", "content": "工作再忙，也要记得摸鱼。适当休息，效率更高！"}
 
     def __init__(self, config: FunContentSource):
         """Initialize the service with configuration.
@@ -70,9 +67,7 @@ class FunContentService:
         rng.shuffle(endpoints)
         return endpoints
 
-    async def _fetch_endpoint(
-        self, client: httpx.AsyncClient, endpoint: FunContentEndpoint
-    ) -> dict[str, str] | None:
+    async def _fetch_endpoint(self, client: httpx.AsyncClient, endpoint: FunContentEndpoint) -> dict[str, str] | None:
         """Fetch content from a single endpoint.
 
         Args:
@@ -89,10 +84,7 @@ class FunContentService:
 
             content = self._extract_by_path(data, endpoint.data_path)
             if content and isinstance(content, str) and content.strip():
-                return {
-                    "title": endpoint.display_title,
-                    "content": content.strip()
-                }
+                return {"title": endpoint.display_title, "content": content.strip()}
             logger.debug(f"No valid content from {endpoint.name}")
         except httpx.TimeoutException:
             logger.warning(f"Timeout fetching {endpoint.name}")
@@ -156,4 +148,3 @@ class CachedFunContentService(DailyCache[dict[str, str]]):
         except Exception as e:
             self.logger.error(f"Failed to fetch fun content: {e}")
             return None
-

@@ -38,10 +38,7 @@ async def main():
     logger = setup_logging(config.logging, logger_name="render_once")
 
     # Initialize timezones
-    init_timezones(
-        business_tz=config.timezone.business,
-        display_tz=config.timezone.display
-    )
+    init_timezones(business_tz=config.timezone.business, display_tz=config.timezone.display)
 
     # Ensure directories exist
     Path(config.paths.static_dir).mkdir(parents=True, exist_ok=True)
@@ -106,6 +103,7 @@ async def main():
     # 1.2 Fetch fun content
     try:
         from datetime import date
+
         fun_content = await fun_content_service.fetch_content(date.today())
         raw_data["fun_content"] = fun_content
         logger.info(f"Fetched fun content: {fun_content.get('title')}")
@@ -166,11 +164,7 @@ async def main():
         elif "摸鱼" in title:
             content_type = "moyu_quote"
 
-        fun_content = {
-            "type": content_type,
-            "title": title,
-            "text": fun_content_raw.get("content", "")
-        }
+        fun_content = {"type": content_type, "title": title, "text": fun_content_raw.get("content", "")}
 
     # Build KFC content
     kfc_content = None

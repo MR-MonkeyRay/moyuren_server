@@ -27,11 +27,7 @@ class TestServerConfig:
 
     def test_valid_server_config(self) -> None:
         """Test valid server configuration."""
-        config = ServerConfig(
-            host="0.0.0.0",
-            port=8000,
-            base_domain="http://localhost:8000"
-        )
+        config = ServerConfig(host="0.0.0.0", port=8000, base_domain="http://localhost:8000")
         assert config.host == "0.0.0.0"
         assert config.port == 8000
 
@@ -110,16 +106,12 @@ class TestTemplatesConfig:
             default="main",
             items=[
                 TemplateItemConfig(
-                    name="main",
-                    path="templates/main.html",
-                    viewport=ViewportConfig(width=800, height=600)
+                    name="main", path="templates/main.html", viewport=ViewportConfig(width=800, height=600)
                 ),
                 TemplateItemConfig(
-                    name="alt",
-                    path="templates/alt.html",
-                    viewport=ViewportConfig(width=800, height=600)
+                    name="alt", path="templates/alt.html", viewport=ViewportConfig(width=800, height=600)
                 ),
-            ]
+            ],
         )
         template = config.get_template("alt")
         assert template.name == "alt"
@@ -130,11 +122,9 @@ class TestTemplatesConfig:
             default="main",
             items=[
                 TemplateItemConfig(
-                    name="main",
-                    path="templates/main.html",
-                    viewport=ViewportConfig(width=800, height=600)
+                    name="main", path="templates/main.html", viewport=ViewportConfig(width=800, height=600)
                 ),
-            ]
+            ],
         )
         template = config.get_template()
         assert template.name == "main"
@@ -144,9 +134,7 @@ class TestTemplatesConfig:
         config = TemplatesConfig(
             items=[
                 TemplateItemConfig(
-                    name="main",
-                    path="templates/main.html",
-                    viewport=ViewportConfig(width=800, height=600)
+                    name="main", path="templates/main.html", viewport=ViewportConfig(width=800, height=600)
                 )
             ]
         )
@@ -159,14 +147,10 @@ class TestTemplatesConfig:
             TemplatesConfig(
                 items=[
                     TemplateItemConfig(
-                        name="main",
-                        path="templates/main.html",
-                        viewport=ViewportConfig(width=800, height=600)
+                        name="main", path="templates/main.html", viewport=ViewportConfig(width=800, height=600)
                     ),
                     TemplateItemConfig(
-                        name="main",
-                        path="templates/other.html",
-                        viewport=ViewportConfig(width=800, height=600)
+                        name="main", path="templates/other.html", viewport=ViewportConfig(width=800, height=600)
                     ),
                 ]
             )
@@ -235,11 +219,7 @@ class TestHolidaySource:
 
     def test_valid_holiday_config(self) -> None:
         """Test valid holiday configuration."""
-        config = HolidaySource(
-            type="holiday",
-            mirror_urls=["https://mirror.example.com/"],
-            timeout_sec=10
-        )
+        config = HolidaySource(type="holiday", mirror_urls=["https://mirror.example.com/"], timeout_sec=10)
         assert len(config.mirror_urls) == 1
 
     def test_zero_timeout_raises_error(self) -> None:
@@ -254,20 +234,14 @@ class TestCrazyThursdaySource:
     def test_valid_config(self) -> None:
         """Test valid crazy thursday configuration."""
         config = CrazyThursdaySource(
-            type="crazy_thursday",
-            enabled=True,
-            url="https://api.example.com/kfc",
-            timeout_sec=5
+            type="crazy_thursday", enabled=True, url="https://api.example.com/kfc", timeout_sec=5
         )
         assert config.enabled is True
 
     def test_disabled_config(self) -> None:
         """Test disabled configuration."""
         config = CrazyThursdaySource(
-            type="crazy_thursday",
-            enabled=False,
-            url="https://api.example.com/kfc",
-            timeout_sec=5
+            type="crazy_thursday", enabled=False, url="https://api.example.com/kfc", timeout_sec=5
         )
         assert config.enabled is False
 
@@ -283,7 +257,7 @@ class TestStockIndexSource:
             secids=["1.000001", "0.399001"],
             timeout_sec=5,
             market_timezones={"A": "Asia/Shanghai"},
-            cache_ttl_sec=60
+            cache_ttl_sec=60,
         )
         assert len(config.secids) == 2
         assert config.cache_ttl_sec == 60
@@ -294,11 +268,7 @@ class TestTemplateRenderConfig:
 
     def test_valid_config(self) -> None:
         """Test valid template render configuration."""
-        config = TemplateRenderConfig(
-            device_scale_factor=2,
-            jpeg_quality=90,
-            use_china_cdn=True
-        )
+        config = TemplateRenderConfig(device_scale_factor=2, jpeg_quality=90, use_china_cdn=True)
         assert config.device_scale_factor == 2
         assert config.jpeg_quality == 90
 
@@ -320,11 +290,7 @@ class TestNewsSource:
 
     def test_valid_config(self) -> None:
         """Test valid news source configuration."""
-        config = NewsSource(
-            type="news",
-            url="https://api.example.com/news",
-            params={"key": "value"}
-        )
+        config = NewsSource(type="news", url="https://api.example.com/news", params={"key": "value"})
         assert config.type == "news"
         assert config.url == "https://api.example.com/news"
 
@@ -344,12 +310,9 @@ class TestFunContentSource:
             type="fun_content",
             endpoints=[
                 FunContentEndpoint(
-                    name="joke",
-                    url="https://api.example.com/joke",
-                    data_path="data",
-                    display_title="笑话"
+                    name="joke", url="https://api.example.com/joke", data_path="data", display_title="笑话"
                 )
-            ]
+            ],
         )
         assert config.type == "fun_content"
         assert len(config.endpoints) == 1

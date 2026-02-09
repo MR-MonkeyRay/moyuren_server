@@ -121,55 +121,33 @@ class TestImageRenderer:
         return TemplatesConfig(
             default="test",
             items=[
-                TemplateItemConfig(
-                    name="test",
-                    path=str(template_file),
-                    viewport=ViewportConfig(width=800, height=600)
-                )
-            ]
+                TemplateItemConfig(name="test", path=str(template_file), viewport=ViewportConfig(width=800, height=600))
+            ],
         )
 
     @pytest.fixture
     def render_config(self) -> TemplateRenderConfig:
         """Create a render configuration."""
-        return TemplateRenderConfig(
-            device_scale_factor=2,
-            jpeg_quality=90,
-            use_china_cdn=False
-        )
+        return TemplateRenderConfig(device_scale_factor=2, jpeg_quality=90, use_china_cdn=False)
 
     @pytest.fixture
     def renderer(
-        self,
-        templates_config: TemplatesConfig,
-        render_config: TemplateRenderConfig,
-        tmp_path: Path,
-        logger
+        self, templates_config: TemplatesConfig, render_config: TemplateRenderConfig, tmp_path: Path, logger
     ) -> ImageRenderer:
         """Create an ImageRenderer instance."""
         static_dir = tmp_path / "static"
         static_dir.mkdir()
         return ImageRenderer(
-            templates_config=templates_config,
-            static_dir=str(static_dir),
-            render_config=render_config,
-            logger=logger
+            templates_config=templates_config, static_dir=str(static_dir), render_config=render_config, logger=logger
         )
 
     def test_renderer_creates_static_dir(
-        self,
-        templates_config: TemplatesConfig,
-        render_config: TemplateRenderConfig,
-        tmp_path: Path,
-        logger
+        self, templates_config: TemplatesConfig, render_config: TemplateRenderConfig, tmp_path: Path, logger
     ) -> None:
         """Test renderer creates static directory if not exists."""
         static_dir = tmp_path / "new_static"
         ImageRenderer(
-            templates_config=templates_config,
-            static_dir=str(static_dir),
-            render_config=render_config,
-            logger=logger
+            templates_config=templates_config, static_dir=str(static_dir), render_config=render_config, logger=logger
         )
         assert static_dir.exists()
 
@@ -203,16 +181,12 @@ class TestImageRenderer:
         mock_page.screenshot = AsyncMock(return_value=b"fake image bytes")
         mock_page.close = AsyncMock()
 
-        with patch.object(
-            renderer, "_get_jinja_env"
-        ) as mock_env:
+        with patch.object(renderer, "_get_jinja_env") as mock_env:
             mock_template = MagicMock()
             mock_template.render.return_value = "<html>rendered</html>"
             mock_env.return_value.get_template.return_value = mock_template
 
-            with patch(
-                "app.services.renderer.browser_manager"
-            ) as mock_browser:
+            with patch("app.services.renderer.browser_manager") as mock_browser:
                 mock_browser.create_page = AsyncMock(return_value=mock_page)
                 mock_browser.release_page = AsyncMock()
 

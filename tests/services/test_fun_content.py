@@ -24,15 +24,12 @@ class TestFunContentService:
                     name="hitokoto",
                     url="https://api.example.com/hitokoto",
                     data_path="data.hitokoto",
-                    display_title="💬 一言"
+                    display_title="💬 一言",
                 ),
                 FunContentEndpoint(
-                    name="joke",
-                    url="https://api.example.com/joke",
-                    data_path="data.content",
-                    display_title="🤣 冷笑话"
+                    name="joke", url="https://api.example.com/joke", data_path="data.content", display_title="🤣 冷笑话"
                 ),
-            ]
+            ],
         )
 
     @pytest.fixture
@@ -61,9 +58,7 @@ class TestFunContentService:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_content_fallback_to_second_endpoint(
-        self, service: FunContentService
-    ) -> None:
+    async def test_fetch_content_fallback_to_second_endpoint(self, service: FunContentService) -> None:
         """Test fallback to second endpoint when first fails."""
         respx.get("https://api.example.com/hitokoto").mock(return_value=Response(500))
         respx.get("https://api.example.com/joke").mock(
@@ -78,9 +73,7 @@ class TestFunContentService:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_content_all_fail_returns_default(
-        self, service: FunContentService
-    ) -> None:
+    async def test_fetch_content_all_fail_returns_default(self, service: FunContentService) -> None:
         """Test returns default content when all endpoints fail."""
         respx.get("https://api.example.com/hitokoto").mock(return_value=Response(500))
         respx.get("https://api.example.com/joke").mock(return_value=Response(500))
@@ -94,9 +87,7 @@ class TestFunContentService:
     @pytest.mark.asyncio
     async def test_fetch_content_timeout_fallback(self, service: FunContentService) -> None:
         """Test fallback when endpoint times out."""
-        respx.get("https://api.example.com/hitokoto").mock(
-            side_effect=httpx.TimeoutException("Timeout")
-        )
+        respx.get("https://api.example.com/hitokoto").mock(side_effect=httpx.TimeoutException("Timeout"))
         respx.get("https://api.example.com/joke").mock(
             return_value=Response(200, json={"data": {"content": "笑话内容"}})
         )
@@ -107,13 +98,9 @@ class TestFunContentService:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_content_empty_content_skipped(
-        self, service: FunContentService
-    ) -> None:
+    async def test_fetch_content_empty_content_skipped(self, service: FunContentService) -> None:
         """Test empty content is skipped."""
-        respx.get("https://api.example.com/hitokoto").mock(
-            return_value=Response(200, json={"data": {"hitokoto": ""}})
-        )
+        respx.get("https://api.example.com/hitokoto").mock(return_value=Response(200, json={"data": {"hitokoto": ""}}))
         respx.get("https://api.example.com/joke").mock(
             return_value=Response(200, json={"data": {"content": "有效内容"}})
         )
@@ -148,9 +135,7 @@ class TestFunContentService:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_content_whitespace_only_skipped(
-        self, service: FunContentService
-    ) -> None:
+    async def test_fetch_content_whitespace_only_skipped(self, service: FunContentService) -> None:
         """Test whitespace-only content is skipped."""
         respx.get("https://api.example.com/hitokoto").mock(
             return_value=Response(200, json={"data": {"hitokoto": "   "}})
@@ -164,13 +149,9 @@ class TestFunContentService:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_content_invalid_json_structure(
-        self, service: FunContentService
-    ) -> None:
+    async def test_fetch_content_invalid_json_structure(self, service: FunContentService) -> None:
         """Test handles invalid JSON structure gracefully."""
-        respx.get("https://api.example.com/hitokoto").mock(
-            return_value=Response(200, json={"wrong": "structure"})
-        )
+        respx.get("https://api.example.com/hitokoto").mock(return_value=Response(200, json={"wrong": "structure"}))
         respx.get("https://api.example.com/joke").mock(return_value=Response(500))
 
         result = await service.fetch_content(date(2026, 2, 4))

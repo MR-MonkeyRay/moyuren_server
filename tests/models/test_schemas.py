@@ -1,6 +1,5 @@
 """Tests for app/models/schemas.py - Pydantic data models."""
 
-
 from app.models.schemas import (
     DateInfoSchema,
     FunContentSchema,
@@ -21,7 +20,7 @@ class TestMoyurenImageResponse:
             date="2026-02-04",
             updated="2026/02/04 10:00:00",
             updated_at=1738634400000,
-            image="https://example.com/image.jpg"
+            image="https://example.com/image.jpg",
         )
 
         assert response.date == "2026-02-04"
@@ -36,9 +35,7 @@ class TestFunContentSchema:
     def test_valid_fun_content(self) -> None:
         """Test valid FunContentSchema creation."""
         content = FunContentSchema(
-            type="joke",
-            title="🤣 冷笑话",
-            text="为什么程序员总是分不清万圣节和圣诞节？因为 Oct 31 = Dec 25"
+            type="joke", title="🤣 冷笑话", text="为什么程序员总是分不清万圣节和圣诞节？因为 Oct 31 = Dec 25"
         )
 
         assert content.type == "joke"
@@ -61,7 +58,7 @@ class TestDateInfoSchema:
             zodiac="蛇",
             constellation="水瓶座",
             moon_phase="上弦月",
-            is_holiday=False
+            is_holiday=False,
         )
 
         assert date_info.year_month == "2026.02"
@@ -84,7 +81,7 @@ class TestDateInfoSchema:
             festival_solar="立春",
             festival_lunar=None,
             legal_holiday=None,
-            is_holiday=False
+            is_holiday=False,
         )
 
         assert date_info.festival_solar == "立春"
@@ -115,11 +112,7 @@ class TestSolarTermSchema:
     def test_valid_solar_term(self) -> None:
         """Test valid SolarTermSchema creation."""
         solar_term = SolarTermSchema(
-            name="立春",
-            name_en="Beginning of Spring",
-            days_left=0,
-            date="2026-02-04",
-            is_today=True
+            name="立春", name_en="Beginning of Spring", days_left=0, date="2026-02-04", is_today=True
         )
 
         assert solar_term.name == "立春"
@@ -128,13 +121,7 @@ class TestSolarTermSchema:
 
     def test_solar_term_not_today(self) -> None:
         """Test SolarTermSchema when not today."""
-        solar_term = SolarTermSchema(
-            name="雨水",
-            name_en="Rain Water",
-            days_left=15,
-            date="2026-02-19",
-            is_today=False
-        )
+        solar_term = SolarTermSchema(name="雨水", name_en="Rain Water", days_left=15, date="2026-02-19", is_today=False)
 
         assert solar_term.days_left == 15
         assert solar_term.is_today is False
@@ -145,10 +132,7 @@ class TestGuideSchema:
 
     def test_valid_guide(self) -> None:
         """Test valid GuideSchema creation."""
-        guide = GuideSchema(
-            yi=["摸鱼", "喝茶", "休息"],
-            ji=["加班", "开会", "焦虑"]
-        )
+        guide = GuideSchema(yi=["摸鱼", "喝茶", "休息"], ji=["加班", "开会", "焦虑"])
 
         assert len(guide.yi) == 3
         assert len(guide.ji) == 3
@@ -168,11 +152,7 @@ class TestNewsMetaSchema:
 
     def test_valid_news_meta(self) -> None:
         """Test valid NewsMetaSchema creation."""
-        meta = NewsMetaSchema(
-            date="2026年2月4日",
-            updated="2026-02-04T06:00:00+08:00",
-            updated_at=1738620000000
-        )
+        meta = NewsMetaSchema(date="2026年2月4日", updated="2026-02-04T06:00:00+08:00", updated_at=1738620000000)
 
         assert meta.date == "2026年2月4日"
         assert meta.updated == "2026-02-04T06:00:00+08:00"

@@ -87,10 +87,10 @@ class HolidayService:
             self._logger.warning(f"{year} 年缓存 mtime 异常（系统时间可能回拨），视为过期")
             return False
         if age < ttl:
-            self._logger.debug(f"{year} 年缓存有效，已缓存 {age/3600:.1f} 小时，TTL {ttl/3600:.1f} 小时")
+            self._logger.debug(f"{year} 年缓存有效，已缓存 {age / 3600:.1f} 小时，TTL {ttl / 3600:.1f} 小时")
             return True
         else:
-            self._logger.debug(f"{year} 年缓存已过期，已缓存 {age/3600:.1f} 小时，TTL {ttl/3600:.1f} 小时")
+            self._logger.debug(f"{year} 年缓存已过期，已缓存 {age / 3600:.1f} 小时，TTL {ttl / 3600:.1f} 小时")
             return False
 
     async def fetch_holidays(self) -> list[dict[str, Any]]:
@@ -100,9 +100,7 @@ class HolidayService:
         prev_year = current_year - 1
         next_year = current_year + 1
 
-        self._logger.info(
-            f"开始获取 {prev_year}、{current_year} 和 {next_year} 年节假日数据"
-        )
+        self._logger.info(f"开始获取 {prev_year}、{current_year} 和 {next_year} 年节假日数据")
 
         async with httpx.AsyncClient(timeout=self._timeout_sec) as client:
             tasks = [
@@ -114,9 +112,7 @@ class HolidayService:
 
         return self._merge_and_process(list(results))
 
-    async def _fetch_year_data(
-        self, client: httpx.AsyncClient, year: int
-    ) -> dict[str, Any] | None:
+    async def _fetch_year_data(self, client: httpx.AsyncClient, year: int) -> dict[str, Any] | None:
         """获取指定年份的节假日数据，支持 TTL 缓存、多源重试和降级"""
         # 1. 检查缓存是否有效
         if self._is_cache_valid(year):
@@ -180,9 +176,7 @@ class HolidayService:
             self._logger.warning(f"读取 {year} 年缓存失败: {e}")
             return None
 
-    def _merge_and_process(
-        self, data_list: list[dict[str, Any] | None | Exception]
-    ) -> list[dict[str, Any]]:
+    def _merge_and_process(self, data_list: list[dict[str, Any] | None | Exception]) -> list[dict[str, Any]]:
         """合并多年数据，过滤休息日，排序后聚合连续假期"""
         all_days: list[dict[str, Any]] = []
 
@@ -223,16 +217,14 @@ class HolidayService:
                 "duration": 1,
                 "days_left": 0,
                 "color": None,
-                "is_off_day": False
+                "is_off_day": False,
             }
             result.insert(0, workday_entry)
             self._logger.info(f"今天是补班日：{holiday_name}")
 
         return result
 
-    def _group_continuous_holidays(
-        self, days: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def _group_continuous_holidays(self, days: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """将连续的同名假期聚合为假期组"""
         if not days:
             return []
@@ -263,9 +255,7 @@ class HolidayService:
                 continue
 
             # 判断连续性：同名 AND 日期连续
-            is_continuous = (day_name == last_name) and (
-                day_date == last_date + timedelta(days=1)
-            )
+            is_continuous = (day_name == last_name) and (day_date == last_date + timedelta(days=1))
 
             if is_continuous:
                 current_group.append(day)
@@ -366,4 +356,3 @@ class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
         except Exception as e:
             self.logger.error(f"Failed to fetch holidays: {e}")
             return None
-

@@ -19,6 +19,7 @@ from app.services.state import migrate_state
 
 class GenerationBusyError(Exception):
     """生成任务正在进行中"""
+
     pass
 
 
@@ -207,6 +208,7 @@ def _schedule_cache_cleanup(cache_cleaner, logger) -> None:
         cache_cleaner: CacheCleaner instance.
         logger: Logger instance for logging.
     """
+
     async def _cleanup_task():
         try:
             deleted_count = await asyncio.to_thread(cache_cleaner.cleanup)
@@ -278,7 +280,9 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
                             resolved_template_name,
                         )
                         if filename:
-                            logger.info(f"State file recently updated for template '{resolved_template_name}', skipping generation")
+                            logger.info(
+                                f"State file recently updated for template '{resolved_template_name}', skipping generation"
+                            )
                             return filename
                         logger.warning("State file exists but unreadable, proceeding with generation")
 
@@ -346,6 +350,7 @@ async def _update_state_file(
     Raises:
         StorageError: If file write fails.
     """
+
     def _write_state():
         state_file = Path(state_path)
 
@@ -375,11 +380,7 @@ async def _update_state_file(
             elif "摸鱼" in title:
                 content_type = "moyu_quote"
 
-            fun_content = {
-                "type": content_type,
-                "title": title,
-                "text": fun_content_raw.get("content", "")
-            }
+            fun_content = {"type": content_type, "title": title, "text": fun_content_raw.get("content", "")}
 
         # Build KFC content
         kfc_content = None
@@ -410,7 +411,9 @@ async def _update_state_file(
             "weekend": template_data.get("weekend"),
             "solar_term": template_data.get("solar_term"),
             "guide": template_data.get("guide"),
-            "news_list": [item.get("text", "") for item in template_data.get("news_list", []) if isinstance(item, dict)],
+            "news_list": [
+                item.get("text", "") for item in template_data.get("news_list", []) if isinstance(item, dict)
+            ],
             "news_meta": template_data.get("news_meta"),
             "holidays": [
                 {k: v for k, v in h.items() if k != "color"}

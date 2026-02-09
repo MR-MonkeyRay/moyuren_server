@@ -114,4 +114,3 @@ class CachedKfcService(DailyCache[str]):
             self.logger.debug("Not Thursday, skipping KFC content")
             return None
         return await super().get(force_refresh)
-

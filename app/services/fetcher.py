@@ -56,9 +56,7 @@ class DataFetcher:
             self.logger.warning(f"Timeout fetching from {self.source.type}")
             return None
         except httpx.HTTPStatusError as e:
-            self.logger.warning(
-                f"HTTP error fetching from {self.source.type}: {e.response.status_code}"
-            )
+            self.logger.warning(f"HTTP error fetching from {self.source.type}: {e.response.status_code}")
             return None
         except httpx.RequestError as e:
             self.logger.warning(f"Request error fetching from {self.source.type}: {e}")

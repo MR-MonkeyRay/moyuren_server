@@ -1,11 +1,11 @@
 """Pydantic data models for request/response validation."""
 
-
 from pydantic import BaseModel, Field
 
 
 class MoyurenImageResponse(BaseModel):
     """Response model for moyuren image metadata API."""
+
     date: str = Field(..., description="Image date in YYYY-MM-DD format")
     updated: str = Field(..., description="Generation time (e.g., 2025/01/13 07:22:32)")
     updated_at: int = Field(..., description="Generation timestamp in milliseconds (13 digits)")
@@ -14,6 +14,7 @@ class MoyurenImageResponse(BaseModel):
 
 class FunContentSchema(BaseModel):
     """Fun content schema."""
+
     type: str = Field(..., description="Content type (joke, quote, etc.)")
     title: str = Field(..., description="Content title with emoji")
     text: str = Field(..., description="Content text")
@@ -21,6 +22,7 @@ class FunContentSchema(BaseModel):
 
 class DateInfoSchema(BaseModel):
     """Date information schema with full calendar details."""
+
     year_month: str = Field(..., description="Year and month (e.g., 2026.02)")
     day: str = Field(..., description="Day of month")
     week_cn: str = Field(..., description="Weekday in Chinese (e.g., 星期一)")
@@ -38,12 +40,14 @@ class DateInfoSchema(BaseModel):
 
 class WeekendSchema(BaseModel):
     """Weekend countdown information."""
+
     days_left: int = Field(..., description="Days until weekend (0 if weekend)")
     is_weekend: bool = Field(..., description="Whether today is weekend")
 
 
 class SolarTermSchema(BaseModel):
     """Solar term information."""
+
     name: str = Field(..., description="Solar term name in Chinese (e.g., 立春)")
     name_en: str = Field(..., description="Solar term name in English (e.g., Beginning of Spring)")
     days_left: int = Field(..., description="Days until this solar term")
@@ -53,12 +57,14 @@ class SolarTermSchema(BaseModel):
 
 class GuideSchema(BaseModel):
     """Yi/Ji guide schema for daily activities."""
+
     yi: list[str] = Field(..., description="Auspicious activities (宜)")
     ji: list[str] = Field(..., description="Inauspicious activities (忌)")
 
 
 class NewsMetaSchema(BaseModel):
     """News source metadata."""
+
     date: str | None = Field(None, description="News date")
     updated: str | None = Field(None, description="News update time (e.g., 2025/01/13 07:22:32)")
     updated_at: int | None = Field(None, description="News update timestamp in milliseconds")
@@ -66,6 +72,7 @@ class NewsMetaSchema(BaseModel):
 
 class HolidayDetailSchema(BaseModel):
     """Detailed holiday information."""
+
     name: str = Field(..., description="Holiday name")
     start_date: str = Field(..., description="Start date in YYYY-MM-DD format")
     end_date: str = Field(..., description="End date in YYYY-MM-DD format")
@@ -77,6 +84,7 @@ class HolidayDetailSchema(BaseModel):
 
 class KfcContentSchema(BaseModel):
     """KFC Crazy Thursday content."""
+
     title: str = Field(..., description="Title (CRAZY THURSDAY)")
     sub_title: str = Field(..., description="Sub title (V我50)")
     content: str = Field(..., description="KFC promotional copy")
@@ -84,6 +92,7 @@ class KfcContentSchema(BaseModel):
 
 class StockIndexItemSchema(BaseModel):
     """Stock index item schema."""
+
     code: str = Field(..., description="Index code (e.g., 000001)")
     name: str = Field(..., description="Index name (e.g., 上证指数)")
     price: float | None = Field(None, description="Current price")
@@ -96,6 +105,7 @@ class StockIndexItemSchema(BaseModel):
 
 class StockIndicesSchema(BaseModel):
     """Stock indices data schema."""
+
     items: list[StockIndexItemSchema] = Field(default_factory=list, description="List of stock indices")
     updated: str = Field(..., description="Last update time (e.g., 2025/01/13 07:22:32)")
     updated_at: int = Field(..., description="Update timestamp in milliseconds")
@@ -103,9 +113,9 @@ class StockIndicesSchema(BaseModel):
     is_stale: bool = Field(..., description="Whether data is stale/cached")
 
 
-
 class MoyurenDetailResponse(BaseModel):
     """Response model for moyuren detail API."""
+
     date: str = Field(..., description="Image date in YYYY-MM-DD format")
     updated: str = Field(..., description="Generation time (e.g., 2025/01/13 07:22:32)")
     updated_at: int = Field(..., description="Generation timestamp in milliseconds (13 digits)")
@@ -129,6 +139,7 @@ class MoyurenDetailResponse(BaseModel):
 
 class ErrorDetail(BaseModel):
     """Error detail model."""
+
     code: str
     message: str
     detail: str | None = None
@@ -136,4 +147,5 @@ class ErrorDetail(BaseModel):
 
 class ErrorResponse(BaseModel):
     """Standardized error response model."""
+
     error: ErrorDetail

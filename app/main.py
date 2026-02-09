@@ -61,10 +61,7 @@ async def lifespan(app: FastAPI):
     app.state.browser_manager = browser_manager
 
     # 2.2 Initialize timezones
-    init_timezones(
-        business_tz=config.timezone.business,
-        display_tz=config.timezone.display
-    )
+    init_timezones(business_tz=config.timezone.business, display_tz=config.timezone.display)
 
     # 3. Ensure required directories exist
     Path(config.paths.static_dir).mkdir(parents=True, exist_ok=True)
@@ -136,7 +133,6 @@ async def lifespan(app: FastAPI):
     stock_index_source = config.get_source(StockIndexSource)
     if stock_index_source:
         stock_index_service = StockIndexService(stock_index_source)
-
 
     # Get templates configuration
     templates_config = config.get_templates_config()
@@ -216,15 +212,17 @@ async def lifespan(app: FastAPI):
             func=generate_image_task,
             minute=config.scheduler.minute_of_hour,
         )
-        logger.info(
-            f"Scheduler mode: hourly (minute={config.scheduler.minute_of_hour:02d})"
-        )
+        logger.info(f"Scheduler mode: hourly (minute={config.scheduler.minute_of_hour:02d})")
     else:
         # Add daily image generation tasks for each configured time
         for idx, time_str in enumerate(config.scheduler.daily_times):
             try:
                 hour, minute = map(int, time_str.split(":"))
-                job_id = f"generate_moyuren_image_{idx}" if len(config.scheduler.daily_times) > 1 else "generate_moyuren_image"
+                job_id = (
+                    f"generate_moyuren_image_{idx}"
+                    if len(config.scheduler.daily_times) > 1
+                    else "generate_moyuren_image"
+                )
                 scheduler.add_daily_job(
                     job_id=job_id,
                     func=generate_image_task,
@@ -251,6 +249,7 @@ async def lifespan(app: FastAPI):
         # Validate state file content
         try:
             import json
+
             with state_path.open("r", encoding="utf-8") as f:
                 state_data = json.load(f)
             required_fields = ["filename", "date", "updated", "updated_at"]
@@ -267,7 +266,9 @@ async def lifespan(app: FastAPI):
                         need_regenerate = True
                     # Validate updated_at type and range
                     elif not isinstance(updated_at_ms, (int, float)):
-                        logger.warning(f"Invalid updated_at type: {type(updated_at_ms).__name__}, expected int or float")
+                        logger.warning(
+                            f"Invalid updated_at type: {type(updated_at_ms).__name__}, expected int or float"
+                        )
                         need_regenerate = True
                     elif updated_at_ms < 0:
                         logger.warning(f"Invalid updated_at value: {updated_at_ms} (negative timestamp)")
@@ -326,6 +327,7 @@ async def lifespan(app: FastAPI):
                     elif state_path.is_dir():
                         logger.error(f"State path is a directory, not a file: {state_path}")
                         import shutil
+
                         shutil.rmtree(state_path)
                 except (OSError, IsADirectoryError) as e:
                     logger.error(f"Failed to remove invalid cache: {e}")

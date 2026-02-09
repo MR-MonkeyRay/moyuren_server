@@ -244,9 +244,7 @@ class TestDomainDataAggregator:
 
         assert result["indices"][0]["price"] == "--"
 
-    def test_compute_stock_indices_normalizes_is_trading_day_string(
-        self, aggregator: DomainDataAggregator
-    ) -> None:
+    def test_compute_stock_indices_normalizes_is_trading_day_string(self, aggregator: DomainDataAggregator) -> None:
         """Test _compute_stock_indices normalizes is_trading_day from string."""
         raw_data = {
             "stock_indices": {

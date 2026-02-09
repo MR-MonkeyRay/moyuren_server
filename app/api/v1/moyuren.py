@@ -119,6 +119,7 @@ async def _read_state_file(state_path: Path, logger) -> tuple[dict | None, JSONR
 
         # Validate updated format (YYYY/MM/DD HH:MM:SS)
         from datetime import datetime
+
         updated_str = state_data.get("updated")
         if not updated_str or not isinstance(updated_str, str):
             logger.warning("State file has invalid updated field, will regenerate")

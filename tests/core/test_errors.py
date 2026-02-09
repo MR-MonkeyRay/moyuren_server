@@ -55,11 +55,7 @@ class TestAppError:
 
     def test_app_error_attributes(self) -> None:
         """Test AppError has correct attributes."""
-        error = AppError(
-            message="Test error",
-            code=ErrorCode.CONFIG_LOAD_FAILED,
-            detail="Additional detail"
-        )
+        error = AppError(message="Test error", code=ErrorCode.CONFIG_LOAD_FAILED, detail="Additional detail")
 
         assert error.message == "Test error"
         assert error.code == ErrorCode.CONFIG_LOAD_FAILED
@@ -68,29 +64,20 @@ class TestAppError:
 
     def test_app_error_without_detail(self) -> None:
         """Test AppError without detail."""
-        error = AppError(
-            message="Test error",
-            code=ErrorCode.CONFIG_LOAD_FAILED
-        )
+        error = AppError(message="Test error", code=ErrorCode.CONFIG_LOAD_FAILED)
 
         assert error.detail is None
 
     def test_app_error_is_exception(self) -> None:
         """Test AppError is an Exception."""
-        error = AppError(
-            message="Test error",
-            code=ErrorCode.CONFIG_LOAD_FAILED
-        )
+        error = AppError(message="Test error", code=ErrorCode.CONFIG_LOAD_FAILED)
 
         assert isinstance(error, Exception)
 
     def test_app_error_can_be_raised(self) -> None:
         """Test AppError can be raised and caught."""
         with pytest.raises(AppError) as exc_info:
-            raise AppError(
-                message="Test error",
-                code=ErrorCode.CONFIG_LOAD_FAILED
-            )
+            raise AppError(message="Test error", code=ErrorCode.CONFIG_LOAD_FAILED)
 
         assert exc_info.value.message == "Test error"
 
@@ -109,9 +96,7 @@ class TestConfigError:
     def test_config_error_custom_values(self) -> None:
         """Test ConfigError with custom values."""
         error = ConfigError(
-            message="Custom config error",
-            code=ErrorCode.CONFIG_VALIDATION_FAILED,
-            detail="Validation failed"
+            message="Custom config error", code=ErrorCode.CONFIG_VALIDATION_FAILED, detail="Validation failed"
         )
 
         assert error.message == "Custom config error"
@@ -137,11 +122,7 @@ class TestFetchError:
 
     def test_fetch_error_custom_values(self) -> None:
         """Test FetchError with custom values."""
-        error = FetchError(
-            message="API timeout",
-            code=ErrorCode.FETCH_TIMEOUT,
-            detail="Request timed out after 10s"
-        )
+        error = FetchError(message="API timeout", code=ErrorCode.FETCH_TIMEOUT, detail="Request timed out after 10s")
 
         assert error.message == "API timeout"
         assert error.code == ErrorCode.FETCH_TIMEOUT
@@ -166,11 +147,7 @@ class TestRenderError:
 
     def test_render_error_custom_values(self) -> None:
         """Test RenderError with custom values."""
-        error = RenderError(
-            message="Template error",
-            code=ErrorCode.RENDER_TEMPLATE_ERROR,
-            detail="Missing variable"
-        )
+        error = RenderError(message="Template error", code=ErrorCode.RENDER_TEMPLATE_ERROR, detail="Missing variable")
 
         assert error.message == "Template error"
         assert error.code == ErrorCode.RENDER_TEMPLATE_ERROR
@@ -195,11 +172,7 @@ class TestStorageError:
 
     def test_storage_error_custom_values(self) -> None:
         """Test StorageError with custom values."""
-        error = StorageError(
-            message="File not found",
-            code=ErrorCode.STORAGE_NOT_FOUND,
-            detail="state/latest.json"
-        )
+        error = StorageError(message="File not found", code=ErrorCode.STORAGE_NOT_FOUND, detail="state/latest.json")
 
         assert error.message == "File not found"
         assert error.code == ErrorCode.STORAGE_NOT_FOUND

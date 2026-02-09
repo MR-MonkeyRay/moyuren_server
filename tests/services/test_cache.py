@@ -23,20 +23,14 @@ class TestCacheCleaner:
     @pytest.fixture
     def cleaner(self, cache_dir: Path, logger: logging.Logger) -> CacheCleaner:
         """Create a CacheCleaner instance."""
-        return CacheCleaner(
-            static_dir=str(cache_dir),
-            ttl_hours=24,
-            logger=logger
-        )
+        return CacheCleaner(static_dir=str(cache_dir), ttl_hours=24, logger=logger)
 
     def test_cleanup_no_files(self, cleaner: CacheCleaner) -> None:
         """Test cleanup with no files returns 0."""
         result = cleaner.cleanup()
         assert result == 0
 
-    def test_cleanup_preserves_newest_file(
-        self, cleaner: CacheCleaner, cache_dir: Path
-    ) -> None:
+    def test_cleanup_preserves_newest_file(self, cleaner: CacheCleaner, cache_dir: Path) -> None:
         """Test cleanup always preserves the newest file."""
         # Create files with different ages
         old_file = cache_dir / "moyuren_20260101.jpg"
@@ -55,9 +49,7 @@ class TestCacheCleaner:
         assert not old_file.exists()
         assert new_file.exists()
 
-    def test_cleanup_keeps_files_within_ttl(
-        self, cleaner: CacheCleaner, cache_dir: Path
-    ) -> None:
+    def test_cleanup_keeps_files_within_ttl(self, cleaner: CacheCleaner, cache_dir: Path) -> None:
         """Test cleanup keeps files within TTL."""
         # Create two recent files
         file1 = cache_dir / "moyuren_20260203.jpg"
@@ -76,9 +68,7 @@ class TestCacheCleaner:
         assert file1.exists()
         assert file2.exists()
 
-    def test_cleanup_deletes_expired_files(
-        self, cleaner: CacheCleaner, cache_dir: Path
-    ) -> None:
+    def test_cleanup_deletes_expired_files(self, cleaner: CacheCleaner, cache_dir: Path) -> None:
         """Test cleanup deletes files older than TTL."""
         # Create multiple files
         files = []
@@ -99,9 +89,7 @@ class TestCacheCleaner:
         assert not files[1].exists()
         assert files[2].exists()  # Newest preserved
 
-    def test_cleanup_ignores_non_moyuren_files(
-        self, cleaner: CacheCleaner, cache_dir: Path
-    ) -> None:
+    def test_cleanup_ignores_non_moyuren_files(self, cleaner: CacheCleaner, cache_dir: Path) -> None:
         """Test cleanup ignores files not matching pattern."""
         # Create non-matching files
         other_file = cache_dir / "other_image.jpg"
@@ -116,9 +104,7 @@ class TestCacheCleaner:
         assert other_file.exists()
         assert moyuren_file.exists()
 
-    def test_cleanup_handles_single_file(
-        self, cleaner: CacheCleaner, cache_dir: Path
-    ) -> None:
+    def test_cleanup_handles_single_file(self, cleaner: CacheCleaner, cache_dir: Path) -> None:
         """Test cleanup with single file preserves it."""
         single_file = cache_dir / "moyuren_20260204.jpg"
         single_file.write_bytes(b"single")
@@ -133,17 +119,11 @@ class TestCacheCleaner:
         assert result == 0
         assert single_file.exists()
 
-    def test_cleanup_creates_directory_if_missing(
-        self, tmp_path: Path, logger: logging.Logger
-    ) -> None:
+    def test_cleanup_creates_directory_if_missing(self, tmp_path: Path, logger: logging.Logger) -> None:
         """Test cleaner creates directory if it doesn't exist."""
         non_existent = tmp_path / "new_static"
 
-        CacheCleaner(
-            static_dir=str(non_existent),
-            ttl_hours=24,
-            logger=logger
-        )
+        CacheCleaner(static_dir=str(non_existent), ttl_hours=24, logger=logger)
 
         assert non_existent.exists()
 

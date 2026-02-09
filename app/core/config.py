@@ -89,6 +89,7 @@ class CacheConfig(BaseModel):
 # Data Sources — Discriminated Union
 # ---------------------------------------------------------------------------
 
+
 class DataSourceBase(BaseModel):
     """Base model for all data sources."""
 
@@ -229,6 +230,7 @@ DataSource = Annotated[
 # Templates
 # ---------------------------------------------------------------------------
 
+
 class ViewportConfig(BaseModel):
     """Viewport configuration for template rendering."""
 
@@ -347,6 +349,7 @@ class TemplatesConfig(BaseModel):
 # Logging / Timezone
 # ---------------------------------------------------------------------------
 
+
 class LoggingConfig(BaseModel):
     """Logging configuration."""
 
@@ -395,9 +398,7 @@ class TimezoneConfig(BaseModel):
             hours = int(match.group(2))
             minutes = int(match.group(3) or 0)
             if hours > 14 or minutes > 59 or (hours == 14 and minutes > 0):
-                raise ValueError(
-                    f"Invalid timezone offset: {value} (hours must be 0-14, minutes 0-59)"
-                )
+                raise ValueError(f"Invalid timezone offset: {value} (hours must be 0-14, minutes 0-59)")
             return value
 
         raise ValueError(f"Invalid timezone: {value}")

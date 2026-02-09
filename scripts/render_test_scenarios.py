@@ -34,6 +34,7 @@ _TODAY_PLACEHOLDER = "__TODAY__"
 def get_today_str() -> str:
     """获取当前日期字符串（需在 init_timezones 之后调用）"""
     from app.services.calendar import now_business
+
     return now_business().strftime("%Y-%m-%d")
 
 
@@ -255,11 +256,7 @@ MIXED_OVERRIDES = {
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="渲染测试场景图片")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument(
-        "--scenario",
-        choices=list(SCENARIOS.keys()),
-        help="渲染指定场景"
-    )
+    group.add_argument("--scenario", choices=list(SCENARIOS.keys()), help="渲染指定场景")
     group.add_argument("--all", action="store_true", help="渲染全部场景")
     group.add_argument("--list", action="store_true", help="列出所有可用场景")
     return parser.parse_args()
@@ -368,10 +365,7 @@ async def main():
     logger = setup_logging(config.logging, logger_name="render_test")
 
     # Initialize timezones
-    init_timezones(
-        business_tz=config.timezone.business,
-        display_tz=config.timezone.display
-    )
+    init_timezones(business_tz=config.timezone.business, display_tz=config.timezone.display)
 
     # Ensure directories exist
     Path(config.paths.static_dir).mkdir(parents=True, exist_ok=True)
