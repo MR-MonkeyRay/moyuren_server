@@ -5,13 +5,13 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Request, status
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.core.errors import ErrorCode, error_response
 from app.models.schemas import (
     ErrorResponse,
-    MoyurenImageResponse,
     MoyurenDetailResponse,
+    MoyurenImageResponse,
 )
 from app.services.generator import GenerationBusyError, generate_and_save_image
 
@@ -119,6 +119,7 @@ async def _read_state_file(state_path: Path, logger) -> tuple[dict | None, JSONR
 
         # Validate updated format (YYYY/MM/DD HH:MM:SS)
         from datetime import datetime
+
         updated_str = state_data.get("updated")
         if not updated_str or not isinstance(updated_str, str):
             logger.warning("State file has invalid updated field, will regenerate")

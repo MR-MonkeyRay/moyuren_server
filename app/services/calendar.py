@@ -29,10 +29,7 @@ def get_local_timezone() -> tzinfo:
         try:
             return ZoneInfo(tz_name)
         except (KeyError, ValueError, OSError) as e:
-            logger.warning(
-                "Invalid TZ environment variable '%s': %s, falling back to local timezone",
-                tz_name, e
-            )
+            logger.warning("Invalid TZ environment variable '%s': %s, falling back to local timezone", tz_name, e)
 
     # 2. 尝试获取系统本地时区
     try:
@@ -56,7 +53,10 @@ def get_local_timezone() -> tzinfo:
                     if minutes != 0:
                         logger.warning(
                             "Local timezone '%s' (offset %s%02d:%02d) cannot be converted to ZoneInfo, using fixed offset timezone",
-                            tz_name, sign, hours, minutes
+                            tz_name,
+                            sign,
+                            hours,
+                            minutes,
                         )
                         return timezone(timedelta(seconds=total_seconds))
                     # 构造 Etc/GMT 格式时区（注意符号相反）
@@ -70,7 +70,10 @@ def get_local_timezone() -> tzinfo:
                             pass
                     logger.warning(
                         "Local timezone '%s' (offset %s%02d:%02d) cannot be converted to ZoneInfo, using UTC",
-                        tz_name, sign, hours, minutes
+                        tz_name,
+                        sign,
+                        hours,
+                        minutes,
                     )
     except OSError as e:
         logger.warning("Failed to get local timezone: %s, falling back to UTC", e)
@@ -135,9 +138,9 @@ def _parse_timezone(tz_str: str) -> tzinfo:
         pass
 
     # 尝试解析 UTC±X 格式
-    match = re.match(r'^UTC([+-])(\d{1,2})(?::(\d{2}))?$', tz_str, re.IGNORECASE)
+    match = re.match(r"^UTC([+-])(\d{1,2})(?::(\d{2}))?$", tz_str, re.IGNORECASE)
     if match:
-        sign = 1 if match.group(1) == '+' else -1
+        sign = 1 if match.group(1) == "+" else -1
         hours = int(match.group(2))
         minutes = int(match.group(3) or 0)
 
@@ -176,10 +179,7 @@ def init_timezones(business_tz: str, display_tz: str) -> None:
     else:
         _display_timezone = _parse_timezone(display_tz)
 
-    logger.info(
-        "Timezones initialized: business=%s, display=%s",
-        _business_timezone, _display_timezone
-    )
+    logger.info("Timezones initialized: business=%s, display=%s", _business_timezone, _display_timezone)
 
 
 def get_business_timezone() -> tzinfo:
@@ -512,11 +512,13 @@ class CalendarService:
                         festival_date = date(day.get_year(), day.get_month(), day.get_day())
                         if festival_date >= dt:
                             days_left = (festival_date - dt).days
-                            result.append({
-                                "name": festival.get_name(),
-                                "solar_date": festival_date.isoformat(),
-                                "days_left": days_left,
-                            })
+                            result.append(
+                                {
+                                    "name": festival.get_name(),
+                                    "solar_date": festival_date.isoformat(),
+                                    "days_left": days_left,
+                                }
+                            )
                     except (IndexError, ValueError):
                         break  # 索引超出范围
                     except Exception as e:
@@ -553,18 +555,16 @@ class CalendarService:
                         festival = LunarFestival.from_index(year, idx)
                         lunar_day = festival.get_day()
                         solar_day = lunar_day.get_solar_day()
-                        festival_date = date(
-                            solar_day.get_year(),
-                            solar_day.get_month(),
-                            solar_day.get_day()
-                        )
+                        festival_date = date(solar_day.get_year(), solar_day.get_month(), solar_day.get_day())
                         if festival_date >= dt:
                             days_left = (festival_date - dt).days
-                            result.append({
-                                "name": festival.get_name(),
-                                "solar_date": festival_date.isoformat(),
-                                "days_left": days_left,
-                            })
+                            result.append(
+                                {
+                                    "name": festival.get_name(),
+                                    "solar_date": festival_date.isoformat(),
+                                    "days_left": days_left,
+                                }
+                            )
                     except (IndexError, ValueError):
                         break  # 索引超出范围
                     except Exception as e:

@@ -2,7 +2,6 @@
 
 import asyncio
 import contextlib
-import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -13,22 +12,29 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.v1.moyuren import router as moyuren_router
-from app.core.config import load_config
+from app.core.config import (
+    CrazyThursdaySource,
+    FunContentSource,
+    HolidaySource,
+    NewsSource,
+    StockIndexSource,
+    load_config,
+)
 from app.core.errors import AppError, error_response, get_http_status
 from app.core.logging import setup_logging
-from app.services.generator import generate_and_save_image
 from app.core.scheduler import TaskScheduler
 from app.core.services import AppServices
 from app.services.browser import browser_manager
 from app.services.cache import CacheCleaner
+from app.services.calendar import init_timezones, today_business
 from app.services.compute import DataComputer, DomainDataAggregator, TemplateAdapter
 from app.services.fetcher import CachedDataFetcher
 from app.services.fun_content import CachedFunContentService
-from app.services.kfc import CachedKfcService
+from app.services.generator import generate_and_save_image
 from app.services.holiday import CachedHolidayService
-from app.services.stock_index import StockIndexService
+from app.services.kfc import CachedKfcService
 from app.services.renderer import ImageRenderer
-from app.services.calendar import init_timezones, today_business
+from app.services.stock_index import StockIndexService
 
 
 @asynccontextmanager
@@ -55,10 +61,7 @@ async def lifespan(app: FastAPI):
     app.state.browser_manager = browser_manager
 
     # 2.2 Initialize timezones
-    init_timezones(
-        business_tz=config.timezone.business,
-        display_tz=config.timezone.display
-    )
+    init_timezones(business_tz=config.timezone.business, display_tz=config.timezone.display)
 
     # 3. Ensure required directories exist
     Path(config.paths.static_dir).mkdir(parents=True, exist_ok=True)
@@ -83,8 +86,9 @@ async def lifespan(app: FastAPI):
     app.state.http_client = http_client
 
     # 初始化带缓存的数据获取器
+    news_source = config.get_source(NewsSource)
     data_fetcher = CachedDataFetcher(
-        endpoints=config.fetch.api_endpoints,
+        source=news_source,
         logger=logger,
         cache_dir=daily_cache_dir,
         http_client=http_client,
@@ -97,35 +101,38 @@ async def lifespan(app: FastAPI):
 
     # 初始化节假日服务（原始数据目录保持不变）
     holiday_raw_cache_dir = Path(config.paths.state_path).parent / "holidays"
+    holiday_source = config.get_source(HolidaySource)
     holiday_service = CachedHolidayService(
         logger=logger,
         cache_dir=daily_cache_dir,
         raw_cache_dir=holiday_raw_cache_dir,
-        mirror_urls=config.holiday.mirror_urls,
-        timeout_sec=config.holiday.timeout_sec,
+        mirror_urls=holiday_source.mirror_urls if holiday_source else [],
+        timeout_sec=holiday_source.timeout_sec if holiday_source else 10,
     )
 
     # 初始化带缓存的趣味内容服务
+    fun_content_source = config.get_source(FunContentSource)
     fun_content_service = CachedFunContentService(
-        config=config.fun_content,
+        config=fun_content_source,
         logger=logger,
         cache_dir=daily_cache_dir,
     )
 
     # 初始化带缓存的 KFC 服务
     kfc_service = None
-    if config.crazy_thursday:
+    crazy_thursday_source = config.get_source(CrazyThursdaySource)
+    if crazy_thursday_source:
         kfc_service = CachedKfcService(
-            config=config.crazy_thursday,
+            config=crazy_thursday_source,
             logger=logger,
             cache_dir=daily_cache_dir,
         )
 
     # Initialize stock index service if config exists
     stock_index_service = None
-    if config.stock_index:
-        stock_index_service = StockIndexService(config.stock_index)
-
+    stock_index_source = config.get_source(StockIndexSource)
+    if stock_index_source:
+        stock_index_service = StockIndexService(stock_index_source)
 
     # Get templates configuration
     templates_config = config.get_templates_config()
@@ -133,13 +140,13 @@ async def lifespan(app: FastAPI):
     image_renderer = ImageRenderer(
         templates_config=templates_config,
         static_dir=config.paths.static_dir,
-        render_config=config.render,
+        render_config=config.templates.config,
         logger=logger,
     )
 
     cache_cleaner = CacheCleaner(
         static_dir=config.paths.static_dir,
-        ttl_hours=config.cache.ttl_hours,
+        ttl_hours=config.output_cache.ttl_hours,
         logger=logger,
     )
 
@@ -205,15 +212,17 @@ async def lifespan(app: FastAPI):
             func=generate_image_task,
             minute=config.scheduler.minute_of_hour,
         )
-        logger.info(
-            f"Scheduler mode: hourly (minute={config.scheduler.minute_of_hour:02d})"
-        )
+        logger.info(f"Scheduler mode: hourly (minute={config.scheduler.minute_of_hour:02d})")
     else:
         # Add daily image generation tasks for each configured time
         for idx, time_str in enumerate(config.scheduler.daily_times):
             try:
                 hour, minute = map(int, time_str.split(":"))
-                job_id = f"generate_moyuren_image_{idx}" if len(config.scheduler.daily_times) > 1 else "generate_moyuren_image"
+                job_id = (
+                    f"generate_moyuren_image_{idx}"
+                    if len(config.scheduler.daily_times) > 1
+                    else "generate_moyuren_image"
+                )
                 scheduler.add_daily_job(
                     job_id=job_id,
                     func=generate_image_task,
@@ -240,7 +249,7 @@ async def lifespan(app: FastAPI):
         # Validate state file content
         try:
             import json
-            import time
+
             with state_path.open("r", encoding="utf-8") as f:
                 state_data = json.load(f)
             required_fields = ["filename", "date", "updated", "updated_at"]
@@ -257,7 +266,9 @@ async def lifespan(app: FastAPI):
                         need_regenerate = True
                     # Validate updated_at type and range
                     elif not isinstance(updated_at_ms, (int, float)):
-                        logger.warning(f"Invalid updated_at type: {type(updated_at_ms).__name__}, expected int or float")
+                        logger.warning(
+                            f"Invalid updated_at type: {type(updated_at_ms).__name__}, expected int or float"
+                        )
                         need_regenerate = True
                     elif updated_at_ms < 0:
                         logger.warning(f"Invalid updated_at value: {updated_at_ms} (negative timestamp)")
@@ -316,6 +327,7 @@ async def lifespan(app: FastAPI):
                     elif state_path.is_dir():
                         logger.error(f"State path is a directory, not a file: {state_path}")
                         import shutil
+
                         shutil.rmtree(state_path)
                 except (OSError, IsADirectoryError) as e:
                     logger.error(f"Failed to remove invalid cache: {e}")

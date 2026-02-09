@@ -3,12 +3,11 @@
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
 
 from app.core.config import LoggingConfig
 
 
-def setup_logging(config: LoggingConfig, logger_name: Optional[str] = None) -> logging.Logger:
+def setup_logging(config: LoggingConfig, logger_name: str | None = None) -> logging.Logger:
     """
     Configure logging with console handler and optional file handler.
 
@@ -30,8 +29,7 @@ def setup_logging(config: LoggingConfig, logger_name: Optional[str] = None) -> l
 
     # Create formatter
     formatter = logging.Formatter(
-        fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
+        fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
 
     # Console handler (always enabled)
@@ -45,10 +43,7 @@ def setup_logging(config: LoggingConfig, logger_name: Optional[str] = None) -> l
         log_file_path = Path(config.file)
         log_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        file_handler = logging.FileHandler(
-            log_file_path,
-            encoding="utf-8"
-        )
+        file_handler = logging.FileHandler(log_file_path, encoding="utf-8")
         file_handler.setLevel(getattr(logging, config.level, logging.INFO))
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)

@@ -1,15 +1,15 @@
 """Tests for app/services/compute.py - normalize_datetime and data aggregation."""
 
-from datetime import datetime, timezone, timedelta
-from unittest.mock import patch, MagicMock
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
 from app.services.compute import (
-    normalize_datetime,
     DomainDataAggregator,
     TemplateAdapter,
+    normalize_datetime,
 )
 
 
@@ -244,9 +244,7 @@ class TestDomainDataAggregator:
 
         assert result["indices"][0]["price"] == "--"
 
-    def test_compute_stock_indices_normalizes_is_trading_day_string(
-        self, aggregator: DomainDataAggregator
-    ) -> None:
+    def test_compute_stock_indices_normalizes_is_trading_day_string(self, aggregator: DomainDataAggregator) -> None:
         """Test _compute_stock_indices normalizes is_trading_day from string."""
         raw_data = {
             "stock_indices": {

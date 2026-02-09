@@ -1,11 +1,11 @@
 """KFC Crazy Thursday service module."""
 
 import logging
-import httpx
 from pathlib import Path
-from typing import Any
 
-from app.core.config import CrazyThursdayConfig
+import httpx
+
+from app.core.config import CrazyThursdaySource
 from app.services.calendar import today_business
 from app.services.daily_cache import DailyCache
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class KfcService:
     """Service for fetching KFC Crazy Thursday content."""
 
-    def __init__(self, config: CrazyThursdayConfig):
+    def __init__(self, config: CrazyThursdaySource):
         """Initialize the service with configuration.
 
         Args:
@@ -25,7 +25,7 @@ class KfcService:
 
     async def fetch_kfc_copy(self) -> str | None:
         """Fetch KFC crazy thursday copy.
-        
+
         Returns:
             The content string if successful, None otherwise.
         """
@@ -37,7 +37,7 @@ class KfcService:
                 resp = await client.get(self.config.url)
                 resp.raise_for_status()
                 data = resp.json()
-                
+
                 # Viki API structure handling
                 # Expected format: {"code": 200, "data": {"kfc": "..."}}
                 content = None
@@ -56,10 +56,10 @@ class KfcService:
                     # Handle escaped newlines in the text
                     content = str(content).strip().replace("\\n", "\n")
                     return content
-                
+
                 logger.warning("Empty content received from KFC endpoint")
                 return None
-                
+
             except httpx.TimeoutException:
                 logger.warning("Timeout fetching KFC content")
             except httpx.HTTPStatusError as e:
@@ -79,7 +79,7 @@ class CachedKfcService(DailyCache[str]):
 
     def __init__(
         self,
-        config: CrazyThursdayConfig,
+        config: CrazyThursdaySource,
         logger: logging.Logger,
         cache_dir: Path,
     ) -> None:
@@ -114,4 +114,3 @@ class CachedKfcService(DailyCache[str]):
             self.logger.debug("Not Thursday, skipping KFC content")
             return None
         return await super().get(force_refresh)
-

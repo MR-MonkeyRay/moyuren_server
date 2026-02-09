@@ -1,8 +1,8 @@
 """Task scheduler module using APScheduler."""
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -50,9 +50,7 @@ class TaskScheduler:
                 hour = hour if hour is not None else default_hour
                 minute = minute if minute is not None else default_minute
             except (ValueError, AttributeError, IndexError) as e:
-                self.logger.warning(
-                    f"Invalid daily_times config, using 06:00: {e}"
-                )
+                self.logger.warning(f"Invalid daily_times config, using 06:00: {e}")
                 hour = hour if hour is not None else 6
                 minute = minute if minute is not None else 0
 

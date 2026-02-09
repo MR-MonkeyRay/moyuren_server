@@ -10,24 +10,24 @@ from zoneinfo import ZoneInfo
 import exchange_calendars as xcals
 import httpx
 
-from app.core.config import StockIndexConfig
+from app.core.config import StockIndexSource
 
 logger = logging.getLogger(__name__)
 
 # Index code to market mapping
 INDEX_MARKET_MAP = {
-    "000001": "A",   # 上证指数
-    "399001": "A",   # 深证成指
-    "399006": "A",   # 创业板指
-    "HSI": "HK",     # 恒生指数
-    "DJIA": "US",    # 道琼斯
+    "000001": "A",  # 上证指数
+    "399001": "A",  # 深证成指
+    "399006": "A",  # 创业板指
+    "HSI": "HK",  # 恒生指数
+    "DJIA": "US",  # 道琼斯
 }
 
 # Market to exchange calendar mapping
 MARKET_CALENDAR_MAP = {
-    "A": "XSHG",    # 上海证券交易所
-    "HK": "XHKG",   # 香港交易所
-    "US": "XNYS",   # 纽约证券交易所
+    "A": "XSHG",  # 上海证券交易所
+    "HK": "XHKG",  # 香港交易所
+    "US": "XNYS",  # 纽约证券交易所
 }
 
 # Index display order
@@ -40,7 +40,7 @@ DEFAULT_TIMEZONE = "Asia/Shanghai"
 class StockIndexService:
     """Service for fetching stock market index data."""
 
-    def __init__(self, config: StockIndexConfig):
+    def __init__(self, config: StockIndexSource):
         """Initialize the service with configuration.
 
         Args:
@@ -223,16 +223,18 @@ class StockIndexService:
 
             if not quote:
                 # Add placeholder for missing index
-                items.append({
-                    "code": code,
-                    "name": self._get_index_name(code),
-                    "price": None,
-                    "change": None,
-                    "change_pct": None,
-                    "trend": "flat",
-                    "market": market,
-                    "is_trading_day": is_trading_day,
-                })
+                items.append(
+                    {
+                        "code": code,
+                        "name": self._get_index_name(code),
+                        "price": None,
+                        "change": None,
+                        "change_pct": None,
+                        "trend": "flat",
+                        "market": market,
+                        "is_trading_day": is_trading_day,
+                    }
+                )
                 continue
 
             price = quote.get("f2")
@@ -251,16 +253,18 @@ class StockIndexService:
                 except (TypeError, ValueError):
                     pass
 
-            items.append({
-                "code": code,
-                "name": quote.get("f14", self._get_index_name(code)),
-                "price": price,
-                "change": change,
-                "change_pct": change_pct,
-                "trend": trend,
-                "market": market,
-                "is_trading_day": is_trading_day,
-            })
+            items.append(
+                {
+                    "code": code,
+                    "name": quote.get("f14", self._get_index_name(code)),
+                    "price": price,
+                    "change": change,
+                    "change_pct": change_pct,
+                    "trend": trend,
+                    "market": market,
+                    "is_trading_day": is_trading_day,
+                }
+            )
 
         return items
 

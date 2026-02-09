@@ -2,15 +2,16 @@
 
 import json
 import logging
-from datetime import datetime, timezone, timedelta
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-
 # --- Basic Utilities ---
+
 
 @pytest.fixture(scope="session")
 def test_data_dir() -> Path:
@@ -21,13 +22,16 @@ def test_data_dir() -> Path:
 @pytest.fixture
 def load_json(test_data_dir: Path) -> Callable[[str], dict[str, Any]]:
     """Load JSON test data from file."""
+
     def _loader(rel_path: str) -> dict[str, Any]:
-        with open(test_data_dir / rel_path, "r", encoding="utf-8") as f:
+        with open(test_data_dir / rel_path, encoding="utf-8") as f:
             return json.load(f)
+
     return _loader
 
 
 # --- Environment Configuration ---
+
 
 @pytest.fixture(autouse=True)
 def mock_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -37,6 +41,7 @@ def mock_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # --- Temporary Directories ---
+
 
 @pytest.fixture
 def tmp_state_dir(tmp_path: Path) -> Path:
@@ -48,6 +53,7 @@ def tmp_state_dir(tmp_path: Path) -> Path:
 
 # --- Logger ---
 
+
 @pytest.fixture
 def logger() -> logging.Logger:
     """Return a test logger."""
@@ -55,6 +61,7 @@ def logger() -> logging.Logger:
 
 
 # --- Time Fixtures ---
+
 
 @pytest.fixture
 def fixed_datetime() -> datetime:
@@ -69,6 +76,7 @@ def fixed_thursday() -> datetime:
 
 
 # --- Mock Browser ---
+
 
 @pytest.fixture
 def mock_browser_page() -> AsyncMock:
@@ -90,9 +98,11 @@ def mock_browser_manager(mock_browser_page: AsyncMock) -> MagicMock:
 
 # --- Mock HTTP Client ---
 
+
 @pytest.fixture
 def mock_httpx_response() -> Callable[[dict[str, Any], int], MagicMock]:
     """Create a mock httpx response."""
+
     def _create_response(json_data: dict[str, Any], status_code: int = 200) -> MagicMock:
         response = MagicMock()
         response.status_code = status_code
@@ -100,16 +110,17 @@ def mock_httpx_response() -> Callable[[dict[str, Any], int], MagicMock]:
         response.raise_for_status = MagicMock()
         if status_code >= 400:
             from httpx import HTTPStatusError
+
             response.raise_for_status.side_effect = HTTPStatusError(
-                message=f"HTTP {status_code}",
-                request=MagicMock(),
-                response=response
+                message=f"HTTP {status_code}", request=MagicMock(), response=response
             )
         return response
+
     return _create_response
 
 
 # --- Sample Data Fixtures ---
+
 
 @pytest.fixture
 def sample_news_response() -> dict[str, Any]:
@@ -124,8 +135,8 @@ def sample_news_response() -> dict[str, Any]:
                 "今日新闻3",
             ],
             "tip": "每天60秒读懂世界",
-            "updated": "2026-02-04T06:00:00+08:00"
-        }
+            "updated": "2026-02-04T06:00:00+08:00",
+        },
     }
 
 
@@ -192,10 +203,7 @@ def sample_v1_state() -> dict[str, Any]:
         "filename": "moyuren_20260204.jpg",
         "weekday": "星期三",
         "lunar_date": "正月初七",
-        "fun_content": {
-            "title": "🐟 摸鱼小贴士",
-            "content": "工作再忙，也要记得摸鱼。"
-        },
+        "fun_content": {"title": "🐟 摸鱼小贴士", "content": "工作再忙，也要记得摸鱼。"},
         "is_crazy_thursday": False,
     }
 
@@ -223,7 +231,5 @@ def sample_v2_state() -> dict[str, Any]:
                 "updated_at": 1738634400000,
             }
         },
-        "template_data": {
-            "moyuren": {}
-        },
+        "template_data": {"moyuren": {}},
     }

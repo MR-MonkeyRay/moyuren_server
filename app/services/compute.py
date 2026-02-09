@@ -2,11 +2,11 @@
 
 import logging
 import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from app import __version__, __github_url__
-from app.services.calendar import CalendarService, get_timezone_label, get_business_timezone, now_business
+from app import __github_url__, __version__
+from app.services.calendar import CalendarService, get_business_timezone, now_business
 
 logger = logging.getLogger(__name__)
 
@@ -14,27 +14,27 @@ logger = logging.getLogger(__name__)
 # 时区缩写映射表（映射到 UTC 偏移）
 _TIMEZONE_ABBR_MAP: dict[str, timedelta] = {
     # 中国时区（本项目默认）
-    "CST": timedelta(hours=8),      # China Standard Time
-    "CCT": timedelta(hours=8),      # China Coast Time
-    "BJT": timedelta(hours=8),      # Beijing Time
+    "CST": timedelta(hours=8),  # China Standard Time
+    "CCT": timedelta(hours=8),  # China Coast Time
+    "BJT": timedelta(hours=8),  # Beijing Time
     # UTC 变体
     "UTC": timedelta(hours=0),
     "GMT": timedelta(hours=0),
     "Z": timedelta(hours=0),
     # 美国时区
-    "EST": timedelta(hours=-5),     # Eastern Standard Time
-    "EDT": timedelta(hours=-4),     # Eastern Daylight Time
-    "CDT": timedelta(hours=-5),     # Central Daylight Time
-    "MST": timedelta(hours=-7),     # Mountain Standard Time
-    "MDT": timedelta(hours=-6),     # Mountain Daylight Time
-    "PST": timedelta(hours=-8),     # Pacific Standard Time
-    "PDT": timedelta(hours=-7),     # Pacific Daylight Time
+    "EST": timedelta(hours=-5),  # Eastern Standard Time
+    "EDT": timedelta(hours=-4),  # Eastern Daylight Time
+    "CDT": timedelta(hours=-5),  # Central Daylight Time
+    "MST": timedelta(hours=-7),  # Mountain Standard Time
+    "MDT": timedelta(hours=-6),  # Mountain Daylight Time
+    "PST": timedelta(hours=-8),  # Pacific Standard Time
+    "PDT": timedelta(hours=-7),  # Pacific Daylight Time
     # 其他常见时区
-    "JST": timedelta(hours=9),      # Japan Standard Time
-    "KST": timedelta(hours=9),      # Korea Standard Time
+    "JST": timedelta(hours=9),  # Japan Standard Time
+    "KST": timedelta(hours=9),  # Korea Standard Time
     "IST": timedelta(hours=5, minutes=30),  # India Standard Time
-    "AEST": timedelta(hours=10),    # Australian Eastern Standard Time
-    "AEDT": timedelta(hours=11),    # Australian Eastern Daylight Time
+    "AEST": timedelta(hours=10),  # Australian Eastern Standard Time
+    "AEDT": timedelta(hours=11),  # Australian Eastern Daylight Time
 }
 
 
@@ -84,30 +84,30 @@ def normalize_datetime(value: str, default_tz: timezone | None = None) -> str | 
     clean_value = value
 
     # 匹配 UTC+8, UTC+08, GMT+8, GMT+08 等格式
-    utc_gmt_match = re.search(r'\b(?:UTC|GMT)([+-])(\d{1,2})(?::?(\d{2}))?\s*$', value, re.IGNORECASE)
+    utc_gmt_match = re.search(r"\b(?:UTC|GMT)([+-])(\d{1,2})(?::?(\d{2}))?\s*$", value, re.IGNORECASE)
     if utc_gmt_match:
-        sign = 1 if utc_gmt_match.group(1) == '+' else -1
+        sign = 1 if utc_gmt_match.group(1) == "+" else -1
         hours = int(utc_gmt_match.group(2))
         minutes = int(utc_gmt_match.group(3)) if utc_gmt_match.group(3) else 0
         tz_offset = timedelta(hours=sign * hours, minutes=sign * minutes)
-        clean_value = value[:utc_gmt_match.start()].strip()
+        clean_value = value[: utc_gmt_match.start()].strip()
     else:
         # 匹配尾部数字偏移：+0800, +08:00, -05:00, +8
-        offset_match = re.search(r'\s([+-])(\d{1,2})(?::?(\d{2}))?\s*$', value)
+        offset_match = re.search(r"\s([+-])(\d{1,2})(?::?(\d{2}))?\s*$", value)
         if offset_match:
-            sign = 1 if offset_match.group(1) == '+' else -1
+            sign = 1 if offset_match.group(1) == "+" else -1
             hours = int(offset_match.group(2))
             minutes = int(offset_match.group(3)) if offset_match.group(3) else 0
             tz_offset = timedelta(hours=sign * hours, minutes=sign * minutes)
-            clean_value = value[:offset_match.start()].strip()
+            clean_value = value[: offset_match.start()].strip()
         else:
             # 匹配时区缩写（如 CST, EST, GMT）- 不区分大小写
-            abbr_match = re.search(r'\b([A-Za-z]{2,5})\s*$', value, re.IGNORECASE)
+            abbr_match = re.search(r"\b([A-Za-z]{2,5})\s*$", value, re.IGNORECASE)
             if abbr_match:
                 abbr = abbr_match.group(1).upper()
                 if abbr in _TIMEZONE_ABBR_MAP:
                     tz_offset = _TIMEZONE_ABBR_MAP[abbr]
-                    clean_value = value[:abbr_match.start()].strip()
+                    clean_value = value[: abbr_match.start()].strip()
 
     # 尝试解析清理后的时间字符串
     datetime_patterns = [
@@ -120,10 +120,10 @@ def normalize_datetime(value: str, default_tz: timezone | None = None) -> str | 
         # 增加更多常见格式
         "%Y-%m-%d %H:%M:%S.%f",  # 带毫秒
         "%Y/%m/%d %H:%M:%S.%f",  # 带毫秒（斜杠分隔）
-        "%Y%m%d %H:%M:%S",       # 无分隔符日期
-        "%Y%m%d%H%M%S",          # 完全无分隔符
-        "%d/%m/%Y %H:%M:%S",     # 日/月/年格式
-        "%d-%m-%Y %H:%M:%S",     # 日-月-年格式
+        "%Y%m%d %H:%M:%S",  # 无分隔符日期
+        "%Y%m%d%H%M%S",  # 完全无分隔符
+        "%d/%m/%Y %H:%M:%S",  # 日/月/年格式
+        "%d-%m-%Y %H:%M:%S",  # 日-月-年格式
     ]
 
     for pattern in datetime_patterns:
@@ -153,10 +153,7 @@ class DomainDataAggregator:
     # Default placeholder data
     _DEFAULT_GUIDE_YI = ["摸鱼", "喝茶", "休息", "学习"]
     _DEFAULT_GUIDE_JI = ["加班", "开会", "焦虑", "提需求"]
-    _DEFAULT_HISTORY = (
-        "历史上的今天，世界依然在运转。"
-        "在这个平凡的日子里，你也可以选择不把事情放在心上。"
-    )
+    _DEFAULT_HISTORY = "历史上的今天，世界依然在运转。在这个平凡的日子里，你也可以选择不把事情放在心上。"
     _DEFAULT_NEWS = [
         {"num": 1, "text": "今日天气晴朗，适合摸鱼。"},
         {"num": 2, "text": "研究表明，适当休息有助于提高工作效率。"},
@@ -274,14 +271,16 @@ class DomainDataAggregator:
             else:
                 is_trading_day = bool(is_trading_day_raw)
 
-            items.append({
-                "name": item.get("name") or "",
-                "price": price_str,
-                "change_pct": change_pct_str,
-                "trend": item.get("trend") or "flat",
-                "market": item.get("market") or "",
-                "is_trading_day": is_trading_day,
-            })
+            items.append(
+                {
+                    "name": item.get("name") or "",
+                    "price": price_str,
+                    "change_pct": change_pct_str,
+                    "trend": item.get("trend") or "flat",
+                    "market": item.get("market") or "",
+                    "is_trading_day": is_trading_day,
+                }
+            )
 
         return {
             "indices": items,
@@ -305,11 +304,7 @@ class DomainDataAggregator:
             content = raw_data.get("kfc_copy")
             if content:
                 # 不截断文案，页面自适应内容高度
-                return {
-                    "title": "CRAZY THURSDAY",
-                    "sub_title": "V我50",
-                    "content": content
-                }
+                return {"title": "CRAZY THURSDAY", "sub_title": "V我50", "content": content}
         return None
 
     def _compute_date(self, now: datetime) -> dict[str, Any]:
@@ -405,7 +400,7 @@ class DomainDataAggregator:
         if fun_content and isinstance(fun_content, dict):
             return {
                 "title": fun_content.get("title") or "🐟 摸鱼小贴士",
-                "content": fun_content.get("content") or self._DEFAULT_HISTORY
+                "content": fun_content.get("content") or self._DEFAULT_HISTORY,
             }
         return {"title": "🐟 摸鱼小贴士", "content": self._DEFAULT_HISTORY}
 
@@ -425,10 +420,7 @@ class DomainDataAggregator:
             if isinstance(data, dict):
                 news_items = data.get("news")
                 if isinstance(news_items, list):
-                    return [
-                        {"num": i + 1, "text": str(item)}
-                        for i, item in enumerate(news_items)
-                    ]
+                    return [{"num": i + 1, "text": str(item)} for i, item in enumerate(news_items)]
         # Handle legacy format: [{ text: "..." }, ...]
         if news_data and isinstance(news_data, list):
             return [
@@ -510,13 +502,20 @@ class DomainDataAggregator:
                 return special_name_simplify[name]
             # 通用规则：去除省份/自治区前缀
             prefixes = [
-                "广西壮族自治区", "新疆维吾尔自治区", "西藏自治区",
-                "内蒙古自治区", "宁夏回族自治区", "新疆", "西藏",
-                "内蒙古", "宁夏", "广西",
+                "广西壮族自治区",
+                "新疆维吾尔自治区",
+                "西藏自治区",
+                "内蒙古自治区",
+                "宁夏回族自治区",
+                "新疆",
+                "西藏",
+                "内蒙古",
+                "宁夏",
+                "广西",
             ]
             for prefix in prefixes:
                 if name.startswith(prefix):
-                    simplified = name[len(prefix):]
+                    simplified = name[len(prefix) :]
                     if simplified:  # 确保简化后不为空
                         return simplified
             return name
@@ -572,7 +571,7 @@ class DomainDataAggregator:
             suffixes = ["节假期", "假期", "节日", "节"]
             for suffix in suffixes:
                 if name.endswith(suffix) and len(name) > len(suffix):
-                    core = name[:-len(suffix)]
+                    core = name[: -len(suffix)]
                     # 如果核心词在白名单中，返回核心词
                     if core in preserved_names:
                         return core

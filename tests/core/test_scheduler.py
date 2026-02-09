@@ -1,7 +1,7 @@
 """Tests for app/core/scheduler.py - task scheduler."""
 
 import logging
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -31,12 +31,7 @@ class TestTaskScheduler:
         """Test add daily job with explicit time."""
         mock_func = AsyncMock()
 
-        scheduler.add_daily_job(
-            job_id="test_job",
-            func=mock_func,
-            hour=10,
-            minute=30
-        )
+        scheduler.add_daily_job(job_id="test_job", func=mock_func, hour=10, minute=30)
 
         # Verify job was added
         job = scheduler.scheduler.get_job("test_job")
@@ -46,10 +41,7 @@ class TestTaskScheduler:
         """Test add daily job uses config default time."""
         mock_func = AsyncMock()
 
-        scheduler.add_daily_job(
-            job_id="test_job",
-            func=mock_func
-        )
+        scheduler.add_daily_job(job_id="test_job", func=mock_func)
 
         job = scheduler.scheduler.get_job("test_job")
         assert job is not None
@@ -58,11 +50,7 @@ class TestTaskScheduler:
         """Test add daily job with partial time (only hour)."""
         mock_func = AsyncMock()
 
-        scheduler.add_daily_job(
-            job_id="test_job",
-            func=mock_func,
-            hour=10
-        )
+        scheduler.add_daily_job(job_id="test_job", func=mock_func, hour=10)
 
         job = scheduler.scheduler.get_job("test_job")
         assert job is not None

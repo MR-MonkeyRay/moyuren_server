@@ -3,120 +3,90 @@ server:
   port: 8000
   base_domain: "http://127.0.0.1:8000"
 
-# 时区配置
 timezone:
-  # 业务时区：用于节假日/节气/周末判断
-  # 因为节假日数据来源于中国，建议设置为 Asia/Shanghai
-  # 支持 IANA 时区名称（如 Asia/Shanghai, America/New_York）
-  # 或 UTC 偏移格式（如 UTC+8, UTC-5）
   business: "Asia/Shanghai"
-  # 显示时区：用于图片时间戳、API 响应时间
-  # 设置为 "local" 表示使用服务器本地时区
-  # 也可指定具体时区名称
   display: "local"
 
 paths:
-  static_dir: "static" # 图片输出目录
-  template_path: "templates/moyuren.html"
+  static_dir: "static"
   state_path: "state/latest.json"
 
 scheduler:
-  # 调度模式：
-  # - "hourly"：每小时执行一次，在 minute_of_hour 分钟触发
-  # - "daily"：按 daily_times 列表中的时间点执行
   mode: "hourly"
-
-  # 每日模式执行时间（HH:MM）
-  # 当 mode="hourly" 时该字段会被忽略，建议保留用于快速切回 daily
   daily_times:
   - "06:00"
-
-  # 每小时模式触发分钟，取值范围 0-59
   minute_of_hour: 0
 
-cache:
+output_cache:
   ttl_hours: 24
 
-fetch:
-  api_endpoints:
-  - name: "news"
-    url: "https://60s.viki.moe/v2/60s"
-    timeout_sec: 10
-    params:
-      "force-update": "false"
-
-fun_content:
-  timeout_sec: 5
-  endpoints:
-  - name: "dad_joke"
-    url: "https://60s.viki.moe/v2/dad-joke"
-    data_path: "data.content"
-    display_title: "🤣 冷笑话"
-  - name: "hitokoto"
-    url: "https://60s.viki.moe/v2/hitokoto"
-    data_path: "data.hitokoto"
-    display_title: "💬 一言"
-  - name: "duanzi"
-    url: "https://60s.viki.moe/v2/duanzi"
-    data_path: "data.duanzi"
-    display_title: "😂 搞笑段子"
-  - name: "moyu_quote"
-    url: "https://60s.viki.moe/v2/moyu"
-    data_path: "data.moyuQuote"
-    display_title: "🐟 摸鱼语录"
-
-crazy_thursday:
-  enabled: true
-  url: "https://60s.viki.moe/v2/kfc"
-  timeout_sec: 5
-
-holiday:
-  mirror_urls:
-  - "https://ghfast.top/"
-  timeout_sec: 10
-
-render:
-  viewport_width: 794
-  viewport_height: 1123
-  device_scale_factor: 3
-  jpeg_quality: 100
-  # 字体 CDN 配置
-  # true: 使用大陆 CDN (fonts.googleapis.cn)
-  # false: 使用国际 CDN (fonts.googleapis.com)
-  use_china_cdn: true
-
-# 多模板配置
 templates:
   default: "moyuren"
+  config:
+    device_scale_factor: 3
+    jpeg_quality: 100
+    use_china_cdn: true
   items:
     - name: "moyuren"
       path: "templates/moyuren.html"
       viewport:
         width: 794
         height: 1123
-        device_scale_factor: 3
-      theme:
-        primary_color: "#333333"
-        background_color: "#ffffff"
-        show_kfc: true
-        show_stock: true
-      jpeg_quality: 100
+      show_kfc: true
+      show_stock: true
+
+data_sources:
+  - type: "news"
+    url: "https://60s.viki.moe/v2/60s"
+    timeout_sec: 10
+    params:
+      "force-update": "false"
+
+  - type: "fun_content"
+    timeout_sec: 5
+    endpoints:
+      - name: "dad_joke"
+        url: "https://60s.viki.moe/v2/dad-joke"
+        data_path: "data.content"
+        display_title: "🤣 冷笑话"
+      - name: "hitokoto"
+        url: "https://60s.viki.moe/v2/hitokoto"
+        data_path: "data.hitokoto"
+        display_title: "💬 一言"
+      - name: "duanzi"
+        url: "https://60s.viki.moe/v2/duanzi"
+        data_path: "data.duanzi"
+        display_title: "😂 搞笑段子"
+      - name: "moyu_quote"
+        url: "https://60s.viki.moe/v2/moyu"
+        data_path: "data.moyuQuote"
+        display_title: "🐟 摸鱼语录"
+
+  - type: "crazy_thursday"
+    enabled: true
+    url: "https://60s.viki.moe/v2/kfc"
+    timeout_sec: 5
+
+  - type: "holiday"
+    timeout_sec: 10
+    mirror_urls:
+      - "https://ghfast.top/"
+
+  - type: "stock_index"
+    quote_url: "https://push2delay.eastmoney.com/api/qt/ulist.np/get"
+    timeout_sec: 5
+    secids:
+      - "1.000001"   # 上证指数
+      - "0.399001"   # 深证成指
+      - "0.399006"   # 创业板指
+      - "100.HSI"    # 恒生指数
+      - "100.DJIA"   # 道琼斯
+    market_timezones:
+      A: "Asia/Shanghai"
+      HK: "Asia/Hong_Kong"
+      US: "America/New_York"
+    cache_ttl_sec: 60
 
 logging:
   level: "INFO"
   file: "logs/app.log"
-
-stock_index:
-  quote_url: "https://push2delay.eastmoney.com/api/qt/ulist.np/get"
-  secids:
-  - "1.000001" # 上证指数
-  - "0.399001" # 深证成指
-  - "0.399006" # 创业板指
-  - "100.HSI" # 恒生指数
-  - "100.DJIA" # 道琼斯
-  timeout_sec: 5
-  market_timezones:
-    A: "Asia/Shanghai"
-    HK: "Asia/Hong_Kong"
-    US: "America/New_York"
-  cache_ttl_sec: 60

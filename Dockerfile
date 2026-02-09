@@ -74,7 +74,7 @@ EXPOSE 8000
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD wget --spider -q http://127.0.0.1:${SERVER_PORT:-8000}/healthz || exit 1
+    CMD wget --spider -q http://127.0.0.1:${SERVER__PORT:-${SERVER_PORT:-8000}}/healthz || exit 1
 
 # 启动命令
 ENTRYPOINT ["bash", "/app/docker-entrypoint.sh"]

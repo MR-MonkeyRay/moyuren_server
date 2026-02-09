@@ -48,19 +48,13 @@ class TestDailyCache:
         assert cache.is_cache_valid() is False
 
     @patch("app.services.daily_cache.today_business")
-    def test_is_cache_valid_same_day(
-        self, mock_today: AsyncMock, cache: ConcreteDailyCache, cache_dir: Path
-    ) -> None:
+    def test_is_cache_valid_same_day(self, mock_today: AsyncMock, cache: ConcreteDailyCache, cache_dir: Path) -> None:
         """Test cache is valid when date matches today."""
         mock_today.return_value = date(2026, 2, 5)
 
         # 创建缓存文件
         cache_file = cache_dir / "test.json"
-        cache_file.write_text(json.dumps({
-            "date": "2026-02-05",
-            "data": {"key": "value"},
-            "fetched_at": 1738713600000
-        }))
+        cache_file.write_text(json.dumps({"date": "2026-02-05", "data": {"key": "value"}, "fetched_at": 1738713600000}))
 
         assert cache.is_cache_valid() is True
 
@@ -73,11 +67,7 @@ class TestDailyCache:
 
         # 创建缓存文件（昨天的日期）
         cache_file = cache_dir / "test.json"
-        cache_file.write_text(json.dumps({
-            "date": "2026-02-05",
-            "data": {"key": "value"},
-            "fetched_at": 1738713600000
-        }))
+        cache_file.write_text(json.dumps({"date": "2026-02-05", "data": {"key": "value"}, "fetched_at": 1738713600000}))
 
         assert cache.is_cache_valid() is False
 
@@ -86,11 +76,7 @@ class TestDailyCache:
         # 创建缓存文件
         cache_file = cache_dir / "test.json"
         expected_data = {"key": "value", "nested": {"foo": "bar"}}
-        cache_file.write_text(json.dumps({
-            "date": "2026-02-05",
-            "data": expected_data,
-            "fetched_at": 1738713600000
-        }))
+        cache_file.write_text(json.dumps({"date": "2026-02-05", "data": expected_data, "fetched_at": 1738713600000}))
 
         result = cache.load_cache()
         assert result == expected_data
@@ -100,9 +86,7 @@ class TestDailyCache:
         result = cache.load_cache()
         assert result is None
 
-    def test_load_cache_invalid_json(
-        self, cache: ConcreteDailyCache, cache_dir: Path
-    ) -> None:
+    def test_load_cache_invalid_json(self, cache: ConcreteDailyCache, cache_dir: Path) -> None:
         """Test loading cache returns None when JSON is invalid."""
         cache_file = cache_dir / "test.json"
         cache_file.write_text("invalid json{")
@@ -111,9 +95,7 @@ class TestDailyCache:
         assert result is None
 
     @patch("app.services.daily_cache.today_business")
-    def test_save_cache(
-        self, mock_today: AsyncMock, cache: ConcreteDailyCache, cache_dir: Path
-    ) -> None:
+    def test_save_cache(self, mock_today: AsyncMock, cache: ConcreteDailyCache, cache_dir: Path) -> None:
         """Test saving cache data (atomic write)."""
         mock_today.return_value = date(2026, 2, 5)
 
@@ -144,11 +126,7 @@ class TestDailyCache:
         # 创建有效缓存
         cache_file = cache_dir / "test.json"
         cached_data = {"cached": "data"}
-        cache_file.write_text(json.dumps({
-            "date": "2026-02-05",
-            "data": cached_data,
-            "fetched_at": 1738713600000
-        }))
+        cache_file.write_text(json.dumps({"date": "2026-02-05", "data": cached_data, "fetched_at": 1738713600000}))
 
         result = await cache.get()
 
@@ -167,11 +145,7 @@ class TestDailyCache:
 
         # 创建过期缓存（昨天的日期）
         cache_file = cache_dir / "test.json"
-        cache_file.write_text(json.dumps({
-            "date": "2026-02-05",
-            "data": {"old": "data"},
-            "fetched_at": 1738713600000
-        }))
+        cache_file.write_text(json.dumps({"date": "2026-02-05", "data": {"old": "data"}, "fetched_at": 1738713600000}))
 
         # 设置 fetch_fresh 返回新数据
         fresh_data = {"fresh": "data"}
@@ -201,11 +175,7 @@ class TestDailyCache:
         # 创建过期缓存
         cache_file = cache_dir / "test.json"
         stale_data = {"stale": "data"}
-        cache_file.write_text(json.dumps({
-            "date": "2026-02-05",
-            "data": stale_data,
-            "fetched_at": 1738713600000
-        }))
+        cache_file.write_text(json.dumps({"date": "2026-02-05", "data": stale_data, "fetched_at": 1738713600000}))
 
         # 设置 fetch_fresh 返回 None（模拟网络失败）
         cache.fetch_fresh_mock.return_value = None
@@ -237,19 +207,15 @@ class TestDailyCache:
 
     @patch("app.services.daily_cache.today_business")
     @pytest.mark.asyncio
-    async def test_get_force_refresh(
-        self, mock_today: AsyncMock, cache: ConcreteDailyCache, cache_dir: Path
-    ) -> None:
+    async def test_get_force_refresh(self, mock_today: AsyncMock, cache: ConcreteDailyCache, cache_dir: Path) -> None:
         """Test get() with force_refresh=True ignores valid cache."""
         mock_today.return_value = date(2026, 2, 5)
 
         # 创建有效缓存
         cache_file = cache_dir / "test.json"
-        cache_file.write_text(json.dumps({
-            "date": "2026-02-05",
-            "data": {"cached": "data"},
-            "fetched_at": 1738713600000
-        }))
+        cache_file.write_text(
+            json.dumps({"date": "2026-02-05", "data": {"cached": "data"}, "fetched_at": 1738713600000})
+        )
 
         # 设置 fetch_fresh 返回新数据
         fresh_data = {"fresh": "data"}
@@ -299,15 +265,13 @@ class TestDailyCache:
         cache_dir = tmp_path / "new_cache_dir"
         assert not cache_dir.exists()
 
-        cache = ConcreteDailyCache("test", cache_dir, logger)
+        ConcreteDailyCache("test", cache_dir, logger)
 
         # 缓存目录应该被创建
         assert cache_dir.exists()
         assert cache_dir.is_dir()
 
-    def test_is_cache_valid_non_dict_format(
-        self, cache: ConcreteDailyCache, cache_dir: Path
-    ) -> None:
+    def test_is_cache_valid_non_dict_format(self, cache: ConcreteDailyCache, cache_dir: Path) -> None:
         """Test cache is invalid when file contains non-dict data."""
         # 创建包含非 dict 数据的缓存文件
         cache_file = cache_dir / "test.json"
@@ -316,9 +280,7 @@ class TestDailyCache:
         # 应该返回 False（非 dict 格式）
         assert cache.is_cache_valid() is False
 
-    def test_load_cache_non_dict_format(
-        self, cache: ConcreteDailyCache, cache_dir: Path
-    ) -> None:
+    def test_load_cache_non_dict_format(self, cache: ConcreteDailyCache, cache_dir: Path) -> None:
         """Test load_cache returns None when file contains non-dict data."""
         # 创建包含非 dict 数据的缓存文件
         cache_file = cache_dir / "test.json"
@@ -339,11 +301,7 @@ class TestDailyCache:
         # 创建过期缓存
         cache_file = cache_dir / "test.json"
         stale_data = {"stale": "data"}
-        cache_file.write_text(json.dumps({
-            "date": "2026-02-05",
-            "data": stale_data,
-            "fetched_at": 1738713600000
-        }))
+        cache_file.write_text(json.dumps({"date": "2026-02-05", "data": stale_data, "fetched_at": 1738713600000}))
 
         # 设置 fetch_fresh 抛出异常
         cache.fetch_fresh_mock.side_effect = RuntimeError("Network error")

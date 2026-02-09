@@ -1,15 +1,14 @@
 """Tests for app/services/renderer.py - image rendering service."""
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Any
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from markupsafe import Markup
 
-from app.services.renderer import format_datetime, nl2br, ImageRenderer
-from app.core.config import RenderConfig, TemplatesConfig, TemplateItemConfig
+from app.core.config import TemplateItemConfig, TemplateRenderConfig, TemplatesConfig, ViewportConfig
+from app.services.renderer import ImageRenderer, format_datetime, nl2br
 
 
 class TestFormatDatetime:
@@ -122,56 +121,33 @@ class TestImageRenderer:
         return TemplatesConfig(
             default="test",
             items=[
-                TemplateItemConfig(
-                    name="test",
-                    path=str(template_file),
-                )
-            ]
+                TemplateItemConfig(name="test", path=str(template_file), viewport=ViewportConfig(width=800, height=600))
+            ],
         )
 
     @pytest.fixture
-    def render_config(self) -> RenderConfig:
+    def render_config(self) -> TemplateRenderConfig:
         """Create a render configuration."""
-        return RenderConfig(
-            viewport_width=800,
-            viewport_height=600,
-            device_scale_factor=2,
-            jpeg_quality=90,
-            use_china_cdn=False
-        )
+        return TemplateRenderConfig(device_scale_factor=2, jpeg_quality=90, use_china_cdn=False)
 
     @pytest.fixture
     def renderer(
-        self,
-        templates_config: TemplatesConfig,
-        render_config: RenderConfig,
-        tmp_path: Path,
-        logger
+        self, templates_config: TemplatesConfig, render_config: TemplateRenderConfig, tmp_path: Path, logger
     ) -> ImageRenderer:
         """Create an ImageRenderer instance."""
         static_dir = tmp_path / "static"
         static_dir.mkdir()
         return ImageRenderer(
-            templates_config=templates_config,
-            static_dir=str(static_dir),
-            render_config=render_config,
-            logger=logger
+            templates_config=templates_config, static_dir=str(static_dir), render_config=render_config, logger=logger
         )
 
     def test_renderer_creates_static_dir(
-        self,
-        templates_config: TemplatesConfig,
-        render_config: RenderConfig,
-        tmp_path: Path,
-        logger
+        self, templates_config: TemplatesConfig, render_config: TemplateRenderConfig, tmp_path: Path, logger
     ) -> None:
         """Test renderer creates static directory if not exists."""
         static_dir = tmp_path / "new_static"
-        renderer = ImageRenderer(
-            templates_config=templates_config,
-            static_dir=str(static_dir),
-            render_config=render_config,
-            logger=logger
+        ImageRenderer(
+            templates_config=templates_config, static_dir=str(static_dir), render_config=render_config, logger=logger
         )
         assert static_dir.exists()
 
@@ -205,16 +181,12 @@ class TestImageRenderer:
         mock_page.screenshot = AsyncMock(return_value=b"fake image bytes")
         mock_page.close = AsyncMock()
 
-        with patch.object(
-            renderer, "_get_jinja_env"
-        ) as mock_env:
+        with patch.object(renderer, "_get_jinja_env") as mock_env:
             mock_template = MagicMock()
             mock_template.render.return_value = "<html>rendered</html>"
             mock_env.return_value.get_template.return_value = mock_template
 
-            with patch(
-                "app.services.renderer.browser_manager"
-            ) as mock_browser:
+            with patch("app.services.renderer.browser_manager") as mock_browser:
                 mock_browser.create_page = AsyncMock(return_value=mock_page)
                 mock_browser.release_page = AsyncMock()
 

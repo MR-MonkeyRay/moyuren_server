@@ -10,7 +10,7 @@ import pytest
 import respx
 from httpx import Response
 
-from app.core.config import CrazyThursdayConfig
+from app.core.config import CrazyThursdaySource
 from app.services.kfc import CachedKfcService, KfcService
 
 
@@ -18,25 +18,17 @@ class TestKfcService:
     """Tests for KfcService class."""
 
     @pytest.fixture
-    def enabled_config(self) -> CrazyThursdayConfig:
+    def enabled_config(self) -> CrazyThursdaySource:
         """Create an enabled KFC configuration."""
-        return CrazyThursdayConfig(
-            enabled=True,
-            url="https://api.example.com/kfc",
-            timeout_sec=5
-        )
+        return CrazyThursdaySource(enabled=True, url="https://api.example.com/kfc", timeout_sec=5)
 
     @pytest.fixture
-    def disabled_config(self) -> CrazyThursdayConfig:
+    def disabled_config(self) -> CrazyThursdaySource:
         """Create a disabled KFC configuration."""
-        return CrazyThursdayConfig(
-            enabled=False,
-            url="https://api.example.com/kfc",
-            timeout_sec=5
-        )
+        return CrazyThursdaySource(enabled=False, url="https://api.example.com/kfc", timeout_sec=5)
 
     @pytest.fixture
-    def service(self, enabled_config: CrazyThursdayConfig) -> KfcService:
+    def service(self, enabled_config: CrazyThursdaySource) -> KfcService:
         """Create a KfcService instance with enabled config."""
         return KfcService(config=enabled_config)
 
@@ -56,9 +48,7 @@ class TestKfcService:
     @pytest.mark.asyncio
     async def test_fetch_kfc_copy_success_string_data(self, service: KfcService) -> None:
         """Test successful fetch with string data format."""
-        respx.get("https://api.example.com/kfc").mock(
-            return_value=Response(200, json={"code": 200, "data": "V我50"})
-        )
+        respx.get("https://api.example.com/kfc").mock(return_value=Response(200, json={"code": 200, "data": "V我50"}))
 
         result = await service.fetch_kfc_copy()
 
@@ -68,9 +58,7 @@ class TestKfcService:
     @pytest.mark.asyncio
     async def test_fetch_kfc_copy_success_text_field(self, service: KfcService) -> None:
         """Test successful fetch with text field format."""
-        respx.get("https://api.example.com/kfc").mock(
-            return_value=Response(200, json={"text": "V我50"})
-        )
+        respx.get("https://api.example.com/kfc").mock(return_value=Response(200, json={"text": "V我50"}))
 
         result = await service.fetch_kfc_copy()
 
@@ -89,9 +77,7 @@ class TestKfcService:
         assert result == "Line1\nLine2"
 
     @pytest.mark.asyncio
-    async def test_fetch_kfc_copy_disabled_returns_none(
-        self, disabled_config: CrazyThursdayConfig
-    ) -> None:
+    async def test_fetch_kfc_copy_disabled_returns_none(self, disabled_config: CrazyThursdaySource) -> None:
         """Test disabled config returns None without making request."""
         service = KfcService(config=disabled_config)
 
@@ -103,9 +89,7 @@ class TestKfcService:
     @pytest.mark.asyncio
     async def test_fetch_kfc_copy_timeout(self, service: KfcService) -> None:
         """Test timeout returns None."""
-        respx.get("https://api.example.com/kfc").mock(
-            side_effect=httpx.TimeoutException("Timeout")
-        )
+        respx.get("https://api.example.com/kfc").mock(side_effect=httpx.TimeoutException("Timeout"))
 
         result = await service.fetch_kfc_copy()
 
@@ -149,9 +133,7 @@ class TestKfcService:
     @pytest.mark.asyncio
     async def test_fetch_kfc_copy_invalid_json(self, service: KfcService) -> None:
         """Test invalid JSON returns None."""
-        respx.get("https://api.example.com/kfc").mock(
-            return_value=Response(200, content=b"not json")
-        )
+        respx.get("https://api.example.com/kfc").mock(return_value=Response(200, content=b"not json"))
 
         result = await service.fetch_kfc_copy()
 
@@ -173,9 +155,7 @@ class TestKfcService:
     @pytest.mark.asyncio
     async def test_fetch_kfc_copy_string_response(self, service: KfcService) -> None:
         """Test handles string response format."""
-        respx.get("https://api.example.com/kfc").mock(
-            return_value=Response(200, json="V我50")
-        )
+        respx.get("https://api.example.com/kfc").mock(return_value=Response(200, json="V我50"))
 
         result = await service.fetch_kfc_copy()
 
@@ -186,13 +166,9 @@ class TestCachedKfcService:
     """Tests for CachedKfcService class."""
 
     @pytest.fixture
-    def config(self) -> CrazyThursdayConfig:
+    def config(self) -> CrazyThursdaySource:
         """Create an enabled KFC configuration."""
-        return CrazyThursdayConfig(
-            enabled=True,
-            url="https://api.example.com/kfc",
-            timeout_sec=5
-        )
+        return CrazyThursdaySource(enabled=True, url="https://api.example.com/kfc", timeout_sec=5)
 
     @pytest.fixture
     def cache_dir(self, tmp_path: Path) -> Path:
@@ -208,15 +184,13 @@ class TestCachedKfcService:
 
     @pytest.fixture
     def service(
-        self, config: CrazyThursdayConfig, logger_instance: logging.Logger, cache_dir: Path
+        self, config: CrazyThursdaySource, logger_instance: logging.Logger, cache_dir: Path
     ) -> CachedKfcService:
         """Create a CachedKfcService instance."""
         return CachedKfcService(config=config, logger=logger_instance, cache_dir=cache_dir)
 
     @pytest.mark.asyncio
-    async def test_get_returns_none_on_non_thursday(
-        self, service: CachedKfcService
-    ) -> None:
+    async def test_get_returns_none_on_non_thursday(self, service: CachedKfcService) -> None:
         """Test get() returns None when not Thursday."""
         # Mock today_business to return a non-Thursday (Monday = 0)
         with patch("app.services.kfc.today_business") as mock_today:
@@ -229,9 +203,7 @@ class TestCachedKfcService:
         """Test get() fetches content on Thursday."""
         with patch("app.services.kfc.today_business") as mock_today:
             mock_today.return_value = date(2026, 2, 5)  # Thursday
-            with patch.object(
-                service._service, "fetch_kfc_copy", new_callable=AsyncMock
-            ) as mock_fetch:
+            with patch.object(service._service, "fetch_kfc_copy", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = "V我50"
                 result = await service.get()
                 assert result == "V我50"
@@ -239,16 +211,14 @@ class TestCachedKfcService:
 
     @pytest.mark.asyncio
     async def test_get_uses_cache_on_thursday(
-        self, config: CrazyThursdayConfig, logger_instance: logging.Logger, cache_dir: Path
+        self, config: CrazyThursdaySource, logger_instance: logging.Logger, cache_dir: Path
     ) -> None:
         """Test get() uses cache on subsequent calls on Thursday."""
         service = CachedKfcService(config=config, logger=logger_instance, cache_dir=cache_dir)
 
         with patch("app.services.kfc.today_business") as mock_today:
             mock_today.return_value = date(2026, 2, 5)  # Thursday
-            with patch.object(
-                service._service, "fetch_kfc_copy", new_callable=AsyncMock
-            ) as mock_fetch:
+            with patch.object(service._service, "fetch_kfc_copy", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = "V我50"
 
                 # First call - should fetch
@@ -263,16 +233,14 @@ class TestCachedKfcService:
 
     @pytest.mark.asyncio
     async def test_get_force_refresh_on_thursday(
-        self, config: CrazyThursdayConfig, logger_instance: logging.Logger, cache_dir: Path
+        self, config: CrazyThursdaySource, logger_instance: logging.Logger, cache_dir: Path
     ) -> None:
         """Test get() with force_refresh bypasses cache on Thursday."""
         service = CachedKfcService(config=config, logger=logger_instance, cache_dir=cache_dir)
 
         with patch("app.services.kfc.today_business") as mock_today:
             mock_today.return_value = date(2026, 2, 5)  # Thursday
-            with patch.object(
-                service._service, "fetch_kfc_copy", new_callable=AsyncMock
-            ) as mock_fetch:
+            with patch.object(service._service, "fetch_kfc_copy", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = "V我50"
 
                 # First call
@@ -286,9 +254,7 @@ class TestCachedKfcService:
                 assert mock_fetch.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_fetch_fresh_returns_none_on_non_thursday(
-        self, service: CachedKfcService
-    ) -> None:
+    async def test_fetch_fresh_returns_none_on_non_thursday(self, service: CachedKfcService) -> None:
         """Test fetch_fresh() returns None when not Thursday."""
         with patch("app.services.kfc.today_business") as mock_today:
             mock_today.return_value = date(2026, 2, 2)  # Monday
@@ -296,29 +262,21 @@ class TestCachedKfcService:
             assert result is None
 
     @pytest.mark.asyncio
-    async def test_fetch_fresh_fetches_on_thursday(
-        self, service: CachedKfcService
-    ) -> None:
+    async def test_fetch_fresh_fetches_on_thursday(self, service: CachedKfcService) -> None:
         """Test fetch_fresh() fetches content on Thursday."""
         with patch("app.services.kfc.today_business") as mock_today:
             mock_today.return_value = date(2026, 2, 5)  # Thursday
-            with patch.object(
-                service._service, "fetch_kfc_copy", new_callable=AsyncMock
-            ) as mock_fetch:
+            with patch.object(service._service, "fetch_kfc_copy", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = "V我50"
                 result = await service.fetch_fresh()
                 assert result == "V我50"
 
     @pytest.mark.asyncio
-    async def test_fetch_fresh_handles_exception(
-        self, service: CachedKfcService
-    ) -> None:
+    async def test_fetch_fresh_handles_exception(self, service: CachedKfcService) -> None:
         """Test fetch_fresh() handles exceptions gracefully."""
         with patch("app.services.kfc.today_business") as mock_today:
             mock_today.return_value = date(2026, 2, 5)  # Thursday
-            with patch.object(
-                service._service, "fetch_kfc_copy", new_callable=AsyncMock
-            ) as mock_fetch:
+            with patch.object(service._service, "fetch_kfc_copy", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.side_effect = Exception("Network error")
                 result = await service.fetch_fresh()
                 assert result is None

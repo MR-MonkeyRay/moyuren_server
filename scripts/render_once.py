@@ -12,16 +12,23 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.core.config import load_config
+from app.core.config import (
+    CrazyThursdaySource,
+    FunContentSource,
+    HolidaySource,
+    NewsSource,
+    StockIndexSource,
+    load_config,
+)
 from app.core.logging import setup_logging
+from app.services.calendar import get_display_timezone, init_timezones
 from app.services.compute import DataComputer
 from app.services.fetcher import DataFetcher
 from app.services.fun_content import FunContentService
 from app.services.holiday import HolidayService
 from app.services.kfc import KfcService
-from app.services.stock_index import StockIndexService
 from app.services.renderer import ImageRenderer
-from app.services.calendar import init_timezones, get_display_timezone
+from app.services.stock_index import StockIndexService
 
 
 async def main():
@@ -31,38 +38,40 @@ async def main():
     logger = setup_logging(config.logging, logger_name="render_once")
 
     # Initialize timezones
-    init_timezones(
-        business_tz=config.timezone.business,
-        display_tz=config.timezone.display
-    )
+    init_timezones(business_tz=config.timezone.business, display_tz=config.timezone.display)
 
     # Ensure directories exist
     Path(config.paths.static_dir).mkdir(parents=True, exist_ok=True)
     Path(config.paths.state_path).parent.mkdir(parents=True, exist_ok=True)
 
     # Initialize services
+    news_source = config.get_source(NewsSource)
     data_fetcher = DataFetcher(
-        endpoints=config.fetch.api_endpoints,
+        source=news_source,
         logger=logger,
     )
     holiday_cache_dir = Path(config.paths.state_path).parent / "holidays"
+    holiday_source = config.get_source(HolidaySource)
     holiday_service = HolidayService(
         logger=logger,
         cache_dir=holiday_cache_dir,
-        mirror_urls=config.holiday.mirror_urls,
-        timeout_sec=config.holiday.timeout_sec,
+        mirror_urls=holiday_source.mirror_urls if holiday_source else [],
+        timeout_sec=holiday_source.timeout_sec if holiday_source else 10,
     )
-    fun_content_service = FunContentService(config.fun_content)
+    fun_content_source = config.get_source(FunContentSource)
+    fun_content_service = FunContentService(fun_content_source)
 
     # Initialize KFC service if config exists
     kfc_service = None
-    if config.crazy_thursday:
-        kfc_service = KfcService(config.crazy_thursday)
+    crazy_thursday_source = config.get_source(CrazyThursdaySource)
+    if crazy_thursday_source:
+        kfc_service = KfcService(crazy_thursday_source)
 
     # Initialize stock index service if config exists
     stock_index_service = None
-    if config.stock_index:
-        stock_index_service = StockIndexService(config.stock_index)
+    stock_index_source = config.get_source(StockIndexSource)
+    if stock_index_source:
+        stock_index_service = StockIndexService(stock_index_source)
 
     data_computer = DataComputer()
 
@@ -72,7 +81,7 @@ async def main():
     image_renderer = ImageRenderer(
         templates_config=templates_config,
         static_dir=config.paths.static_dir,
-        render_config=config.render,
+        render_config=config.templates.config,
         logger=logger,
     )
 
@@ -94,6 +103,7 @@ async def main():
     # 1.2 Fetch fun content
     try:
         from datetime import date
+
         fun_content = await fun_content_service.fetch_content(date.today())
         raw_data["fun_content"] = fun_content
         logger.info(f"Fetched fun content: {fun_content.get('title')}")
@@ -154,11 +164,7 @@ async def main():
         elif "摸鱼" in title:
             content_type = "moyu_quote"
 
-        fun_content = {
-            "type": content_type,
-            "title": title,
-            "text": fun_content_raw.get("content", "")
-        }
+        fun_content = {"type": content_type, "title": title, "text": fun_content_raw.get("content", "")}
 
     # Build KFC content
     kfc_content = None

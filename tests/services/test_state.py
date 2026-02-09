@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from app.services.state import migrate_state, STATE_VERSION
+from app.services.state import STATE_VERSION, migrate_state
 
 
 class TestMigrateState:

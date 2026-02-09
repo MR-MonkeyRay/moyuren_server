@@ -1,16 +1,15 @@
 """Tests for app/services/stock_index.py - stock index service."""
 
-import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 import respx
 from httpx import Response
 
-from app.core.config import StockIndexConfig
+from app.core.config import StockIndexSource
 from app.services.stock_index import StockIndexService
 
 
@@ -18,18 +17,18 @@ class TestStockIndexService:
     """Tests for StockIndexService class."""
 
     @pytest.fixture
-    def sample_config(self) -> StockIndexConfig:
+    def sample_config(self) -> StockIndexSource:
         """Create a sample stock index configuration."""
-        return StockIndexConfig(
+        return StockIndexSource(
             quote_url="https://api.example.com/quote",
             secids=["1.000001", "0.399001"],
             timeout_sec=5,
             market_timezones={"A": "Asia/Shanghai", "HK": "Asia/Hong_Kong", "US": "America/New_York"},
-            cache_ttl_sec=60
+            cache_ttl_sec=60,
         )
 
     @pytest.fixture
-    def service(self, sample_config: StockIndexConfig) -> StockIndexService:
+    def service(self, sample_config: StockIndexSource) -> StockIndexService:
         """Create a StockIndexService instance."""
         with patch("app.services.stock_index.xcals.get_calendar") as mock_cal:
             mock_calendar = MagicMock()
@@ -51,19 +50,15 @@ class TestStockIndexService:
                 "diff": [
                     {"f2": 3200.50, "f3": 1.25, "f4": 40.00, "f12": "000001", "f14": "上证指数"},
                     {"f2": 10500.00, "f3": -0.50, "f4": -52.00, "f12": "399001", "f14": "深证成指"},
-                ]
-            }
+                ],
+            },
         }
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_indices_success(
-        self, service: StockIndexService, sample_quote_response: dict
-    ) -> None:
+    async def test_fetch_indices_success(self, service: StockIndexService, sample_quote_response: dict) -> None:
         """Test successful index fetch."""
-        respx.get(url__regex=r".*quote.*").mock(
-            return_value=Response(200, json=sample_quote_response)
-        )
+        respx.get(url__regex=r".*quote.*").mock(return_value=Response(200, json=sample_quote_response))
 
         now = datetime(2026, 2, 4, 10, 0, 0, tzinfo=timezone(timedelta(hours=8)))
         result = await service.fetch_indices(now)
@@ -74,13 +69,9 @@ class TestStockIndexService:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_indices_uses_cache(
-        self, service: StockIndexService, sample_quote_response: dict
-    ) -> None:
+    async def test_fetch_indices_uses_cache(self, service: StockIndexService, sample_quote_response: dict) -> None:
         """Test fetch uses cache within TTL."""
-        respx.get(url__regex=r".*quote.*").mock(
-            return_value=Response(200, json=sample_quote_response)
-        )
+        respx.get(url__regex=r".*quote.*").mock(return_value=Response(200, json=sample_quote_response))
 
         now = datetime(2026, 2, 4, 10, 0, 0, tzinfo=timezone(timedelta(hours=8)))
 
@@ -97,13 +88,9 @@ class TestStockIndexService:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_indices_cache_expired(
-        self, service: StockIndexService, sample_quote_response: dict
-    ) -> None:
+    async def test_fetch_indices_cache_expired(self, service: StockIndexService, sample_quote_response: dict) -> None:
         """Test fetch refreshes cache after TTL."""
-        respx.get(url__regex=r".*quote.*").mock(
-            return_value=Response(200, json=sample_quote_response)
-        )
+        respx.get(url__regex=r".*quote.*").mock(return_value=Response(200, json=sample_quote_response))
 
         now = datetime(2026, 2, 4, 10, 0, 0, tzinfo=timezone(timedelta(hours=8)))
 
@@ -124,9 +111,7 @@ class TestStockIndexService:
     ) -> None:
         """Test returns stale cache on error."""
         # First successful fetch
-        respx.get(url__regex=r".*quote.*").mock(
-            return_value=Response(200, json=sample_quote_response)
-        )
+        respx.get(url__regex=r".*quote.*").mock(return_value=Response(200, json=sample_quote_response))
 
         now = datetime(2026, 2, 4, 10, 0, 0, tzinfo=timezone(timedelta(hours=8)))
         await service.fetch_indices(now)
@@ -143,9 +128,7 @@ class TestStockIndexService:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_indices_returns_placeholder_on_error_no_cache(
-        self, service: StockIndexService
-    ) -> None:
+    async def test_fetch_indices_returns_placeholder_on_error_no_cache(self, service: StockIndexService) -> None:
         """Test returns placeholder when error and no cache."""
         respx.get(url__regex=r".*quote.*").mock(return_value=Response(500))
 
@@ -157,13 +140,9 @@ class TestStockIndexService:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_indices_handles_timeout(
-        self, service: StockIndexService
-    ) -> None:
+    async def test_fetch_indices_handles_timeout(self, service: StockIndexService) -> None:
         """Test handles timeout gracefully."""
-        respx.get(url__regex=r".*quote.*").mock(
-            side_effect=httpx.TimeoutException("Timeout")
-        )
+        respx.get(url__regex=r".*quote.*").mock(side_effect=httpx.TimeoutException("Timeout"))
 
         now = datetime(2026, 2, 4, 10, 0, 0, tzinfo=timezone(timedelta(hours=8)))
         result = await service.fetch_indices(now)
@@ -198,9 +177,7 @@ class TestStockIndexService:
         self, service: StockIndexService, sample_quote_response: dict
     ) -> None:
         """Test fetch handles naive datetime."""
-        respx.get(url__regex=r".*quote.*").mock(
-            return_value=Response(200, json=sample_quote_response)
-        )
+        respx.get(url__regex=r".*quote.*").mock(return_value=Response(200, json=sample_quote_response))
 
         # Naive datetime (no timezone)
         now = datetime(2026, 2, 4, 10, 0, 0)
@@ -214,9 +191,7 @@ class TestStockIndexService:
         self, service: StockIndexService, sample_quote_response: dict
     ) -> None:
         """Test fetch with None datetime uses current time."""
-        respx.get(url__regex=r".*quote.*").mock(
-            return_value=Response(200, json=sample_quote_response)
-        )
+        respx.get(url__regex=r".*quote.*").mock(return_value=Response(200, json=sample_quote_response))
 
         result = await service.fetch_indices(None)
 

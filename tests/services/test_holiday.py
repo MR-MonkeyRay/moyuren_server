@@ -4,12 +4,11 @@ import json
 import logging
 import os
 import time
-from datetime import date, datetime, timezone, timedelta
+from datetime import date
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import httpx
 import pytest
 import respx
 from httpx import Response
@@ -31,10 +30,7 @@ class TestHolidayService:
     def service(self, cache_dir: Path, logger: logging.Logger) -> HolidayService:
         """Create a HolidayService instance."""
         return HolidayService(
-            logger=logger,
-            cache_dir=cache_dir,
-            mirror_urls=["https://mirror.example.com/"],
-            timeout_sec=5
+            logger=logger, cache_dir=cache_dir, mirror_urls=["https://mirror.example.com/"], timeout_sec=5
         )
 
     @pytest.fixture
@@ -55,7 +51,7 @@ class TestHolidayService:
                 {"name": "春节", "date": "2026-02-20", "isOffDay": True},
                 {"name": "春节", "date": "2026-02-21", "isOffDay": True},
                 {"name": "春节", "date": "2026-02-14", "isOffDay": False},  # 补班
-            ]
+            ],
         }
 
     def test_build_urls_with_mirrors(self, service: HolidayService) -> None:
@@ -66,9 +62,7 @@ class TestHolidayService:
         assert "mirror.example.com" in urls[0]
         assert "raw.githubusercontent.com" in urls[1]
 
-    def test_build_urls_without_mirrors(
-        self, cache_dir: Path, logger: logging.Logger
-    ) -> None:
+    def test_build_urls_without_mirrors(self, cache_dir: Path, logger: logging.Logger) -> None:
         """Test URL building without mirror URLs."""
         service = HolidayService(logger=logger, cache_dir=cache_dir)
         urls = service._build_urls(2026)
@@ -76,14 +70,10 @@ class TestHolidayService:
         assert len(urls) == 1
         assert "raw.githubusercontent.com" in urls[0]
 
-    def test_build_urls_skips_invalid_mirrors(
-        self, cache_dir: Path, logger: logging.Logger
-    ) -> None:
+    def test_build_urls_skips_invalid_mirrors(self, cache_dir: Path, logger: logging.Logger) -> None:
         """Test URL building skips invalid mirror URLs."""
         service = HolidayService(
-            logger=logger,
-            cache_dir=cache_dir,
-            mirror_urls=["invalid-no-protocol", "https://valid.com/"]
+            logger=logger, cache_dir=cache_dir, mirror_urls=["invalid-no-protocol", "https://valid.com/"]
         )
         urls = service._build_urls(2026)
 
@@ -149,17 +139,13 @@ class TestHolidayService:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_holidays_success(
-        self, service: HolidayService, sample_holiday_data: dict
-    ) -> None:
+    async def test_fetch_holidays_success(self, service: HolidayService, sample_holiday_data: dict) -> None:
         """Test successful holiday fetch."""
         # Mock all year endpoints using regex pattern
         for year in [2025, 2026, 2027]:
             data = sample_holiday_data.copy()
             data["year"] = year
-            respx.get(url__regex=rf".*{year}\.json$").mock(
-                return_value=Response(200, json=data)
-            )
+            respx.get(url__regex=rf".*{year}\.json$").mock(return_value=Response(200, json=data))
 
         with patch.object(service, "_get_today", return_value=date(2026, 2, 4)):
             result = await service.fetch_holidays()
@@ -209,9 +195,7 @@ class TestHolidayService:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_holidays_mirror_fallback(
-        self, service: HolidayService, sample_holiday_data: dict
-    ) -> None:
+    async def test_fetch_holidays_mirror_fallback(self, service: HolidayService, sample_holiday_data: dict) -> None:
         """Test fallback to GitHub when mirror fails."""
         # Mock mirror failure, GitHub success using regex
         respx.get(url__regex=r".*mirror\.example\.com.*").mock(return_value=Response(500))

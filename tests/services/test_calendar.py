@@ -1,20 +1,18 @@
 """Tests for app/services/calendar.py - calendar service."""
 
-from datetime import date, datetime, timezone, timedelta
-from unittest.mock import patch, MagicMock
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
-from zoneinfo import ZoneInfo
 
 from app.services.calendar import (
+    CalendarService,
+    get_business_timezone,
+    get_display_timezone,
     get_local_timezone,
     get_timezone_label,
     init_timezones,
-    get_business_timezone,
-    get_display_timezone,
     now_business,
     today_business,
-    CalendarService,
 )
 
 
@@ -52,7 +50,7 @@ class TestGetTimezoneLabel:
 
     def test_zero_offset(self) -> None:
         """Test zero UTC offset label."""
-        dt = datetime(2026, 2, 4, 10, 0, 0, tzinfo=timezone.utc)
+        dt = datetime(2026, 2, 4, 10, 0, 0, tzinfo=UTC)
         label = get_timezone_label(dt)
         assert label == "UTC+00"
 
