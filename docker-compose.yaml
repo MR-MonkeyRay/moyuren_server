@@ -7,8 +7,7 @@ services:
     ports:
       - "${SERVER__PORT:-8000}:${SERVER__PORT:-8000}"
     volumes:
-      - ./static:/app/static
-      - ./state:/app/state
+      - ./cache:/app/cache
     environment:
       # Timezone configuration (system-level, not part of pydantic-settings)
       TZ: Asia/Shanghai
@@ -22,7 +21,10 @@ services:
       SCHEDULER__DAILY_TIMES: '${SCHEDULER__DAILY_TIMES:-["06:00"]}'
 
       # Cache configuration
-      OUTPUT_CACHE__TTL_HOURS: ${OUTPUT_CACHE__TTL_HOURS:-24}
+      CACHE__RETAIN_DAYS: ${CACHE__RETAIN_DAYS:-30}
+
+      # Ops API configuration (留空则禁用 ops 端点鉴权)
+      OPS__API_KEY: ${OPS__API_KEY:-}
 
       # Logging configuration (default: stdout only)
       LOGGING__LEVEL: ${LOGGING__LEVEL:-INFO}

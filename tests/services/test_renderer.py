@@ -135,21 +135,21 @@ class TestImageRenderer:
         self, templates_config: TemplatesConfig, render_config: TemplateRenderConfig, tmp_path: Path, logger
     ) -> ImageRenderer:
         """Create an ImageRenderer instance."""
-        static_dir = tmp_path / "static"
-        static_dir.mkdir()
+        images_dir = tmp_path / "static"
+        images_dir.mkdir()
         return ImageRenderer(
-            templates_config=templates_config, static_dir=str(static_dir), render_config=render_config, logger=logger
+            templates_config=templates_config, images_dir=str(images_dir), render_config=render_config, logger=logger
         )
 
-    def test_renderer_creates_static_dir(
+    def test_renderer_creates_images_dir(
         self, templates_config: TemplatesConfig, render_config: TemplateRenderConfig, tmp_path: Path, logger
     ) -> None:
         """Test renderer creates static directory if not exists."""
-        static_dir = tmp_path / "new_static"
+        images_dir = tmp_path / "new_static"
         ImageRenderer(
-            templates_config=templates_config, static_dir=str(static_dir), render_config=render_config, logger=logger
+            templates_config=templates_config, images_dir=str(images_dir), render_config=render_config, logger=logger
         )
-        assert static_dir.exists()
+        assert images_dir.exists()
 
     def test_get_jinja_env(self, renderer: ImageRenderer, templates_config: TemplatesConfig) -> None:
         """Test _get_jinja_env returns Environment."""

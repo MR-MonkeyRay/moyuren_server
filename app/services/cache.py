@@ -1,73 +1,114 @@
 """Cache cleanup service module."""
 
 import logging
-import os
+import re
+from datetime import datetime, timedelta
 from pathlib import Path
+
+from app.services.calendar import today_business
 
 
 class CacheCleaner:
-    """Cache cleaner for removing expired image files."""
+    """Cache cleaner for removing expired data and image files."""
 
     def __init__(
         self,
-        static_dir: str,
-        ttl_hours: int,
+        cache_dir: str,
+        retain_days: int,
         logger: logging.Logger,
     ) -> None:
         """Initialize the cache cleaner.
 
         Args:
-            static_dir: Directory containing cached image files.
-            ttl_hours: Time-to-live in hours for cached files.
+            cache_dir: Root cache directory containing data/ and images/ subdirectories.
+            retain_days: Number of days to retain cached files.
             logger: Logger instance for logging cleanup status.
         """
-        self.static_dir = Path(static_dir)
-        self.ttl_hours = ttl_hours
+        self.cache_dir = Path(cache_dir)
+        self.data_dir = self.cache_dir / "data"
+        self.images_dir = self.cache_dir / "images"
+        self.retain_days = retain_days
         self.logger = logger
 
-        # Ensure static directory exists
-        self.static_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure directories exist
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.images_dir.mkdir(parents=True, exist_ok=True)
 
-    def cleanup(self) -> int:
-        """Clean up expired image files from static directory.
+    def cleanup(self, retain_days: int | None = None) -> dict[str, int | str]:
+        """Clean up expired data and image files.
 
-        Scans for moyuren_*.jpg files and removes those that exceed the TTL,
-        while always preserving the newest file.
+        Scans cache/data/ and cache/images/ directories and removes files
+        older than retain_days based on date parsed from filename.
+
+        Data files format: YYYY-MM-DD.json
+        Image files format: {template}_{YYYYMMDD}_{HHMMSS}.jpg
 
         Returns:
-            The number of files deleted.
+            Dictionary with cleanup statistics:
+            - deleted_files: Number of files deleted
+            - freed_bytes: Total bytes freed
+            - oldest_kept: Date string of oldest kept file (YYYY-MM-DD)
         """
-        import time
+        effective_retain = retain_days if retain_days is not None else self.retain_days
+        today = today_business()
+        cutoff_date = today - timedelta(days=effective_retain)
 
-        # Find all moyuren_*.jpg files
-        pattern = "moyuren_*.jpg"
-        files = list(self.static_dir.glob(pattern))
+        deleted_files = 0
+        freed_bytes = 0
+        oldest_kept_date = today
 
-        if not files:
-            self.logger.debug("No cache files found for cleanup")
-            return 0
+        # Clean data files
+        data_pattern = re.compile(r"^(\d{4}-\d{2}-\d{2})\.json$")
+        for file_path in self.data_dir.glob("*.json"):
+            match = data_pattern.match(file_path.name)
+            if not match:
+                self.logger.warning(f"Skipping file with invalid name format: {file_path.name}")
+                continue
 
-        # Sort by modification time (oldest first)
-        files.sort(key=lambda f: os.path.getmtime(f))
-
-        # Keep the newest file regardless of age
-        candidates = files[:-1]  # Exclude newest from deletion
-
-        # Calculate cutoff time
-        cutoff_time = time.time() - (self.ttl_hours * 3600)
-
-        deleted_count = 0
-        for file_path in candidates:
             try:
-                mtime = os.path.getmtime(file_path)
-                if mtime < cutoff_time:
+                file_date = datetime.fromisoformat(match.group(1)).date()
+                if file_date < cutoff_date:
+                    file_size = file_path.stat().st_size
                     file_path.unlink()
-                    deleted_count += 1
-                    self.logger.info(f"Deleted expired cache file: {file_path.name}")
+                    deleted_files += 1
+                    freed_bytes += file_size
+                    self.logger.info(f"Deleted expired data file: {file_path.name}")
                 else:
-                    self.logger.debug(f"File within TTL, keeping: {file_path.name}")
+                    if file_date < oldest_kept_date:
+                        oldest_kept_date = file_date
             except Exception as e:
-                self.logger.warning(f"Failed to delete {file_path.name}: {e}")
+                self.logger.warning(f"Failed to process data file {file_path.name}: {e}")
 
-        self.logger.info(f"Cache cleanup completed: {deleted_count} file(s) deleted")
-        return deleted_count
+        # Clean image files
+        image_pattern = re.compile(r"^[A-Za-z0-9_-]+_(\d{8})_\d{6}\.jpg$")
+        for file_path in self.images_dir.glob("*.jpg"):
+            match = image_pattern.match(file_path.name)
+            if not match:
+                self.logger.warning(f"Skipping file with invalid name format: {file_path.name}")
+                continue
+
+            try:
+                date_str = match.group(1)
+                file_date = datetime.strptime(date_str, "%Y%m%d").date()
+                if file_date < cutoff_date:
+                    file_size = file_path.stat().st_size
+                    file_path.unlink()
+                    deleted_files += 1
+                    freed_bytes += file_size
+                    self.logger.info(f"Deleted expired image file: {file_path.name}")
+                else:
+                    if file_date < oldest_kept_date:
+                        oldest_kept_date = file_date
+            except Exception as e:
+                self.logger.warning(f"Failed to process image file {file_path.name}: {e}")
+
+        self.logger.info(
+            f"Cache cleanup completed: {deleted_files} file(s) deleted, "
+            f"{freed_bytes / 1024:.1f} KB freed"
+        )
+
+        return {
+            "deleted_files": deleted_files,
+            "freed_bytes": freed_bytes,
+            "oldest_kept": oldest_kept_date.isoformat(),
+        }

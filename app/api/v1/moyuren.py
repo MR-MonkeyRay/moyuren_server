@@ -2,330 +2,380 @@
 
 import json
 import logging
+from datetime import date, datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Request, status
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, Query, Request, status
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 
-from app.core.errors import ErrorCode, error_response
-from app.models.schemas import (
-    ErrorResponse,
-    MoyurenDetailResponse,
-    MoyurenImageResponse,
-)
+from app.core.errors import ErrorCode, StorageError, error_response, get_http_status
+from app.models.schemas import ErrorResponse
+from app.services.calendar import today_business
 from app.services.generator import GenerationBusyError, generate_and_save_image
 
 router = APIRouter(prefix="/api/v1", tags=["moyuren"])
 
 
-async def _ensure_state_file_exists(request: Request, state_path: Path, logger) -> JSONResponse | None:
-    """Ensure state file exists, trigger generation if needed.
+def _build_image_url(base_domain: str, filename: str) -> str:
+    """Build full image URL from base domain and filename."""
+    return f"{base_domain.rstrip('/')}/static/{filename}"
+
+
+def _get_filename_for_template(images: dict[str, str], template: str | None) -> str | None:
+    """Get filename for specified template from images mapping.
+
+    Args:
+        images: Images mapping {template_name: filename}
+        template: Template name, None means use first available
 
     Returns:
-        None if state file exists, JSONResponse with error if generation fails.
+        Filename or None if not found
     """
-    if not state_path.exists():
-        logger.info("State file not found, triggering image generation...")
+    if not images:
+        return None
+
+    if template is None:
+        # Return first available image
+        return next(iter(images.values()), None)
+
+    # Return specific template image
+    return images.get(template)
+
+
+def _build_cache_headers(target_date: date, updated_at: int) -> dict[str, str]:
+    """Build HTTP cache headers based on date.
+
+    Args:
+        target_date: Target date for the data
+        updated_at: Update timestamp in milliseconds
+
+    Returns:
+        Dictionary of cache headers
+    """
+    today = today_business()
+
+    if target_date < today:
+        # History data - immutable
+        return {
+            "Cache-Control": "public, max-age=31536000, immutable",
+        }
+    else:
+        # Today's data - use ETag and Last-Modified
+        etag = f'"{updated_at}"'
+        last_modified = datetime.fromtimestamp(updated_at / 1000, tz=timezone.utc).strftime(
+            "%a, %d %b %Y %H:%M:%S GMT"
+        )
+        return {
+            "Cache-Control": "public, max-age=300, must-revalidate",
+            "ETag": etag,
+            "Last-Modified": last_modified,
+        }
+
+
+def _check_not_modified(request: Request, updated_at: int) -> bool:
+    """Check if client cache is still valid (304 Not Modified).
+
+    Args:
+        request: FastAPI request object
+        updated_at: Update timestamp in milliseconds
+
+    Returns:
+        True if client cache is valid (should return 304)
+    """
+    etag = f'"{updated_at}"'
+
+    # Check If-None-Match header
+    if_none_match = request.headers.get("If-None-Match")
+    if if_none_match and if_none_match == etag:
+        return True
+
+    # Check If-Modified-Since header
+    if_modified_since = request.headers.get("If-Modified-Since")
+    if if_modified_since:
+        try:
+            client_time = datetime.strptime(if_modified_since, "%a, %d %b %Y %H:%M:%S GMT")
+            server_time = datetime.fromtimestamp(updated_at / 1000, tz=timezone.utc).replace(tzinfo=None)
+            if client_time >= server_time:
+                return True
+        except ValueError:
+            pass
+
+    return False
+
+
+def _build_simple_response(data: dict, base_domain: str, template: str | None) -> dict:
+    """Build simple response (encode=json, detail=false).
+
+    Returns:
+        - date: YYYY-MM-DD
+        - updated: YYYY/MM/DD HH:MM:SS
+        - updated_at: milliseconds timestamp
+        - image: full URL
+    """
+    images = data.get("images", {})
+    filename = _get_filename_for_template(images, template)
+    if not filename:
+        raise StorageError(
+            message=f"No image found for template: {template or 'default'}",
+            code=ErrorCode.API_TEMPLATE_NOT_FOUND,
+        )
+
+    return {
+        "date": data["date"],
+        "updated": data["updated"],
+        "updated_at": data["updated_at"],
+        "image": _build_image_url(base_domain, filename),
+    }
+
+
+def _build_detail_response(data: dict, base_domain: str, template: str | None) -> dict:
+    """Build detailed response (encode=json, detail=true).
+
+    Returns all fields from data file plus image URL.
+    """
+    simple = _build_simple_response(data, base_domain, template)
+
+    # Add all optional fields
+    detail_fields = {
+        "weekday": data.get("weekday", ""),
+        "lunar_date": data.get("lunar_date", ""),
+        "fun_content": data.get("fun_content"),
+        "is_crazy_thursday": data.get("is_crazy_thursday", False),
+        "kfc_content": data.get("kfc_content"),
+        "date_info": data.get("date_info"),
+        "weekend": data.get("weekend"),
+        "solar_term": data.get("solar_term"),
+        "guide": data.get("guide"),
+        "news_list": data.get("news_list"),
+        "news_meta": data.get("news_meta"),
+        "holidays": data.get("holidays"),
+        "kfc_content_full": data.get("kfc_content_full"),
+        "stock_indices": data.get("stock_indices"),
+    }
+
+    return {**simple, **detail_fields}
+
+
+def _build_text_response(data: dict, base_domain: str, template: str | None) -> str:
+    """Build plain text response (encode=text).
+
+    Format:
+        日期: 2026-02-10
+        更新时间: 2026/02/10 07:22:32
+        图片: https://example.com/static/moyuren_20260210_072232.jpg
+    """
+    simple = _build_simple_response(data, base_domain, template)
+    return (
+        f"日期: {simple['date']}\n"
+        f"更新时间: {simple['updated']}\n"
+        f"图片: {simple['image']}\n"
+    )
+
+
+def _build_markdown_response(data: dict, base_domain: str, template: str | None) -> str:
+    """Build markdown response (encode=markdown).
+
+    Format:
+        # 摸鱼日历 - 2026-02-10
+
+        **更新时间**: 2026/02/10 07:22:32
+
+        ![摸鱼日历](https://example.com/static/moyuren_20260210_072232.jpg)
+    """
+    simple = _build_simple_response(data, base_domain, template)
+    return (
+        f"# 摸鱼日历 - {simple['date']}\n\n"
+        f"**更新时间**: {simple['updated']}\n\n"
+        f"![摸鱼日历]({simple['image']})\n"
+    )
+
+
+async def _load_data_for_date(
+    request: Request,
+    target_date: date,
+    logger: logging.Logger,
+) -> tuple[dict | None, JSONResponse | None]:
+    """Load and validate data file for specified date.
+
+    Args:
+        request: FastAPI request object
+        target_date: Target date to load
+        logger: Logger instance
+
+    Returns:
+        Tuple of (data, error_response). If successful, error_response is None.
+    """
+    config = request.app.state.config
+    cache_dir = Path(config.paths.cache_dir)
+    data_file = cache_dir / "data" / f"{target_date.isoformat()}.json"
+
+    # For today's date, trigger generation if file doesn't exist
+    today = today_business()
+    if target_date == today and not data_file.exists():
+        logger.info(f"Data file not found for today ({target_date}), triggering generation...")
         try:
             await generate_and_save_image(request.app)
         except GenerationBusyError:
             logger.info("Generation in progress, returning 503 with Retry-After")
-            return JSONResponse(
+            return None, JSONResponse(
                 content=error_response(
                     code=ErrorCode.GENERATION_BUSY,
-                    message="Image generation in progress",
-                    detail="Another process is generating the image",
+                    message="Image generation in progress, another process is generating the image",
                 ),
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 headers={"Retry-After": "5"},
             )
         except Exception as e:
             logger.error(f"On-demand image generation failed: {e}")
-            return JSONResponse(
+            return None, JSONResponse(
                 content=error_response(
                     code=ErrorCode.GENERATION_FAILED,
-                    message="Image generation failed",
-                    detail=str(e),
+                    message=f"Image generation failed: {e}",
                 ),
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-    return None
 
-
-async def _read_state_file(state_path: Path, logger) -> tuple[dict | None, JSONResponse | None]:
-    """Read and validate state file.
-
-    Returns:
-        Tuple of (state_data, error_response). If successful, error_response is None.
-    """
-    try:
-        with state_path.open("r", encoding="utf-8") as f:
-            state_data = json.load(f)
-    except FileNotFoundError:
-        logger.error("State file disappeared after generation")
+    # Read data file
+    if not data_file.exists():
+        logger.warning(f"Data file not found for date: {target_date}")
         return None, JSONResponse(
             content=error_response(
-                code=ErrorCode.STORAGE_NOT_FOUND,
-                message="No image available",
-                detail="State file not found after generation attempt",
+                code=ErrorCode.API_DATA_NOT_FOUND,
+                message=f"No data available for date: {target_date.isoformat()}",
             ),
             status_code=status.HTTP_404_NOT_FOUND,
         )
+
+    try:
+        with data_file.open("r", encoding="utf-8") as f:
+            data = json.load(f)
     except OSError as e:
-        logger.error(f"Failed to read state file: {e}")
+        logger.error(f"Failed to read data file: {e}")
         return None, JSONResponse(
             content=error_response(
                 code=ErrorCode.STORAGE_READ_FAILED,
-                message="Failed to read state file",
-                detail=str(e),
+                message=f"Failed to read data file: {e}",
             ),
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse state file: {e}")
+        logger.error(f"Failed to parse data file: {e}")
         return None, JSONResponse(
             content=error_response(
                 code=ErrorCode.STORAGE_READ_FAILED,
-                message="Invalid state file",
-                detail=str(e),
+                message=f"Invalid data file: {e}",
             ),
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
-    # Validate state data - must be a dict with required fields
-    if not isinstance(state_data, dict):
-        logger.warning(f"State file has invalid format: expected dict, got {type(state_data).__name__}")
+    # Validate data structure
+    if not isinstance(data, dict):
+        logger.error(f"Data file has invalid format: expected dict, got {type(data).__name__}")
         return None, JSONResponse(
             content=error_response(
                 code=ErrorCode.STORAGE_READ_FAILED,
-                message="Invalid state file",
-                detail=f"Expected dict, got {type(state_data).__name__}",
+                message=f"Invalid data file: expected dict, got {type(data).__name__}",
             ),
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
-    required_fields = ["filename", "date", "updated", "updated_at"]
-    missing_fields = [f for f in required_fields if f not in state_data]
+    required_fields = ["date", "updated", "updated_at", "images"]
+    missing_fields = [f for f in required_fields if f not in data]
     if missing_fields:
-        logger.warning(f"State file missing required fields: {missing_fields}, will regenerate")
-        return None, None  # Signal to regenerate
+        logger.error(f"Data file missing required fields: {missing_fields}")
+        return None, JSONResponse(
+            content=error_response(
+                code=ErrorCode.STORAGE_READ_FAILED,
+                message=f"Invalid data file: missing required fields: {missing_fields}",
+            ),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
-    # Validate field values
-    try:
-        # Validate filename and date are non-empty strings
-        if not state_data.get("filename") or not state_data.get("date"):
-            logger.warning("State file has empty filename or date, will regenerate")
-            return None, None
-
-        # Validate updated format (YYYY/MM/DD HH:MM:SS)
-        from datetime import datetime
-
-        updated_str = state_data.get("updated")
-        if not updated_str or not isinstance(updated_str, str):
-            logger.warning("State file has invalid updated field, will regenerate")
-            return None, None
-
-        # Try parsing YYYY/MM/DD HH:MM:SS format
-        try:
-            datetime.strptime(updated_str, "%Y/%m/%d %H:%M:%S")
-        except (ValueError, TypeError):
-            logger.warning(f"State file updated field not in expected format: {updated_str}, will regenerate")
-            return None, None
-
-        # Validate updated_at is positive integer
-        updated_at = state_data.get("updated_at")
-        if not isinstance(updated_at, int) or updated_at <= 0:
-            logger.warning(f"State file updated_at is not positive integer: {updated_at}, will regenerate")
-            return None, None
-
-    except Exception as e:
-        logger.warning(f"State file validation error: {e}, will regenerate")
-        return None, None
-
-    return state_data, None
+    return data, None
 
 
-async def _get_valid_state(request: Request, state_path: Path, logger) -> tuple[dict | None, JSONResponse | None]:
-    """Get valid state data, regenerating if necessary.
 
-    Returns:
-        Tuple of (state_data, error_response). If successful, error_response is None.
-    """
-    # Ensure state file exists
-    if error := await _ensure_state_file_exists(request, state_path, logger):
-        return None, error
+def _handle_json_response(
+    data: dict,
+    base_domain: str,
+    template: str | None,
+    detail: bool,
+    cache_headers: dict[str, str],
+    target_date: date,
+    logger: logging.Logger,
+) -> JSONResponse:
+    """Handle JSON format response (encode=json)."""
+    if detail:
+        response_data = _build_detail_response(data, base_domain, template)
+    else:
+        response_data = _build_simple_response(data, base_domain, template)
 
-    # Read state file
-    state_data, error = await _read_state_file(state_path, logger)
-    if error:
-        return None, error
-
-    # If state_data is None (missing required fields), regenerate
-    if state_data is None:
-        logger.info("State file incompatible, triggering regeneration...")
-        state_path.unlink(missing_ok=True)
-        if error := await _ensure_state_file_exists(request, state_path, logger):
-            return None, error
-        state_data, error = await _read_state_file(state_path, logger)
-        if error:
-            return None, error
-        if state_data is None:
-            return None, JSONResponse(
-                content=error_response(
-                    code=ErrorCode.GENERATION_FAILED,
-                    message="Failed to regenerate image",
-                    detail="State file still incompatible after regeneration",
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-    return state_data, None
-
-
-@router.get(
-    "/moyuren",
-    response_model=MoyurenImageResponse,
-    responses={404: {"model": ErrorResponse}},
-)
-async def get_moyuren(request: Request) -> JSONResponse:
-    """Get the latest moyuren calendar image metadata.
-
-    Returns simplified metadata of the latest generated image including:
-    - date: Image date in YYYY-MM-DD format
-    - updated: Generation time (e.g., 2025/01/13 07:22:32)
-    - updated_at: Generation timestamp in milliseconds (13 digits)
-    - image: Full URL to the image file
-
-    Raises:
-        404: If no image has been generated yet.
-    """
-    logger = logging.getLogger(__name__)
-
-    # Get state file path from config
-    config = request.app.state.config
-    state_path = Path(config.paths.state_path)
-
-    # Get valid state data (regenerates if incompatible)
-    state_data, error = await _get_valid_state(request, state_path, logger)
-    if error:
-        return error
-
-    # Build full image URL
-    base_domain = config.server.base_domain.rstrip("/")
-    filename = state_data["filename"]
-    image_url = f"{base_domain}/static/{filename}"
-
-    # Build response with new format
-    response_data = {
-        "date": state_data["date"],
-        "updated": state_data["updated"],
-        "updated_at": state_data["updated_at"],
-        "image": image_url,
-    }
-
-    logger.info(f"Retrieved moyuren image metadata: {filename}")
+    logger.info(f"Retrieved moyuren data for {target_date} (encode=json, detail={detail})")
     return JSONResponse(
         content=response_data,
         status_code=status.HTTP_200_OK,
+        headers=cache_headers,
     )
 
 
-@router.get(
-    "/moyuren/detail",
-    response_model=MoyurenDetailResponse,
-    responses={404: {"model": ErrorResponse}},
-)
-async def get_moyuren_detail(request: Request) -> JSONResponse:
-    """Get the detailed content of the latest moyuren calendar image.
-
-    Returns detailed content information including:
-    - date: Image date in YYYY-MM-DD format
-    - updated: Generation time (e.g., 2025/01/13 07:22:32)
-    - updated_at: Generation timestamp in milliseconds (13 digits)
-    - image: Full URL to the image file
-    - weekday: Weekday in Chinese (e.g., 星期日)
-    - lunar_date: Lunar calendar date
-    - fun_content: Fun content (joke, quote, etc.)
-    - is_crazy_thursday: Whether it's Thursday
-    - kfc_content: KFC Crazy Thursday content (only on Thursday)
-
-    Raises:
-        404: If no image has been generated yet.
-    """
-    logger = logging.getLogger(__name__)
-
-    # Get state file path from config
-    config = request.app.state.config
-    state_path = Path(config.paths.state_path)
-
-    # Get valid state data (regenerates if incompatible)
-    state_data, error = await _get_valid_state(request, state_path, logger)
-    if error:
-        return error
-
-    # Build full image URL
-    base_domain = config.server.base_domain.rstrip("/")
-    filename = state_data["filename"]
-    image_url = f"{base_domain}/static/{filename}"
-
-    # Build response with detailed content
-    response_data = {
-        "date": state_data["date"],
-        "updated": state_data["updated"],
-        "updated_at": state_data["updated_at"],
-        "image": image_url,
-        "weekday": state_data.get("weekday", ""),
-        "lunar_date": state_data.get("lunar_date", ""),
-        "fun_content": state_data.get("fun_content"),
-        "is_crazy_thursday": state_data.get("is_crazy_thursday", False),
-        "kfc_content": state_data.get("kfc_content"),
-        # Full rendering data fields
-        "date_info": state_data.get("date_info"),
-        "weekend": state_data.get("weekend"),
-        "solar_term": state_data.get("solar_term"),
-        "guide": state_data.get("guide"),
-        "news_list": state_data.get("news_list"),
-        "news_meta": state_data.get("news_meta"),
-        "holidays": state_data.get("holidays"),
-        "kfc_content_full": state_data.get("kfc_content_full"),
-        "stock_indices": state_data.get("stock_indices"),
-    }
-
-    logger.info(f"Retrieved moyuren detail for: {state_data['date']}")
-    return JSONResponse(
-        content=response_data,
+def _handle_text_response(
+    data: dict,
+    base_domain: str,
+    template: str | None,
+    cache_headers: dict[str, str],
+    target_date: date,
+    logger: logging.Logger,
+) -> PlainTextResponse:
+    """Handle plain text format response (encode=text)."""
+    text_content = _build_text_response(data, base_domain, template)
+    logger.info(f"Retrieved moyuren data for {target_date} (encode=text)")
+    return PlainTextResponse(
+        content=text_content,
         status_code=status.HTTP_200_OK,
+        headers=cache_headers,
     )
 
 
-@router.get(
-    "/moyuren/latest",
-    response_class=FileResponse,
-    responses={404: {"model": ErrorResponse}},
-)
-async def get_moyuren_latest(request: Request) -> FileResponse:
-    """Get the latest moyuren calendar image file directly.
+def _handle_markdown_response(
+    data: dict,
+    base_domain: str,
+    template: str | None,
+    cache_headers: dict[str, str],
+    target_date: date,
+    logger: logging.Logger,
+) -> PlainTextResponse:
+    """Handle markdown format response (encode=markdown)."""
+    markdown_content = _build_markdown_response(data, base_domain, template)
+    logger.info(f"Retrieved moyuren data for {target_date} (encode=markdown)")
+    return PlainTextResponse(
+        content=markdown_content,
+        status_code=status.HTTP_200_OK,
+        headers={**cache_headers, "Content-Type": "text/markdown; charset=utf-8"},
+    )
 
-    Returns the actual JPEG image file instead of JSON metadata.
-    This endpoint is useful for embedding the image directly in HTML or markdown.
 
-    Raises:
-        404: If no image has been generated yet or image file not found.
-    """
-    logger = logging.getLogger(__name__)
+def _handle_image_response(
+    data: dict,
+    cache_dir: str,
+    template: str | None,
+    cache_headers: dict[str, str],
+    target_date: date,
+    logger: logging.Logger,
+) -> FileResponse | JSONResponse:
+    """Handle image file response (encode=image)."""
+    images = data.get("images", {})
+    filename = _get_filename_for_template(images, template)
+    if not filename:
+        return JSONResponse(
+            content=error_response(
+                code=ErrorCode.API_TEMPLATE_NOT_FOUND,
+                message=f"No image found for template: {template or 'default'}",
+            ),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
 
-    # Get state file path from config
-    config = request.app.state.config
-    state_path = Path(config.paths.state_path)
-
-    # Get valid state data (regenerates if incompatible)
-    state_data, error = await _get_valid_state(request, state_path, logger)
-    if error:
-        return error
-
-    # Build image file path with security validation
-    static_dir = Path(config.paths.static_dir)
-    filename = state_data["filename"]
+    # Build and validate image path
+    images_dir = Path(cache_dir) / "images"
 
     # Validate filename to prevent path traversal
     if "/" in filename or "\\" in filename or ".." in filename:
@@ -333,25 +383,23 @@ async def get_moyuren_latest(request: Request) -> FileResponse:
         return JSONResponse(
             content=error_response(
                 code=ErrorCode.STORAGE_READ_FAILED,
-                message="Invalid filename",
-                detail="Filename contains invalid characters",
+                message="Invalid filename: contains invalid characters",
             ),
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    image_path = static_dir / filename
+    image_path = images_dir / filename
 
-    # Ensure resolved path is still within static_dir
+    # Ensure resolved path is still within images_dir
     try:
         resolved_path = image_path.resolve()
-        resolved_static = static_dir.resolve()
-        if not str(resolved_path).startswith(str(resolved_static)):
+        resolved_images = images_dir.resolve()
+        if not str(resolved_path).startswith(str(resolved_images)):
             logger.error(f"Path traversal attempt: {filename}")
             return JSONResponse(
                 content=error_response(
                     code=ErrorCode.STORAGE_READ_FAILED,
-                    message="Invalid file path",
-                    detail="File path is outside static directory",
+                    message="Invalid file path: outside images directory",
                 ),
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
@@ -360,32 +408,125 @@ async def get_moyuren_latest(request: Request) -> FileResponse:
         return JSONResponse(
             content=error_response(
                 code=ErrorCode.STORAGE_READ_FAILED,
-                message="Invalid file path",
-                detail=str(e),
+                message=f"Invalid file path: {e}",
             ),
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Check if image file exists and is a regular file
+    # Check if image file exists
     if not image_path.is_file():
-        logger.error(f"Image file not found or not a regular file: {image_path}")
+        logger.error(f"Image file not found: {image_path}")
         return JSONResponse(
             content=error_response(
                 code=ErrorCode.STORAGE_NOT_FOUND,
-                message="Image file not found",
-                detail=f"File {filename} does not exist or is not a regular file",
+                message=f"Image file not found: {filename}",
             ),
             status_code=status.HTTP_404_NOT_FOUND,
         )
 
-    logger.info(f"Serving latest moyuren image: {filename}")
+    logger.info(f"Serving moyuren image for {target_date}: {filename}")
     return FileResponse(
         path=image_path,
         media_type="image/jpeg",
         filename=filename,
-        headers={
-            "Cache-Control": "no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        },
+        headers=cache_headers,
     )
+
+
+@router.get(
+    "/moyuren",
+    responses={
+        200: {"description": "Success"},
+        304: {"description": "Not Modified"},
+        400: {"model": ErrorResponse, "description": "Invalid parameters"},
+        404: {"model": ErrorResponse, "description": "Data not found"},
+        503: {"model": ErrorResponse, "description": "Generation in progress"},
+    },
+)
+async def get_moyuren(
+    request: Request,
+    date: str | None = Query(None, description="Target date in YYYY-MM-DD format, defaults to today"),
+    encode: str = Query("json", description="Output format: json, text, markdown, image"),
+    template: str | None = Query(None, description="Template name, defaults to first available"),
+    detail: bool = Query(False, description="Include detailed fields (only for encode=json)"),
+) -> Response:
+    """Get moyuren calendar image data or file.
+
+    Unified endpoint supporting multiple output formats and query parameters.
+
+    Query Parameters:
+        - date: Target date (YYYY-MM-DD), defaults to today
+        - encode: Output format (json/text/markdown/image), defaults to json
+        - template: Template name, defaults to first available
+        - detail: Include detailed fields (only for encode=json), defaults to false
+
+    HTTP Caching:
+        - History dates (< today): Cache-Control: immutable
+        - Today's date: ETag + Last-Modified, supports 304 Not Modified
+
+    Returns:
+        - encode=json: JSON response with image metadata
+        - encode=text: Plain text response
+        - encode=markdown: Markdown formatted response
+        - encode=image: JPEG image file
+    """
+    logger = logging.getLogger(__name__)
+
+    # Validate encode parameter
+    valid_encodes = ["json", "text", "markdown", "image"]
+    if encode not in valid_encodes:
+        return JSONResponse(
+            content=error_response(
+                code=ErrorCode.API_INVALID_ENCODE,
+                message=f"Invalid encode parameter: {encode}, must be one of {valid_encodes}",
+            ),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Parse and validate date parameter
+    if date is None:
+        target_date = today_business()
+    else:
+        try:
+            target_date = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError:
+            return JSONResponse(
+                content=error_response(
+                    code=ErrorCode.API_INVALID_DATE,
+                    message=f"Invalid date format: {date}, expected YYYY-MM-DD",
+                ),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+    # Load data for target date
+    data, error = await _load_data_for_date(request, target_date, logger)
+    if error:
+        return error
+
+    # Check 304 Not Modified for today's data
+    today = today_business()
+    if target_date == today and _check_not_modified(request, data["updated_at"]):
+        cache_headers = _build_cache_headers(target_date, data["updated_at"])
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=cache_headers)
+
+    # Build cache headers
+    cache_headers = _build_cache_headers(target_date, data["updated_at"])
+    config = request.app.state.config
+    base_domain = config.server.base_domain
+
+    # Handle different output formats
+    try:
+        if encode == "image":
+            return _handle_image_response(data, config.paths.cache_dir, template, cache_headers, target_date, logger)
+        elif encode == "text":
+            return _handle_text_response(data, base_domain, template, cache_headers, target_date, logger)
+        elif encode == "markdown":
+            return _handle_markdown_response(data, base_domain, template, cache_headers, target_date, logger)
+        else:
+            return _handle_json_response(data, base_domain, template, detail, cache_headers, target_date, logger)
+    except StorageError as e:
+        logger.error(f"Storage error: {e.message}")
+        return JSONResponse(
+            content=error_response(code=e.code, message=e.message),
+            status_code=get_http_status(e.code),
+        )

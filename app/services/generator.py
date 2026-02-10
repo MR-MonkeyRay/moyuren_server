@@ -14,7 +14,6 @@ from filelock import FileLock, Timeout
 
 from app.core.errors import StorageError
 from app.services.calendar import get_display_timezone, today_business
-from app.services.state import migrate_state
 
 
 class GenerationBusyError(Exception):
@@ -35,10 +34,10 @@ def _get_async_lock() -> asyncio.Lock:
     return _async_lock
 
 
-def _read_state_file(state_path: Path) -> dict | None:
-    """读取 state 文件内容"""
+def _read_data_file(data_file: Path) -> dict | None:
+    """读取 data 文件内容"""
     try:
-        with state_path.open("r", encoding="utf-8") as f:
+        with data_file.open("r", encoding="utf-8") as f:
             data = json.load(f)
         return data if isinstance(data, dict) else None
     except (OSError, json.JSONDecodeError):
@@ -56,44 +55,32 @@ def _is_recently_updated(state_data: dict, threshold_sec: int = 10) -> bool:
     return time.time() - updated_time < threshold_sec
 
 
-def _read_latest_filename(state_path: Path, template_name: str | None = None) -> str | None:
-    """读取 state 文件中的最新文件名
+def _read_latest_filename(data_file: Path, template_name: str | None = None) -> str | None:
+    """读取 data 文件中的最新文件名
 
     Args:
-        state_path: Path to state file.
+        data_file: Path to data file.
         template_name: Optional template name to look up.
 
     Returns:
         文件名，如果读取失败则返回 None
     """
     try:
-        with state_path.open("r", encoding="utf-8") as f:
+        with data_file.open("r", encoding="utf-8") as f:
             data = json.load(f)
             if not isinstance(data, dict):
                 return None
 
-            # Check if this is v1 format (no version or version=1)
-            version = data.get("version")
-            is_v1 = version is None or version == 1
-
-            # For v1 state: only return filename if requesting default template
-            # This prevents returning wrong template's file when multi-template is used
-            if is_v1:
-                # v1 state only has one template (the default "moyuren")
-                # If requesting a different template, force regeneration
-                if template_name and template_name != "moyuren":
-                    return None
-                return data.get("filename")
-
-            # v2 format: look up in templates map
-            if template_name:
-                templates = data.get("templates")
-                if isinstance(templates, dict):
-                    template_entry = templates.get(template_name)
-                    if isinstance(template_entry, dict):
-                        return template_entry.get("filename")
+            # Read from images mapping
+            images = data.get("images")
+            if not isinstance(images, dict):
                 return None
-            return data.get("filename")
+
+            # If template_name not specified, use first available
+            if not template_name:
+                return next(iter(images.values()), None)
+
+            return images.get(template_name)
     except (FileNotFoundError, json.JSONDecodeError, KeyError, OSError):
         return None
 
@@ -211,9 +198,12 @@ def _schedule_cache_cleanup(cache_cleaner, logger) -> None:
 
     async def _cleanup_task():
         try:
-            deleted_count = await asyncio.to_thread(cache_cleaner.cleanup)
-            if deleted_count > 0:
-                logger.info(f"Cleaned up {deleted_count} expired cache file(s)")
+            result = await asyncio.to_thread(cache_cleaner.cleanup)
+            if result.get("deleted_files", 0) > 0:
+                logger.info(
+                    f"Cleaned up {result['deleted_files']} expired cache file(s), "
+                    f"freed {result['freed_bytes'] / 1024:.1f} KB"
+                )
         except Exception as e:
             logger.warning(f"Cache cleanup failed: {e}")
 
@@ -221,13 +211,13 @@ def _schedule_cache_cleanup(cache_cleaner, logger) -> None:
 
 
 async def generate_and_save_image(app: FastAPI, template_name: str | None = None) -> str:
-    """Generate image and update state file.
+    """Generate image and update data file.
 
     This function performs the complete image generation pipeline:
     1. Fetch data from API endpoints
     2. Compute template context
     3. Render HTML to image
-    4. Update state/latest.json atomically
+    4. Update cache/data/{date}.json atomically
 
     Args:
         app: FastAPI application instance with services in app.state.
@@ -243,7 +233,8 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
     """
     logger = app.state.logger
     config = app.state.config
-    state_path = Path(config.paths.state_path)
+    cache_dir = Path(config.paths.cache_dir)
+    data_dir = cache_dir / "data"
 
     # Resolve template name
     templates_config = config.get_templates_config()
@@ -254,7 +245,7 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
     async_lock = _get_async_lock()
 
     # 获取文件锁路径
-    lock_file = state_path.parent / ".generation.lock"
+    lock_file = cache_dir / ".generation.lock"
     lock_file.parent.mkdir(parents=True, exist_ok=True)
     file_lock = FileLock(str(lock_file), timeout=5)
 
@@ -272,19 +263,21 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
             await asyncio.to_thread(file_lock.acquire)
             try:
                 # 二次检查：获取锁后检查是否已有新生成的文件
-                if state_path.exists():
-                    state_data = _read_state_file(state_path)
-                    if state_data and _is_recently_updated(state_data, threshold_sec=10):
+                today_str = today_business().isoformat()
+                data_file = data_dir / f"{today_str}.json"
+                if data_file.exists():
+                    data = _read_data_file(data_file)
+                    if data and _is_recently_updated(data, threshold_sec=10):
                         filename = _read_latest_filename(
-                            state_path,
+                            data_file,
                             resolved_template_name,
                         )
                         if filename:
                             logger.info(
-                                f"State file recently updated for template '{resolved_template_name}', skipping generation"
+                                f"Data file recently updated for template '{resolved_template_name}', skipping generation"
                             )
                             return filename
-                        logger.warning("State file exists but unreadable, proceeding with generation")
+                        logger.warning("Data file exists but unreadable, proceeding with generation")
 
                 logger.info("Starting image generation...")
 
@@ -302,9 +295,9 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
                 )
                 logger.info(f"Image rendered: {filename}")
 
-                # 4. Update state/latest.json atomically
-                await _update_state_file(
-                    state_path=config.paths.state_path,
+                # 4. Update cache/data/{date}.json atomically
+                await _update_data_file(
+                    data_dir=str(data_dir),
                     filename=filename,
                     template_data=template_data,
                     raw_data=raw_data,
@@ -329,36 +322,36 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
             async_lock.release()
 
 
-async def _update_state_file(
-    state_path: str,
+
+async def _update_data_file(
+    data_dir: str,
     filename: str,
     template_data: dict,
     raw_data: dict,
     config: Any,
     template_name: str,
 ) -> None:
-    """Atomically update the state file with latest image information.
+    """Atomically update the daily data file with latest image information.
 
     Args:
-        state_path: Path to the state file (e.g., "state/latest.json").
+        data_dir: Path to the data directory (e.g., "cache/data").
         filename: Generated image filename.
         template_data: Template data dictionary from DataComputer.
         raw_data: Raw data dictionary containing original API responses.
-        config: Application config for reading render dimensions.
+        config: Application config.
         template_name: Template name used for rendering.
 
     Raises:
         StorageError: If file write fails.
     """
 
-    def _write_state():
-        state_file = Path(state_path)
+    def _write_data():
+        dir_path = Path(data_dir)
+        dir_path.mkdir(parents=True, exist_ok=True)
 
-        # 确保父目录存在
-        state_file.parent.mkdir(parents=True, exist_ok=True)
-
-        # Prepare state data
         now = datetime.now(get_display_timezone())
+        business_date = today_business()
+        data_file = dir_path / f"{business_date.isoformat()}.json"
 
         # Extract data from template_data
         date_info = template_data.get("date", {})
@@ -368,7 +361,6 @@ async def _update_state_file(
         # Build fun_content
         fun_content = None
         if fun_content_raw:
-            # Determine type from title
             title = fun_content_raw.get("title", "")
             content_type = "unknown"
             if "冷笑话" in title:
@@ -379,7 +371,6 @@ async def _update_state_file(
                 content_type = "duanzi"
             elif "摸鱼" in title:
                 content_type = "moyu_quote"
-
             fun_content = {"type": content_type, "title": title, "text": fun_content_raw.get("content", "")}
 
         # Build KFC content
@@ -387,103 +378,70 @@ async def _update_state_file(
         if kfc_content_raw and isinstance(kfc_content_raw, dict):
             kfc_content = kfc_content_raw.get("content")
 
-        # Prepare timestamps
+        # Timestamps
         updated_str = now.strftime("%Y/%m/%d %H:%M:%S")
         updated_at_ms = int(now.timestamp() * 1000)
 
-        # Public data (shared across templates)
-        # Use today_business() for date to ensure consistency with cache validation in main.py
-        business_date = today_business()
-        public_data = {
+        # Read existing data file to merge images mapping
+        existing_images: dict[str, str] = {}
+        if data_file.exists():
+            try:
+                with data_file.open("r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+                if isinstance(existing_data, dict) and isinstance(existing_data.get("images"), dict):
+                    existing_images.update(existing_data["images"])
+            except (OSError, json.JSONDecodeError):
+                pass
+
+        # Update images mapping
+        existing_images[template_name] = filename
+
+        # Build data file content
+        data = {
             "date": business_date.isoformat(),
             "updated": updated_str,
             "updated_at": updated_at_ms,
+            "images": existing_images,
             "weekday": date_info.get("week_cn", ""),
             "lunar_date": date_info.get("lunar_date", ""),
-            "fun_content": fun_content,
             "is_crazy_thursday": now.weekday() == 3,
-            "kfc_content": kfc_content,
-        }
-
-        # Template-specific data
-        template_specific_data = {
             "date_info": template_data.get("date"),
             "weekend": template_data.get("weekend"),
             "solar_term": template_data.get("solar_term"),
             "guide": template_data.get("guide"),
-            "news_list": [
-                item.get("text", "") for item in template_data.get("news_list", []) if isinstance(item, dict)
-            ],
-            "news_meta": template_data.get("news_meta"),
             "holidays": [
                 {k: v for k, v in h.items() if k != "color"}
                 for h in template_data.get("holidays", [])
                 if isinstance(h, dict)
             ],
+            "news_list": [
+                item.get("text", "") for item in template_data.get("news_list", []) if isinstance(item, dict)
+            ],
+            "news_meta": template_data.get("news_meta"),
+            "fun_content": fun_content,
+            "kfc_content": kfc_content,
             "kfc_content_full": template_data.get("kfc_content"),
             "stock_indices": raw_data.get("stock_indices"),
         }
 
-        # Read existing state to merge template entries
-        existing_templates: dict[str, Any] = {}
-        existing_template_data: dict[str, Any] = {}
-        if state_file.exists():
-            try:
-                with state_file.open("r", encoding="utf-8") as f:
-                    existing_state = json.load(f)
-                if isinstance(existing_state, dict):
-                    # Always use "moyuren" as default for v1 migration to preserve existing cache
-                    existing_state = migrate_state(existing_state, default_template="moyuren")
-                    if isinstance(existing_state.get("templates"), dict):
-                        existing_templates.update(existing_state["templates"])
-                    if isinstance(existing_state.get("template_data"), dict):
-                        existing_template_data.update(existing_state["template_data"])
-            except (OSError, json.JSONDecodeError, ValueError):
-                pass
-
-        # Update current template entry
-        existing_templates[template_name] = {
-            "filename": filename,
-            "updated": updated_str,
-            "updated_at": updated_at_ms,
-        }
-        existing_template_data[template_name] = template_specific_data
-
-        # Build v2 state data with backward compatibility
-        state_data = {
-            "version": 2,
-            "public": public_data,
-            "templates": existing_templates,
-            "template_data": existing_template_data,
-            # Backward compatible fields (flat structure)
-            **public_data,
-            "filename": filename,
-            **template_specific_data,
-        }
-
-        # Atomic write: temp file + rename
+        # Atomic write
         tmp_path = None
         try:
             with tempfile.NamedTemporaryFile(
                 mode="w",
-                dir=state_file.parent,
-                prefix=".latest_",
+                dir=dir_path,
+                prefix=".data_",
                 suffix=".tmp",
                 delete=False,
             ) as tmp_file:
-                json.dump(state_data, tmp_file, ensure_ascii=False, indent=2)
+                json.dump(data, tmp_file, ensure_ascii=False, indent=2)
                 tmp_path = tmp_file.name
-
-            os.replace(tmp_path, state_file)
-
+            os.replace(tmp_path, data_file)
         except Exception as e:
-            # Clean up temp file if it exists
             if tmp_path and Path(tmp_path).exists():
                 Path(tmp_path).unlink(missing_ok=True)
             raise StorageError(
-                message=f"Failed to update state file: {state_path}",
-                detail=str(e),
+                message=f"Failed to update data file {data_file}: {e}",
             ) from e
 
-    # Run blocking IO in thread
-    await asyncio.to_thread(_write_state)
+    await asyncio.to_thread(_write_data)

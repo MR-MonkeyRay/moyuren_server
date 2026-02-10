@@ -9,7 +9,7 @@
 [holiday-cn] → HolidayService ────┼→ DataComputer → ImageRenderer → [JPEG]
 [趣味API] → FunContentService ────┤                                    ↓
 [KFC API] → KfcService (周四) ────┘                                    ↓
-[客户端] ← GET /api/v1/moyuren ← StateFile ← ScheduledTask/OnDemand ←──┘
+[客户端] ← GET /api/v1/moyuren ← CacheDir ← ScheduledTask/OnDemand ←───┘
 ```
 
 ## 核心模块
@@ -18,14 +18,17 @@
 | ---- | ---- | ---- |
 | 入口 | `app/main.py` | 应用生命周期、定时任务注册 |
 | API | `app/api/v1/moyuren.py` | REST 端点 |
+| Ops API | `app/api/v1/ops.py` | 运维端点（手动生成、缓存清理） |
+| 模板 API | `app/api/v1/templates.py` | 模板列表查询端点 |
 | 日级缓存 | `app/services/daily_cache.py` | 日级缓存抽象基类（自动过期、降级策略） |
+| 缓存清理 | `app/services/cache.py` | 缓存清理服务（数据+图片） |
 | 获取 | `app/services/fetcher.py` | 异步并行 HTTP 请求 |
 | 节假日 | `app/services/holiday.py` | 中国法定节假日数据获取与处理 |
 | 趣味内容 | `app/services/fun_content.py` | 随机获取冷笑话/一言/段子等趣味内容 |
 | KFC | `app/services/kfc.py` | 疯狂星期四文案获取（仅周四生效） |
 | 计算 | `app/services/compute.py` | 原始数据 → 模板上下文 |
 | 渲染 | `app/services/renderer.py` | Jinja2 + Playwright 截图 |
-| 图片生成 | `app/services/generator.py` | 图片生成流水线（支持文件锁防并发） |
+| 图片生成 | `app/services/generator.py` | 图片生成流水线（支持文件锁防并发、缓存管理） |
 | 调度 | `app/core/scheduler.py` | APScheduler 定时任务 |
 | 配置 | `app/core/config.py` | YAML + 环境变量 |
 
@@ -45,10 +48,14 @@ docker-compose up -d
 | 方法 | 路径 | 说明 |
 | ---- | ---- | ---- |
 | GET | `/healthz` | 健康检查 |
+| GET | `/readyz` | 就绪检查（含依赖验证） |
 | GET | `/api/v1/moyuren` | 获取最新图片元数据 |
+| GET | `/api/v1/templates` | 获取可用模板列表 |
+| GET | `/api/v1/ops/generate` | 手动触发图片生成（需鉴权） |
+| GET | `/api/v1/ops/cache/clean` | 清理过期缓存（需鉴权） |
 | GET | `/static/{filename}` | 静态图片 |
 
-> 注：当 state 文件不存在时，`/api/v1/moyuren` 会自动触发按需生成
+> 注：当缓存图片不存在时，`/api/v1/moyuren` 会自动触发按需生成
 
 ## 配置
 
@@ -58,7 +65,8 @@ docker-compose up -d
 
 - `scheduler.daily_times`: 每日生成时间，如 `["06:00", "18:00"]`
 - `render.viewport_width/height`: 渲染视口尺寸
-- `cache.ttl_hours`: 图片保留时长
+- `cache.retain_days`: 缓存保留天数（默认 30 天）
+- `ops.api_key`: Ops API 鉴权密钥（留空则禁用鉴权）
 - `fun_content.timeout_sec`: 趣味内容 API 超时时间
 - `fun_content.endpoints`: 趣味内容 API 端点列表
 - `crazy_thursday.enabled`: 是否启用疯狂星期四功能
@@ -106,7 +114,7 @@ docker-compose up -d
 }
 ```
 
-**缓存目录**：`state/holidays/`
+**缓存目录**：`cache/holidays/`
 
 ## 时间戳规范
 

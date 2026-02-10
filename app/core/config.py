@@ -30,8 +30,7 @@ class PathsConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    static_dir: str = "static"
-    state_path: str = "state/latest.json"
+    cache_dir: str = "cache"
 
 
 class SchedulerConfig(BaseModel):
@@ -75,14 +74,22 @@ class CacheConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    ttl_hours: int = 24
+    retain_days: int = 30
 
-    @field_validator("ttl_hours")
+    @field_validator("retain_days")
     @classmethod
-    def validate_ttl(cls, value: int) -> int:
+    def validate_retain_days(cls, value: int) -> int:
         if value <= 0:
-            raise ValueError("ttl_hours must be positive")
+            raise ValueError("retain_days must be positive")
         return value
+
+
+class OpsConfig(BaseModel):
+    """Operations configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    api_key: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -424,7 +431,8 @@ class AppConfig(BaseSettings):
     server: ServerConfig
     paths: PathsConfig
     scheduler: SchedulerConfig
-    output_cache: CacheConfig
+    cache: CacheConfig
+    ops: OpsConfig = Field(default_factory=OpsConfig)
     templates: TemplatesConfig
     data_sources: list[DataSource]
     logging: LoggingConfig

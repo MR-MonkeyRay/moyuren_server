@@ -333,15 +333,15 @@ async def render_scenario(
     scenario_name: str | None,
     template_data: dict,
     image_renderer: ImageRenderer,
-    static_dir: str,
+    images_dir: str,
     logger,
 ) -> Path:
     filename = await image_renderer.render(template_data)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_name = build_output_filename(scenario_name, timestamp)
 
-    source_path = Path(static_dir) / filename
-    target_path = Path(static_dir) / output_name
+    source_path = Path(images_dir) / filename
+    target_path = Path(images_dir) / output_name
     if source_path.exists():
         source_path.replace(target_path)
     else:
@@ -368,7 +368,9 @@ async def main():
     init_timezones(business_tz=config.timezone.business, display_tz=config.timezone.display)
 
     # Ensure directories exist
-    Path(config.paths.static_dir).mkdir(parents=True, exist_ok=True)
+    cache_dir = Path(config.paths.cache_dir)
+    (cache_dir / "images").mkdir(parents=True, exist_ok=True)
+    (cache_dir / "holidays").mkdir(parents=True, exist_ok=True)
 
     # Initialize services
     news_source = config.get_source(NewsSource)
@@ -376,7 +378,7 @@ async def main():
         source=news_source,
         logger=logger,
     )
-    holiday_cache_dir = Path(config.paths.state_path).parent / "holidays"
+    holiday_cache_dir = cache_dir / "holidays"
     holiday_source = config.get_source(HolidaySource)
     holiday_service = HolidayService(
         logger=logger,
@@ -399,7 +401,7 @@ async def main():
 
     image_renderer = ImageRenderer(
         templates_config=templates_config,
-        static_dir=config.paths.static_dir,
+        images_dir=str(cache_dir / "images"),
         render_config=config.templates.config,
         logger=logger,
     )
@@ -430,7 +432,7 @@ async def main():
                 scenario_name,
                 scenario_template,
                 image_renderer,
-                config.paths.static_dir,
+                str(cache_dir / "images"),
                 logger,
             )
             print(f"\n✅ 场景 {scenario_name} 已生成: {image_path.absolute()}")
@@ -448,7 +450,7 @@ async def main():
             args.scenario,
             scenario_template,
             image_renderer,
-            config.paths.static_dir,
+            str(cache_dir / "images"),
             logger,
         )
         print(f"\n✅ 场景 {args.scenario} 已生成: {image_path.absolute()}")
@@ -462,7 +464,7 @@ async def main():
         None,
         mixed_template,
         image_renderer,
-        config.paths.static_dir,
+        str(cache_dir / "images"),
         logger,
     )
 

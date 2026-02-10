@@ -52,11 +52,7 @@ logs/
 *.log
 
 # ===== Runtime Data =====
-state/
-static/*.jpg
-static/*.png
-static/*.jpeg
-static/*.gif
+cache/
 
 # ===== Environment Variables =====
 .env

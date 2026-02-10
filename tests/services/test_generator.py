@@ -49,106 +49,99 @@ class TestReadLatestFilename:
     """Tests for _read_latest_filename function."""
 
     def test_reads_v1_state(self, tmp_path: Path) -> None:
-        """Test reads filename from v1 state."""
-        state_path = tmp_path / "latest.json"
-        state_data = {
-            "filename": "moyuren_20260204.jpg",
+        """Test reads filename from data file with images mapping."""
+        data_file = tmp_path / "2026-02-04.json"
+        data = {
+            "images": {"moyuren": "moyuren_20260204.jpg"},
             "date": "2026-02-04",
         }
-        state_path.write_text(json.dumps(state_data))
+        data_file.write_text(json.dumps(data))
 
-        result = _read_latest_filename(state_path)
+        result = _read_latest_filename(data_file)
 
         assert result == "moyuren_20260204.jpg"
 
     def test_reads_v2_state(self, tmp_path: Path) -> None:
-        """Test reads filename from v2 state."""
-        state_path = tmp_path / "latest.json"
-        state_data = {
-            "version": 2,
-            "filename": "moyuren_20260204.jpg",
-            "templates": {
-                "moyuren": {
-                    "filename": "moyuren_20260204.jpg",
-                }
+        """Test reads filename from data file with multiple templates."""
+        data_file = tmp_path / "2026-02-04.json"
+        data = {
+            "images": {
+                "moyuren": "moyuren_20260204.jpg",
             },
+            "date": "2026-02-04",
         }
-        state_path.write_text(json.dumps(state_data))
+        data_file.write_text(json.dumps(data))
 
-        result = _read_latest_filename(state_path)
+        result = _read_latest_filename(data_file)
 
         assert result == "moyuren_20260204.jpg"
 
     def test_reads_v2_state_with_template_name(self, tmp_path: Path) -> None:
-        """Test reads filename from v2 state with template name."""
-        state_path = tmp_path / "latest.json"
-        state_data = {
-            "version": 2,
-            "templates": {
-                "moyuren": {"filename": "moyuren_20260204.jpg"},
-                "custom": {"filename": "custom_20260204.jpg"},
+        """Test reads filename from data file with specific template name."""
+        data_file = tmp_path / "2026-02-04.json"
+        data = {
+            "images": {
+                "moyuren": "moyuren_20260204.jpg",
+                "custom": "custom_20260204.jpg",
             },
         }
-        state_path.write_text(json.dumps(state_data))
+        data_file.write_text(json.dumps(data))
 
-        result = _read_latest_filename(state_path, template_name="custom")
+        result = _read_latest_filename(data_file, template_name="custom")
 
         assert result == "custom_20260204.jpg"
 
     def test_returns_none_for_missing_file(self, tmp_path: Path) -> None:
         """Test returns None for missing file."""
-        state_path = tmp_path / "nonexistent.json"
+        data_file = tmp_path / "nonexistent.json"
 
-        result = _read_latest_filename(state_path)
+        result = _read_latest_filename(data_file)
 
         assert result is None
 
     def test_returns_none_for_invalid_json(self, tmp_path: Path) -> None:
         """Test returns None for invalid JSON."""
-        state_path = tmp_path / "latest.json"
-        state_path.write_text("not valid json")
+        data_file = tmp_path / "latest.json"
+        data_file.write_text("not valid json")
 
-        result = _read_latest_filename(state_path)
+        result = _read_latest_filename(data_file)
 
         assert result is None
 
     def test_returns_none_for_non_dict(self, tmp_path: Path) -> None:
         """Test returns None for non-dict JSON."""
-        state_path = tmp_path / "latest.json"
-        state_path.write_text(json.dumps(["array", "not", "dict"]))
+        data_file = tmp_path / "latest.json"
+        data_file.write_text(json.dumps(["array", "not", "dict"]))
 
-        result = _read_latest_filename(state_path)
+        result = _read_latest_filename(data_file)
 
         assert result is None
 
     def test_returns_none_for_missing_template(self, tmp_path: Path) -> None:
-        """Test returns None for missing template in v2 state."""
-        state_path = tmp_path / "latest.json"
-        state_data = {
-            "version": 2,
-            "templates": {
-                "moyuren": {"filename": "moyuren_20260204.jpg"},
+        """Test returns None for missing template in images mapping."""
+        data_file = tmp_path / "2026-02-04.json"
+        data = {
+            "images": {
+                "moyuren": "moyuren_20260204.jpg",
             },
         }
-        state_path.write_text(json.dumps(state_data))
+        data_file.write_text(json.dumps(data))
 
-        result = _read_latest_filename(state_path, template_name="nonexistent")
+        result = _read_latest_filename(data_file, template_name="nonexistent")
 
         assert result is None
 
-    def test_handles_migration_error(self, tmp_path: Path) -> None:
-        """Test handles migration error gracefully."""
-        state_path = tmp_path / "latest.json"
-        state_data = {
-            "version": 99,  # Unsupported version
-            "filename": "test.jpg",
+    def test_handles_missing_images_key(self, tmp_path: Path) -> None:
+        """Test handles missing images key gracefully."""
+        data_file = tmp_path / "2026-02-04.json"
+        data = {
+            "date": "2026-02-04",
         }
-        state_path.write_text(json.dumps(state_data))
+        data_file.write_text(json.dumps(data))
 
-        # Should not raise, returns filename from original data
-        result = _read_latest_filename(state_path)
+        result = _read_latest_filename(data_file)
 
-        assert result == "test.jpg"
+        assert result is None
 
 
 class TestGenerationBusyErrorExceptionChain:
@@ -160,8 +153,8 @@ class TestGenerationBusyErrorExceptionChain:
         app = MagicMock()
         app.state.logger = MagicMock()
 
-        state_path = tmp_path / "state" / "latest.json"
-        state_path.parent.mkdir(parents=True, exist_ok=True)
+        data_file = tmp_path / "state" / "latest.json"
+        data_file.parent.mkdir(parents=True, exist_ok=True)
 
         template_item = MagicMock()
         template_item.name = "moyuren"
@@ -169,7 +162,8 @@ class TestGenerationBusyErrorExceptionChain:
         templates_config.get_template.return_value = template_item
 
         config = MagicMock()
-        config.paths.state_path = str(state_path)
+        config.paths.cache_dir = str(tmp_path / "cache")
+        config.paths.data_file = str(data_file)
         config.get_templates_config.return_value = templates_config
         app.state.config = config
 

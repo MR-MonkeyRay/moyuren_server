@@ -12,6 +12,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.v1.moyuren import router as moyuren_router
+from app.api.v1.ops import router as ops_router
+from app.api.v1.templates import router as templates_router
 from app.core.config import (
     CrazyThursdaySource,
     FunContentSource,
@@ -64,19 +66,19 @@ async def lifespan(app: FastAPI):
     init_timezones(business_tz=config.timezone.business, display_tz=config.timezone.display)
 
     # 3. Ensure required directories exist
-    Path(config.paths.static_dir).mkdir(parents=True, exist_ok=True)
-    Path(config.paths.state_path).parent.mkdir(parents=True, exist_ok=True)
+    cache_dir = Path(config.paths.cache_dir)
+    (cache_dir / "data").mkdir(parents=True, exist_ok=True)
+    (cache_dir / "images").mkdir(parents=True, exist_ok=True)
+    (cache_dir / "holidays").mkdir(parents=True, exist_ok=True)
     Path(config.logging.file).parent.mkdir(parents=True, exist_ok=True)
 
-    # 3.1 Remount static files with configured path if different from default
-    if config.paths.static_dir != _default_static_dir:
-        # Remove default mount and add configured one
-        app.routes = [r for r in app.routes if getattr(r, "name", None) != "static"]
-        app.mount("/static", StaticFiles(directory=config.paths.static_dir), name="static")
+    # 3.1 Mount static files from cache/images
+    app.routes = [r for r in app.routes if getattr(r, "name", None) != "static"]
+    app.mount("/static", StaticFiles(directory=str(cache_dir / "images")), name="static")
 
     # 4. Initialize services
     # 创建日级缓存目录
-    daily_cache_dir = Path(config.paths.state_path).parent / "cache"
+    daily_cache_dir = cache_dir / "daily"
 
     # 创建共享 HTTP 客户端（连接池复用）
     http_client = httpx.AsyncClient(
@@ -100,7 +102,7 @@ async def lifespan(app: FastAPI):
     data_computer = DataComputer(domain_aggregator, template_adapter)
 
     # 初始化节假日服务（原始数据目录保持不变）
-    holiday_raw_cache_dir = Path(config.paths.state_path).parent / "holidays"
+    holiday_raw_cache_dir = cache_dir / "holidays"
     holiday_source = config.get_source(HolidaySource)
     holiday_service = CachedHolidayService(
         logger=logger,
@@ -139,14 +141,14 @@ async def lifespan(app: FastAPI):
 
     image_renderer = ImageRenderer(
         templates_config=templates_config,
-        static_dir=config.paths.static_dir,
+        images_dir=str(cache_dir / "images"),
         render_config=config.templates.config,
         logger=logger,
     )
 
     cache_cleaner = CacheCleaner(
-        static_dir=config.paths.static_dir,
-        ttl_hours=config.output_cache.ttl_hours,
+        cache_dir=str(cache_dir),
+        retain_days=config.cache.retain_days,
         logger=logger,
     )
 
@@ -238,31 +240,34 @@ async def lifespan(app: FastAPI):
     logger.info("Scheduler started")
 
     # 6. Validate and generate initial image if needed
-    state_path = Path(config.paths.state_path)
+    data_dir = cache_dir / "data"
+    today_str = today_business().isoformat()
+    data_file = data_dir / f"{today_str}.json"
     need_regenerate = False
     cache_is_valid_but_expired = False  # Track if cache is structurally valid but just expired
 
-    if not state_path.exists():
-        logger.info("No existing state file found")
+    if not data_file.exists():
+        logger.info("No existing data file found for today")
         need_regenerate = True
     else:
-        # Validate state file content
+        # Validate data file content
         try:
             import json
 
-            with state_path.open("r", encoding="utf-8") as f:
-                state_data = json.load(f)
-            required_fields = ["filename", "date", "updated", "updated_at"]
-            missing_fields = [f for f in required_fields if f not in state_data]
-            if missing_fields:
-                logger.warning(f"State file missing required fields: {missing_fields}")
+            with data_file.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                logger.warning("Data file is not a dictionary")
+                need_regenerate = True
+            elif not data.get("images"):
+                logger.warning("Data file missing images mapping")
                 need_regenerate = True
             else:
                 # Check cache expiration
                 try:
-                    updated_at_ms = state_data.get("updated_at")
+                    updated_at_ms = data.get("updated_at")
                     if updated_at_ms is None:
-                        logger.warning("State file missing 'updated_at' field")
+                        logger.warning("Data file missing 'updated_at' field")
                         need_regenerate = True
                     # Validate updated_at type and range
                     elif not isinstance(updated_at_ms, (int, float)):
@@ -275,8 +280,7 @@ async def lifespan(app: FastAPI):
                         need_regenerate = True
                     else:
                         # 使用日期边界判断替代 TTL
-                        cached_date = state_data.get("date")
-                        today_str = today_business().isoformat()
+                        cached_date = data.get("date")
                         if cached_date != today_str:
                             logger.info(f"Cache date mismatch: {cached_date} != {today_str}")
                             need_regenerate = True
@@ -285,7 +289,7 @@ async def lifespan(app: FastAPI):
                     logger.warning(f"Failed to check cache expiration: {e}")
                     need_regenerate = True
         except (json.JSONDecodeError, OSError) as e:
-            logger.warning(f"State file invalid or unreadable: {e}")
+            logger.warning(f"Data file invalid or unreadable: {e}")
             need_regenerate = True
 
     if need_regenerate:
@@ -318,19 +322,19 @@ async def lifespan(app: FastAPI):
         else:
             # Strategy: Sync generation (cache is missing or invalid)
             # Must generate now to ensure data availability
-            if state_path.exists():
+            if data_file.exists():
                 # Invalid cache exists, remove it before regenerating
-                logger.info("Removing invalid cache file...")
+                logger.info("Removing invalid data file...")
                 try:
-                    if state_path.is_file():
-                        state_path.unlink()
-                    elif state_path.is_dir():
-                        logger.error(f"State path is a directory, not a file: {state_path}")
+                    if data_file.is_file():
+                        data_file.unlink()
+                    elif data_file.is_dir():
+                        logger.error(f"Data file path is a directory, not a file: {data_file}")
                         import shutil
 
-                        shutil.rmtree(state_path)
+                        shutil.rmtree(data_file)
                 except (OSError, IsADirectoryError) as e:
-                    logger.error(f"Failed to remove invalid cache: {e}")
+                    logger.error(f"Failed to remove invalid data file: {e}")
 
             logger.info("No valid cache found, generating initial image...")
             try:
@@ -404,7 +408,7 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     """全局 AppError 异常处理器"""
     return JSONResponse(
         status_code=get_http_status(exc.code),
-        content=error_response(exc.code, exc.message, exc.detail),
+        content=error_response(exc.code, exc.message),
     )
 
 
@@ -424,11 +428,27 @@ async def healthz():
     return {"status": "ok"}
 
 
+@app.api_route("/readyz", methods=["GET", "HEAD"])
+async def readyz(request: Request):
+    """就绪检查 - 验证服务是否可以处理请求。"""
+    checks = {"config": True, "cache_dir": False}
+    try:
+        cache_dir = Path(request.app.state.config.paths.cache_dir)
+        checks["cache_dir"] = cache_dir.exists() and (cache_dir / "data").exists()
+    except Exception:
+        pass
+
+    all_ready = all(checks.values())
+    return JSONResponse(
+        content={"status": "ready" if all_ready else "not_ready", "checks": checks},
+        status_code=200 if all_ready else 503,
+    )
+
+
 # Mount static files directory (will be remounted in lifespan with config path)
 # Default mount for initial setup
-_default_static_dir = "static"
-app.mount("/static", StaticFiles(directory=_default_static_dir), name="static")
-
 
 # Include API routers
 app.include_router(moyuren_router)
+app.include_router(ops_router)
+app.include_router(templates_router)

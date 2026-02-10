@@ -41,8 +41,10 @@ async def main():
     init_timezones(business_tz=config.timezone.business, display_tz=config.timezone.display)
 
     # Ensure directories exist
-    Path(config.paths.static_dir).mkdir(parents=True, exist_ok=True)
-    Path(config.paths.state_path).parent.mkdir(parents=True, exist_ok=True)
+    cache_dir = Path(config.paths.cache_dir)
+    (cache_dir / "images").mkdir(parents=True, exist_ok=True)
+    (cache_dir / "data").mkdir(parents=True, exist_ok=True)
+    (cache_dir / "holidays").mkdir(parents=True, exist_ok=True)
 
     # Initialize services
     news_source = config.get_source(NewsSource)
@@ -50,7 +52,7 @@ async def main():
         source=news_source,
         logger=logger,
     )
-    holiday_cache_dir = Path(config.paths.state_path).parent / "holidays"
+    holiday_cache_dir = cache_dir / "holidays"
     holiday_source = config.get_source(HolidaySource)
     holiday_service = HolidayService(
         logger=logger,
@@ -80,7 +82,7 @@ async def main():
 
     image_renderer = ImageRenderer(
         templates_config=templates_config,
-        static_dir=config.paths.static_dir,
+        images_dir=str(cache_dir / "images"),
         render_config=config.templates.config,
         logger=logger,
     )
@@ -140,8 +142,10 @@ async def main():
     filename = await image_renderer.render(template_data)
     logger.info(f"Image rendered: {filename}")
 
-    # 4. Update state file
-    state_file = Path(config.paths.state_path)
+    # 4. Update data file
+    data_dir = cache_dir / "data"
+    today_str = now.strftime("%Y-%m-%d")
+    data_file = data_dir / f"{today_str}.json"
     now = datetime.now(get_display_timezone())
 
     # Extract data from template_data
@@ -171,13 +175,11 @@ async def main():
     if kfc_content_raw and isinstance(kfc_content_raw, dict):
         kfc_content = kfc_content_raw.get("content")
 
-    state_data = {
+    data = {
         "date": now.strftime("%Y-%m-%d"),
-        "timestamp": now.isoformat(),
-        "filename": filename,
-        # New time fields
         "updated": now.strftime("%Y/%m/%d %H:%M:%S"),
         "updated_at": int(now.timestamp() * 1000),
+        "images": {"moyuren": filename},
         # New content fields
         "weekday": date_info.get("week_cn", ""),
         "lunar_date": date_info.get("lunar_date", ""),
@@ -202,19 +204,19 @@ async def main():
 
     with tempfile.NamedTemporaryFile(
         mode="w",
-        dir=state_file.parent,
-        prefix=".latest_",
+        dir=data_dir,
+        prefix=".data_",
         suffix=".tmp",
         delete=False,
     ) as tmp_file:
-        json.dump(state_data, tmp_file, ensure_ascii=False, indent=2)
+        json.dump(data, tmp_file, ensure_ascii=False, indent=2)
         tmp_path = tmp_file.name
 
-    os.replace(tmp_path, state_file)
-    logger.info(f"State file updated: {config.paths.state_path}")
+    os.replace(tmp_path, data_file)
+    logger.info(f"Data file updated: {data_file}")
 
     # Print result
-    image_path = Path(config.paths.static_dir) / filename
+    image_path = cache_dir / "images" / filename
     print(f"\n✅ Image generated: {image_path}")
     print(f"   Size: {image_path.stat().st_size / 1024:.1f} KB")
 

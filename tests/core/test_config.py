@@ -11,6 +11,7 @@ from app.core.config import (
     HolidaySource,
     LoggingConfig,
     NewsSource,
+    OpsConfig,
     SchedulerConfig,
     ServerConfig,
     StockIndexSource,
@@ -80,21 +81,35 @@ class TestSchedulerConfig:
 class TestCacheConfig:
     """Tests for CacheConfig model."""
 
-    def test_valid_ttl(self) -> None:
-        """Test valid TTL."""
-        config = CacheConfig(ttl_hours=24)
-        assert config.ttl_hours == 24
+    def test_valid_retain_days(self) -> None:
+        """Test valid retain_days."""
+        config = CacheConfig(retain_days=30)
+        assert config.retain_days == 30
 
-    def test_zero_ttl_raises_error(self) -> None:
-        """Test zero TTL raises error."""
+    def test_zero_retain_days_raises_error(self) -> None:
+        """Test zero retain_days raises error."""
         with pytest.raises(ValidationError) as exc_info:
-            CacheConfig(ttl_hours=0)
+            CacheConfig(retain_days=0)
         assert "must be positive" in str(exc_info.value)
 
-    def test_negative_ttl_raises_error(self) -> None:
-        """Test negative TTL raises error."""
+    def test_negative_retain_days_raises_error(self) -> None:
+        """Test negative retain_days raises error."""
         with pytest.raises(ValidationError):
-            CacheConfig(ttl_hours=-1)
+            CacheConfig(retain_days=-1)
+
+
+class TestOpsConfig:
+    """Tests for OpsConfig model."""
+
+    def test_default_api_key(self) -> None:
+        """Test default api_key is empty string."""
+        config = OpsConfig()
+        assert config.api_key == ""
+
+    def test_custom_api_key(self) -> None:
+        """Test custom api_key."""
+        config = OpsConfig(api_key="test-key-123")
+        assert config.api_key == "test-key-123"
 
 
 class TestTemplatesConfig:
