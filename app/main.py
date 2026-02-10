@@ -9,6 +9,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.routing import Mount
 
 from app import __version__
 from app.api.v1.moyuren import router as moyuren_router
@@ -73,7 +74,11 @@ async def lifespan(app: FastAPI):
     Path(config.logging.file).parent.mkdir(parents=True, exist_ok=True)
 
     # 3.1 Mount static files from cache/images
-    app.routes = [r for r in app.routes if getattr(r, "name", None) != "static"]
+    app.router.routes[:] = [
+        r
+        for r in app.router.routes
+        if not (isinstance(r, Mount) and r.path == "/static" and getattr(r, "name", None) == "static")
+    ]
     app.mount("/static", StaticFiles(directory=str(cache_dir / "images")), name="static")
 
     # 4. Initialize services
