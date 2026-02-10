@@ -1,0 +1,59 @@
+# ============================================================================
+# 工具配置文件（不用于打包）
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# mypy 类型检查配置（宽松起步，后续逐步收紧）
+# ----------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+
+# 宽松起步：暂不强制类型注解
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+# 启用基础检查
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+
+# ----------------------------------------------------------------------------
+# coverage 覆盖率配置
+# ----------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "app/__init__.py",
+    "*/tests/*",
+    "*/scripts/*",
+]
+
+[tool.coverage.report]
+fail_under = 60
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+    "pass",
+]
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+# ----------------------------------------------------------------------------
+# pytest 测试配置
+# ----------------------------------------------------------------------------
+[tool.pytest.ini_options]
+addopts = "-q --disable-warnings --maxfail=3"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+log_cli = true
+log_cli_level = "INFO"

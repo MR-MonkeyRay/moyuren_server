@@ -1,9 +1,11 @@
 name: Build and Publish Docker Image
 
+# 触发策略：仅在 CI 通过后构建（main/develop 分支）+ 手动触发
 on:
-  push:
-    branches:
-      - '**'
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main, develop]
   workflow_dispatch:
 
 env:
@@ -13,9 +15,15 @@ env:
   DOCKERHUB_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/moyuren-server
 
 jobs:
+  # 创建 Git Tag（仅 main 分支）
   create-tag:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    # workflow_run 触发时检查 CI 是否成功且来自 push 事件，workflow_dispatch 手动触发时跳过检查
+    if: |
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')) &&
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' ||
+       github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main')
     permissions:
       contents: write
     outputs:
@@ -26,6 +34,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          # workflow_run 触发时需要 checkout CI 测试过的提交
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
       - name: Configure Git
@@ -62,18 +72,27 @@ jobs:
           echo "tag_created=true" >> $GITHUB_OUTPUT
           echo "Successfully created and pushed tag v$VERSION"
 
+  # 构建并推送 Docker 镜像（含 Trivy 安全扫描）
   build:
     runs-on: ubuntu-latest
     needs: [create-tag]
-    if: always() && (needs.create-tag.result == 'success' || needs.create-tag.result == 'skipped')
+    # workflow_run 触发时检查 CI 是否成功且来自 push 事件，workflow_dispatch 手动触发时跳过检查
+    if: |
+      always() &&
+      (needs.create-tag.result == 'success' || needs.create-tag.result == 'skipped') &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
     permissions:
       contents: read
       packages: write
+      security-events: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          # workflow_run 触发时需要 checkout CI 测试过的提交
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
       - name: Set up QEMU
@@ -103,8 +122,12 @@ jobs:
           IMAGE_NAME_LOWER=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
           DOCKERHUB_IMAGE_LOWER=$(echo "${{ env.DOCKERHUB_IMAGE }}" | tr '[:upper:]' '[:lower:]')
 
-          # 获取短 commit SHA
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          # 获取短 commit SHA（workflow_run 时使用 CI 测试过的提交）
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            SHORT_SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-7)
+          else
+            SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          fi
 
           # 从 app/__init__.py 读取项目版本号
           PROJECT_VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' app/__init__.py || echo "0.0.0")
@@ -113,11 +136,19 @@ jobs:
           # 获取 tag_created 状态（仅 main 分支有效）
           TAG_CREATED="${{ needs.create-tag.outputs.tag_created }}"
 
+          # 获取实际分支名（处理 workflow_run 触发的情况）
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            ACTUAL_BRANCH="${{ github.event.workflow_run.head_branch }}"
+          else
+            ACTUAL_BRANCH="${{ github.ref_name }}"
+          fi
+          echo "Actual branch: ${ACTUAL_BRANCH}"
+
           # 初始化标签列表
           GHCR_TAGS=""
           DOCKERHUB_TAGS=""
 
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          if [[ "${ACTUAL_BRANCH}" == "main" ]]; then
             # main 分支：始终推送 latest
             GHCR_TAGS="${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:latest"
             DOCKERHUB_TAGS="${{ env.DOCKERHUB_REGISTRY }}/${DOCKERHUB_IMAGE_LOWER}:latest"
@@ -131,10 +162,9 @@ jobs:
               echo "::warning::Tag already exists, only pushing latest to avoid overwriting"
             fi
           else
-            # 其他分支：使用版本号+SHA+分支名
-            BRANCH="${{ github.ref_name }}"
+            # 其他分支（develop 等）：使用版本号+SHA+分支名
             # 清理分支名：将 / 和 _ 替换为 -，截断到 30 字符防止超长
-            BRANCH_SUFFIX=$(echo "${BRANCH}" | sed 's|/|-|g' | sed 's|_|-|g' | sed 's/[^a-zA-Z0-9._-]/-/g' | cut -c1-30)
+            BRANCH_SUFFIX=$(echo "${ACTUAL_BRANCH}" | sed 's|/|-|g' | sed 's|_|-|g' | sed 's/[^a-zA-Z0-9._-]/-/g' | cut -c1-30)
 
             GHCR_TAGS="${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:v${PROJECT_VERSION}-${SHORT_SHA}-${BRANCH_SUFFIX}"
             GHCR_TAGS="${GHCR_TAGS},${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:latest-${BRANCH_SUFFIX}"
@@ -158,6 +188,37 @@ jobs:
             ${{ env.GHCR_REGISTRY }}/${{ steps.tags.outputs.image_name }}
             ${{ env.DOCKERHUB_REGISTRY }}/${{ steps.tags.outputs.dockerhub_image }}
 
+      # 先构建单架构镜像到本地（用于 Trivy 扫描）
+      - name: Build Docker image for scanning
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: ${{ steps.tags.outputs.image_name }}:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Trivy 安全扫描（CRITICAL + HIGH 漏洞）
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.tags.outputs.image_name }}:scan
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          # 初期不阻断 CI，只告警
+          exit-code: '0'
+
+      # 上传 Trivy 扫描结果到 GitHub Security
+      - name: Upload Trivy scan results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      # 构建并推送多架构镜像
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
