@@ -45,18 +45,13 @@ env/
 htmlcov/
 .pytest_cache/
 .mypy_cache/
-.ruff_cache/
 
 # ===== Logs =====
 logs/
 *.log
 
 # ===== Runtime Data =====
-state/
-static/*.jpg
-static/*.png
-static/*.jpeg
-static/*.gif
+cache/
 
 # ===== Environment Variables =====
 .env

@@ -9,6 +9,7 @@ from app.core.errors import (
     FetchError,
     RenderError,
     StorageError,
+    error_response,
 )
 
 
@@ -44,6 +45,22 @@ class TestErrorCode:
         assert ErrorCode.GENERATION_FAILED.value == "GENERATION_5001"
         assert ErrorCode.GENERATION_BUSY.value == "GENERATION_5002"
 
+    def test_auth_error_codes_in_6000_range(self) -> None:
+        """Test auth error codes are in 6000-6099 range."""
+        assert ErrorCode.AUTH_UNAUTHORIZED.value == "AUTH_6001"
+
+    def test_api_error_codes_in_7000_range(self) -> None:
+        """Test API error codes are in 7000-7099 range."""
+        assert ErrorCode.API_INVALID_DATE.value == "API_7001"
+        assert ErrorCode.API_INVALID_ENCODE.value == "API_7002"
+        assert ErrorCode.API_INVALID_PARAMETER.value == "API_7003"
+        assert ErrorCode.API_TEMPLATE_NOT_FOUND.value == "API_7004"
+        assert ErrorCode.API_DATA_NOT_FOUND.value == "API_7005"
+
+    def test_ops_error_codes_in_8000_range(self) -> None:
+        """Test ops error codes are in 8000-8099 range."""
+        assert ErrorCode.OPS_CACHE_CLEAN_FAILED.value == "OPS_8001"
+
     def test_error_code_str_representation_matches_value(self) -> None:
         """StrEnum should stringify to raw code value."""
         assert str(ErrorCode.CONFIG_LOAD_FAILED) == "CONFIG_1001"
@@ -55,18 +72,11 @@ class TestAppError:
 
     def test_app_error_attributes(self) -> None:
         """Test AppError has correct attributes."""
-        error = AppError(message="Test error", code=ErrorCode.CONFIG_LOAD_FAILED, detail="Additional detail")
+        error = AppError(message="Test error", code=ErrorCode.CONFIG_LOAD_FAILED)
 
         assert error.message == "Test error"
         assert error.code == ErrorCode.CONFIG_LOAD_FAILED
-        assert error.detail == "Additional detail"
         assert str(error) == "Test error"
-
-    def test_app_error_without_detail(self) -> None:
-        """Test AppError without detail."""
-        error = AppError(message="Test error", code=ErrorCode.CONFIG_LOAD_FAILED)
-
-        assert error.detail is None
 
     def test_app_error_is_exception(self) -> None:
         """Test AppError is an Exception."""
@@ -91,17 +101,15 @@ class TestConfigError:
 
         assert error.message == "Configuration error"
         assert error.code == ErrorCode.CONFIG_LOAD_FAILED
-        assert error.detail is None
 
     def test_config_error_custom_values(self) -> None:
         """Test ConfigError with custom values."""
         error = ConfigError(
-            message="Custom config error", code=ErrorCode.CONFIG_VALIDATION_FAILED, detail="Validation failed"
+            message="Custom config error", code=ErrorCode.CONFIG_VALIDATION_FAILED
         )
 
         assert error.message == "Custom config error"
         assert error.code == ErrorCode.CONFIG_VALIDATION_FAILED
-        assert error.detail == "Validation failed"
 
     def test_config_error_is_app_error(self) -> None:
         """Test ConfigError is an AppError."""
@@ -118,15 +126,13 @@ class TestFetchError:
 
         assert error.message == "Fetch error"
         assert error.code == ErrorCode.FETCH_REQUEST_FAILED
-        assert error.detail is None
 
     def test_fetch_error_custom_values(self) -> None:
         """Test FetchError with custom values."""
-        error = FetchError(message="API timeout", code=ErrorCode.FETCH_TIMEOUT, detail="Request timed out after 10s")
+        error = FetchError(message="API timeout", code=ErrorCode.FETCH_TIMEOUT)
 
         assert error.message == "API timeout"
         assert error.code == ErrorCode.FETCH_TIMEOUT
-        assert error.detail == "Request timed out after 10s"
 
     def test_fetch_error_is_app_error(self) -> None:
         """Test FetchError is an AppError."""
@@ -143,15 +149,13 @@ class TestRenderError:
 
         assert error.message == "Render error"
         assert error.code == ErrorCode.RENDER_PLAYWRIGHT_ERROR
-        assert error.detail is None
 
     def test_render_error_custom_values(self) -> None:
         """Test RenderError with custom values."""
-        error = RenderError(message="Template error", code=ErrorCode.RENDER_TEMPLATE_ERROR, detail="Missing variable")
+        error = RenderError(message="Template error", code=ErrorCode.RENDER_TEMPLATE_ERROR)
 
         assert error.message == "Template error"
         assert error.code == ErrorCode.RENDER_TEMPLATE_ERROR
-        assert error.detail == "Missing variable"
 
     def test_render_error_is_app_error(self) -> None:
         """Test RenderError is an AppError."""
@@ -168,17 +172,41 @@ class TestStorageError:
 
         assert error.message == "Storage error"
         assert error.code == ErrorCode.STORAGE_WRITE_FAILED
-        assert error.detail is None
 
     def test_storage_error_custom_values(self) -> None:
         """Test StorageError with custom values."""
-        error = StorageError(message="File not found", code=ErrorCode.STORAGE_NOT_FOUND, detail="state/latest.json")
+        error = StorageError(message="File not found", code=ErrorCode.STORAGE_NOT_FOUND)
 
         assert error.message == "File not found"
         assert error.code == ErrorCode.STORAGE_NOT_FOUND
-        assert error.detail == "state/latest.json"
 
     def test_storage_error_is_app_error(self) -> None:
         """Test StorageError is an AppError."""
         error = StorageError()
         assert isinstance(error, AppError)
+
+
+class TestErrorResponse:
+    """Tests for error_response function."""
+
+    def test_error_response_basic(self) -> None:
+        """Test basic error response."""
+        response = error_response(ErrorCode.CONFIG_LOAD_FAILED, "Failed to load config")
+
+        assert response == {
+            "error": {
+                "code": "CONFIG_1001",
+                "message": "Failed to load config",
+            }
+        }
+
+    def test_error_response_with_different_code(self) -> None:
+        """Test error response with different error code."""
+        response = error_response(ErrorCode.FETCH_TIMEOUT, "Request timed out")
+
+        assert response == {
+            "error": {
+                "code": "FETCH_2002",
+                "message": "Request timed out",
+            }
+        }

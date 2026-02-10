@@ -66,8 +66,8 @@ RUN chmod +x /app/docker-entrypoint.sh
 COPY --chown=appuser:appuser . /app
 
 # 创建挂载目录（entrypoint 会在运行时处理权限）
-RUN mkdir -p /app/static /app/state /app/logs /app/templates \
-    && chown appuser:appuser /app/static /app/state /app/logs /app/templates
+RUN mkdir -p /app/cache/data /app/cache/images /app/cache/holidays /app/cache/daily /app/logs /app/templates \
+    && chown -R appuser:appuser /app/cache /app/logs /app/templates
 
 # 暴露端口
 EXPOSE 8000

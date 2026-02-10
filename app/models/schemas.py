@@ -142,7 +142,6 @@ class ErrorDetail(BaseModel):
 
     code: str
     message: str
-    detail: str | None = None
 
 
 class ErrorResponse(BaseModel):

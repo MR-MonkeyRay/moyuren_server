@@ -8,8 +8,7 @@ timezone:
   display: "local"
 
 paths:
-  static_dir: "static"
-  state_path: "state/latest.json"
+  cache_dir: "cache"
 
 scheduler:
   mode: "hourly"
@@ -17,8 +16,11 @@ scheduler:
   - "06:00"
   minute_of_hour: 0
 
-output_cache:
-  ttl_hours: 24
+cache:
+  retain_days: 30
+
+ops:
+  api_key: ""
 
 templates:
   default: "moyuren"

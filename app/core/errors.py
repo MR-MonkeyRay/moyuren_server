@@ -35,14 +35,26 @@ class ErrorCode(StrEnum):
     GENERATION_FAILED = "GENERATION_5001"
     GENERATION_BUSY = "GENERATION_5002"
 
+    # Auth errors (6000-6099)
+    AUTH_UNAUTHORIZED = "AUTH_6001"
+
+    # API errors (7000-7099)
+    API_INVALID_DATE = "API_7001"
+    API_INVALID_ENCODE = "API_7002"
+    API_INVALID_PARAMETER = "API_7003"
+    API_TEMPLATE_NOT_FOUND = "API_7004"
+    API_DATA_NOT_FOUND = "API_7005"
+
+    # Ops errors (8000-8099)
+    OPS_CACHE_CLEAN_FAILED = "OPS_8001"
+
 
 class AppError(Exception):
     """Base application error."""
 
-    def __init__(self, message: str, code: ErrorCode, detail: str | None = None) -> None:
+    def __init__(self, message: str, code: ErrorCode) -> None:
         self.message = message
         self.code = code
-        self.detail = detail
         super().__init__(message)
 
 
@@ -53,18 +65,17 @@ class ConfigError(AppError):
         self,
         message: str = "Configuration error",
         code: ErrorCode = ErrorCode.CONFIG_LOAD_FAILED,
-        detail: str | None = None,
     ) -> None:
-        super().__init__(message, code, detail)
+        super().__init__(message, code)
 
 
 class FetchError(AppError):
     """Data fetching related error."""
 
     def __init__(
-        self, message: str = "Fetch error", code: ErrorCode = ErrorCode.FETCH_REQUEST_FAILED, detail: str | None = None
+        self, message: str = "Fetch error", code: ErrorCode = ErrorCode.FETCH_REQUEST_FAILED
     ) -> None:
-        super().__init__(message, code, detail)
+        super().__init__(message, code)
 
 
 class RenderError(AppError):
@@ -74,9 +85,8 @@ class RenderError(AppError):
         self,
         message: str = "Render error",
         code: ErrorCode = ErrorCode.RENDER_PLAYWRIGHT_ERROR,
-        detail: str | None = None,
     ) -> None:
-        super().__init__(message, code, detail)
+        super().__init__(message, code)
 
 
 class StorageError(AppError):
@@ -86,27 +96,22 @@ class StorageError(AppError):
         self,
         message: str = "Storage error",
         code: ErrorCode = ErrorCode.STORAGE_WRITE_FAILED,
-        detail: str | None = None,
     ) -> None:
-        super().__init__(message, code, detail)
+        super().__init__(message, code)
 
 
-def error_response(code: ErrorCode, message: str, detail: str | None = None) -> dict[str, Any]:
+def error_response(code: ErrorCode, message: str) -> dict[str, Any]:
     """
     Create standardized error response.
 
     Args:
         code: Error code enum.
         message: Human-readable error message.
-        detail: Additional error details.
 
     Returns:
         Dictionary with error information.
     """
-    response: dict[str, Any] = {"error": {"code": code.value, "message": message}}
-    if detail:
-        response["error"]["detail"] = detail
-    return response
+    return {"error": {"code": code.value, "message": message}}
 
 
 # HTTP 状态码映射表
@@ -115,6 +120,12 @@ ERROR_HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.CONFIG_VALIDATION_FAILED: 400,
     ErrorCode.CONFIG_MISSING_REQUIRED: 400,
     ErrorCode.STORAGE_NOT_FOUND: 404,
+    ErrorCode.AUTH_UNAUTHORIZED: 401,
+    ErrorCode.API_INVALID_DATE: 400,
+    ErrorCode.API_INVALID_ENCODE: 400,
+    ErrorCode.API_INVALID_PARAMETER: 400,
+    ErrorCode.API_TEMPLATE_NOT_FOUND: 404,
+    ErrorCode.API_DATA_NOT_FOUND: 404,
     # 5xx 服务端错误
     ErrorCode.CONFIG_LOAD_FAILED: 500,
     ErrorCode.FETCH_REQUEST_FAILED: 502,
@@ -131,6 +142,7 @@ ERROR_HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.STORAGE_DELETE_FAILED: 500,
     ErrorCode.GENERATION_FAILED: 500,
     ErrorCode.GENERATION_BUSY: 503,
+    ErrorCode.OPS_CACHE_CLEAN_FAILED: 500,
 }
 
 

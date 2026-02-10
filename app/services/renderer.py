@@ -85,7 +85,7 @@ class ImageRenderer:
     def __init__(
         self,
         templates_config: TemplatesConfig,
-        static_dir: str,
+        images_dir: str,
         render_config: TemplateRenderConfig,
         logger: logging.Logger,
     ) -> None:
@@ -93,18 +93,18 @@ class ImageRenderer:
 
         Args:
             templates_config: Templates configuration.
-            static_dir: Directory where generated images will be saved.
+            images_dir: Directory where generated images will be saved.
             render_config: Render configuration including viewport and quality settings.
             logger: Logger instance for logging render status.
         """
         self.templates_config = templates_config
-        self.static_dir = Path(static_dir)
+        self.images_dir = Path(images_dir)
         self.render_config = render_config
         self.logger = logger
         self._env_cache: dict[str, Environment] = {}
 
-        # Ensure static directory exists
-        self.static_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure images directory exists
+        self.images_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_jinja_env(self, template_path: str) -> Environment:
         """Get or create Jinja2 environment for template directory."""
@@ -179,8 +179,7 @@ class ImageRenderer:
         except TemplateError as e:
             self.logger.error(f"Template rendering failed: {e}")
             raise RenderError(
-                message="Failed to render template",
-                detail=str(e),
+                message=f"Failed to render template: {e}",
             ) from e
 
     async def _generate_screenshot(
@@ -229,8 +228,7 @@ class ImageRenderer:
         except Exception as e:
             self.logger.error(f"Screenshot generation failed: {e}")
             raise RenderError(
-                message="Failed to generate screenshot",
-                detail=str(e),
+                message=f"Failed to generate screenshot: {e}",
             ) from e
         finally:
             if page is not None:
@@ -258,13 +256,13 @@ class ImageRenderer:
         Raises:
             RenderError: If file write fails.
         """
-        target_path = self.static_dir / filename
+        target_path = self.images_dir / filename
 
         try:
             # Create temp file in same directory for atomic rename
             with tempfile.NamedTemporaryFile(
                 mode="wb",
-                dir=self.static_dir,
+                dir=self.images_dir,
                 prefix=f".{filename}",
                 suffix=".tmp",
                 delete=False,
@@ -281,6 +279,5 @@ class ImageRenderer:
             if "tmp_path" in locals() and Path(tmp_path).exists():
                 Path(tmp_path).unlink(missing_ok=True)
             raise RenderError(
-                message=f"Failed to write file: {filename}",
-                detail=str(e),
+                message=f"Failed to write file {filename}: {e}",
             ) from e

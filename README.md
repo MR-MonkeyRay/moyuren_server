@@ -64,8 +64,8 @@ docker-compose up -d
 如遇权限问题：
 
 ```bash
-mkdir -p static state logs
-sudo chown -R 1000:1000 static state logs
+mkdir -p cache logs
+sudo chown -R 1000:1000 cache logs
 ```
 
 ## API
@@ -73,12 +73,14 @@ sudo chown -R 1000:1000 static state logs
 | 方法 | 路径 | 说明 |
 | ---- | ---- | ---- |
 | GET | `/healthz` | 健康检查 |
-| GET | `/api/v1/moyuren` | 获取图片元信息（精简版） |
-| GET | `/api/v1/moyuren/detail` | 获取图片内容详情 |
-| GET | `/api/v1/moyuren/latest` | 直接获取最新图片文件（JPEG） |
+| GET | `/readyz` | 就绪检查 |
+| GET | `/api/v1/moyuren` | 统一端点：图片元信息/详情/文本/Markdown/图片 |
+| GET | `/api/v1/templates` | 获取支持的模板列表 |
+| GET | `/api/v1/ops/generate` | 手动触发图片生成（需鉴权） |
+| GET | `/api/v1/ops/cache/clean` | 清理过期缓存（需鉴权） |
 | GET | `/static/{filename}` | 静态图片文件 |
 
-> 注：当无可用图片时，API 会自动触发按需生成；若生成任务已在进行中，将返回 `503` 并附带 `Retry-After: 5` 响应头，建议稍后重试。
+> 注：当无可用图片时，API 会自动触发按需生成；若生成任务已在进行中，将返回 `503` 并附带 `Retry-After: 5` 响应头。Ops 端点需要 `Authorization: Bearer <api_key>` 鉴权。
 
 ### 端点详情
 
@@ -98,11 +100,51 @@ sudo chown -R 1000:1000 static state logs
 </details>
 
 <details>
-<summary>GET /api/v1/moyuren - 图片元信息（精简版）</summary>
+<summary>GET /readyz - 就绪检查</summary>
 
-获取最新生成图片的基本元数据，包含日期、生成时间和图片 URL。
+验证服务是否可以处理请求，支持 GET 和 HEAD 方法。
 
 **响应示例**：
+
+```json
+{
+  "status": "ready",
+  "checks": {
+    "config": true,
+    "cache_dir": true
+  }
+}
+```
+
+</details>
+
+<details>
+<summary>GET /api/v1/moyuren - 统一端点</summary>
+
+获取摸鱼日历数据，支持多种输出格式和查询参数。
+
+**查询参数**：
+
+| 参数 | 类型 | 默认值 | 说明 |
+| ---- | ---- | ------ | ---- |
+| `date` | string | 今天 | 目标日期 (YYYY-MM-DD) |
+| `encode` | string | `json` | 输出格式：`json`、`text`、`markdown`、`image` |
+| `template` | string | 首个可用 | 模板名称 |
+| `detail` | boolean | `false` | 是否返回详细字段（仅 encode=json） |
+
+**输出格式**：
+
+- `encode=json`：JSON 元数据（精简或详细）
+- `encode=text`：纯文本格式
+- `encode=markdown`：Markdown 格式
+- `encode=image`：直接返回 JPEG 图片文件
+
+**HTTP 缓存**：
+
+- 历史日期（< 今天）：`Cache-Control: public, max-age=31536000, immutable`
+- 当天数据：`ETag` + `Last-Modified`，支持 `304 Not Modified`
+
+**精简响应示例**（`encode=json`）：
 
 ```json
 {
@@ -113,182 +155,55 @@ sudo chown -R 1000:1000 static state logs
 }
 ```
 
-**字段说明**：
+**详细响应**（`encode=json&detail=true`）包含精简响应的所有字段，以及：weekday、lunar_date、fun_content、is_crazy_thursday、kfc_content、date_info、weekend、solar_term、guide、news_list、news_meta、holidays、kfc_content_full、stock_indices。
 
-| 字段 | 类型 | 说明 |
-| ---- | ---- | ---- |
-| `date` | string | 图片日期 (YYYY-MM-DD) |
-| `updated` | string | 生成时间 (如 2026/02/01 07:22:32) |
-| `updated_at` | number | 生成时间戳（13 位毫秒） |
-| `image` | string | 图片完整 URL |
+详细字段说明参见 [Pydantic 模型](app/models/schemas.py) 中的 `MoyurenDetailResponse`。
 
 </details>
 
 <details>
-<summary>GET /api/v1/moyuren/latest - 直接获取图片文件</summary>
+<summary>GET /api/v1/templates - 模板列表</summary>
 
-直接返回最新生成的 JPEG 图片文件，适用于：
-
-- 在 HTML 中使用 `<img>` 标签直接嵌入
-- 在 Markdown 中使用 `![](https://api.monkeyray.net/api/v1/moyuren/latest)` 显示
-- 需要直接下载图片的场景
-
-**响应类型**：`image/jpeg`
-
-</details>
-
-<details>
-<summary>GET /api/v1/moyuren/detail - 内容详情（完整版）</summary>
-
-获取图片的完整内容数据，包含日期信息、节假日、节气、趣味内容、大盘指数等所有渲染数据。
+获取支持的模板列表及当前图片 URL。
 
 **响应示例**：
 
-```jsonc
+```json
 {
-  "date": "2026-02-06",
-  "updated": "2026/02/06 18:53:17",
-  "updated_at": 1770375197567,
-  "image": "https://api.monkeyray.net/static/moyuren_20260206_185317.jpg",
-  "weekday": "星期五",
-  "lunar_date": "腊月十九",
-  "fun_content": {
-    "type": "dad_joke",
-    "title": "🤣 冷笑话",
-    "text": "为什么喝醉以后觉得别人都变矮了？因为喝高了。"
-  },
-  "is_crazy_thursday": false,
-  "kfc_content": null,
-  "date_info": {
-    "year_month": "2026.02",
-    "day": "6",
-    "week_cn": "星期五",
-    "week_en": "Fri",
-    "lunar_year": "乙巳年",
-    "lunar_date": "腊月十九",
-    "zodiac": "蛇",
-    "constellation": "水瓶座",
-    "moon_phase": "残月",
-    "festival_solar": null,
-    "festival_lunar": null,
-    "legal_holiday": null,
-    "is_holiday": false
-  },
-  "weekend": {
-    "days_left": 1,
-    "is_weekend": false
-  },
-  "solar_term": {
-    "name": "雨水",
-    "name_en": "Rain Water",
-    "days_left": 12,
-    "date": "2026-02-18",
-    "is_today": false
-  },
-  "guide": {
-    "yi": [
-      "移徙",
-      "祭祀",
-      "开光",
-      "祈福"
-    ],
-    "ji": [
-      "嫁娶",
-      "安葬",
-      "破土",
-      "作梁"
-    ]
-  },
-  "news_list": [
-    "我国网民规模达 11.25 亿人，互联网普及率突破 80%，生成式人工智能用户规模达 6.02 亿人",
-    "腾讯游戏发布 2026 年寒假限玩日历：未成年玩家最多可玩 15 小时"
-    // ... 更多新闻
-  ],
-  "news_meta": {
-    "date": "2026-02-06",
-    "updated": "2026-02-06T01:29:00+08:00",
-    "updated_at": 1770312596000
-  },
-  "holidays": [
+  "data": [
     {
-      "name": "春节",
-      "start_date": "2026-02-15",
-      "end_date": "2026-02-23",
-      "duration": 9,
-      "days_left": 9,
-      "is_legal_holiday": true,
-      "is_off_day": true
-    },
-    {
-      "name": "清明节",
-      "start_date": "2026-04-04",
-      "end_date": "2026-04-06",
-      "duration": 3,
-      "days_left": 57,
-      "is_legal_holiday": true,
-      "is_off_day": true
+      "name": "moyuren",
+      "description": "摸鱼日历moyuren模板",
+      "image": "https://api.monkeyray.net/static/moyuren_20260210_072232.jpg"
     }
-    // ... 更多节假日
-  ],
-  "kfc_content_full": null,
-  "stock_indices": {
-    "items": [
-      {
-        "code": "000001",
-        "name": "上证指数",
-        "price": 4065.58,
-        "change": -10.34,
-        "change_pct": -0.25,
-        "trend": "down",
-        "market": "A",
-        "is_trading_day": true
-      },
-      {
-        "code": "HSI",
-        "name": "恒生指数",
-        "price": 26559.95,
-        "change": -325.29,
-        "change_pct": -1.21,
-        "trend": "down",
-        "market": "HK",
-        "is_trading_day": true
-      }
-      // ... 更多指数
-    ],
-    "updated": "2026/02/06 18:53:14",
-    "updated_at": 1770375194513,
-    "trading_day": {
-      "A": true,
-      "HK": true,
-      "US": true
-    },
-    "is_stale": false
-  }
+  ]
 }
 ```
 
-**字段说明**：
+**缓存**：`Cache-Control: public, max-age=3600`
 
-| 字段 | 类型 | 说明 |
-| ---- | ---- | ---- |
-| `date` | string | 图片日期 (YYYY-MM-DD) |
-| `updated` | string | 生成时间 (如 2026/02/01 07:22:32) |
-| `updated_at` | number | 生成时间戳（13 位毫秒） |
-| `image` | string | 图片完整 URL |
-| `weekday` | string | 星期几（中文） |
-| `lunar_date` | string | 农历日期 |
-| `fun_content` | object | 趣味内容（type: dad_joke/hitokoto/duanzi/moyu_quote） |
-| `is_crazy_thursday` | boolean | 是否为周四 |
-| `kfc_content` | string \| null | KFC 文案内容（仅周四有值） |
-| `date_info` | object | 完整日期信息（年月、农历、生肖、星座、月相、节日） |
-| `weekend` | object | 周末倒计时（days_left, is_weekend） |
-| `solar_term` | object | 节气信息（名称、天数、日期） |
-| `guide` | object | 宜忌指南（yi, ji 列表） |
-| `news_list` | array | 新闻文本列表 |
-| `news_meta` | object | 新闻元数据（date, updated, updated_at） |
-| `holidays` | array | 详细节假日列表（含法定假日标识、时长） |
-| `kfc_content_full` | object \| null | 完整 KFC 对象（title, sub_title, content） |
-| `stock_indices` | object | 大盘指数数据（items: 指数列表, trading_day: 交易日状态, is_stale: 数据是否过期） |
+</details>
+
+<details>
+<summary>GET /api/v1/ops/* - 运维端点（需鉴权）</summary>
+
+所有 Ops 端点需要 `Authorization: Bearer <api_key>` 请求头。
+
+**GET /api/v1/ops/generate** - 手动触发图片生成
+
+**GET /api/v1/ops/cache/clean** - 清理过期缓存
+- 可选参数：`keep_days`（保留最近 N 天）
+
+**鉴权失败响应**（401）：
+
+```json
+{
+  "error": {
+    "code": "AUTH_6001",
+    "message": "无效的 API Key"
+  }
+}
+```
 
 </details>
 
@@ -303,8 +218,7 @@ sudo chown -R 1000:1000 static state logs
 {
   "error": {
     "code": "STORAGE_4003",
-    "message": "No image available",
-    "detail": "State file not found"
+    "message": "No image available"
   }
 }
 ```
@@ -313,9 +227,15 @@ sudo chown -R 1000:1000 static state logs
 
 | HTTP 状态码 | 错误码 | 说明 |
 | ----------- | ------ | ---- |
-| 404 | `STORAGE_4003` | 无可用图片（state 文件不存在） |
+| 400 | `API_7001` | 无效的日期格式 |
+| 400 | `API_7002` | 无效的 encode 参数 |
+| 400 | `API_7003` | 无效的请求参数 |
+| 401 | `AUTH_6001` | 未授权（API Key 无效） |
+| 404 | `API_7004` | 数据不存在 |
+| 404 | `API_7005` | 模板不存在 |
+| 404 | `STORAGE_4003` | 无可用图片 |
 | 500 | `GENERATION_5001` | 图片生成失败 |
-| 503 | `GENERATION_5002` | 图片生成中（响应头包含 `Retry-After: 5`） |
+| 503 | `GENERATION_5002` | 图片生成中（Retry-After: 5） |
 
 </details>
 
@@ -330,9 +250,7 @@ sudo chown -R 1000:1000 static state logs
 | `server.host` | `SERVER_HOST` | 监听地址 |
 | `server.port` | `SERVER_PORT` | 服务端口 |
 | `server.base_domain` | `SERVER_BASE_DOMAIN` | 图片 URL 前缀 |
-| `paths.static_dir` | `PATHS_STATIC_DIR` | 图片输出目录 |
-| `paths.state_path` | `PATHS_STATE_PATH` | 最新图片状态文件路径 |
-| `paths.template_path` | - | 默认模板路径（单模板模式兼容字段） |
+| `paths.cache_dir` | `PATHS_CACHE_DIR` | 缓存根目录（默认 `cache`） |
 | `scheduler.mode` | `SCHEDULER_MODE` | 调度模式（`daily` 或 `hourly`） |
 | `scheduler.daily_times` | `SCHEDULER_DAILY_TIMES` | 生成时间（逗号分隔） |
 | `scheduler.minute_of_hour` | `SCHEDULER_MINUTE_OF_HOUR` | 每小时模式下的触发分钟（0-59） |
@@ -341,7 +259,8 @@ sudo chown -R 1000:1000 static state logs
 | `render.device_scale_factor` | `RENDER_DEVICE_SCALE_FACTOR` | 缩放因子 |
 | `render.jpeg_quality` | `RENDER_JPEG_QUALITY` | JPEG 质量（1-100） |
 | `render.use_china_cdn` | `RENDER_USE_CHINA_CDN` | 字体 CDN 开关（true: 大陆 CDN fonts.googleapis.cn, false: 国际 CDN fonts.googleapis.com） |
-| `cache.ttl_hours` | `CACHE_TTL_HOURS` | 缓存保留时长 |
+| `cache.retain_days` | `CACHE_RETAIN_DAYS` | 缓存保留天数（默认 30） |
+| `ops.api_key` | `OPS_API_KEY` | 运维 API Key（留空则禁用 ops 端点） |
 | `logging.level` | `LOG_LEVEL` | 日志级别 |
 | `logging.file` | `LOG_FILE` | 日志文件路径（空字符串表示只输出到标准输出） |
 | `timezone.business` | - | 业务时区（节假日/节气/周末判断） |
@@ -373,27 +292,22 @@ sudo chown -R 1000:1000 static state logs
 ### 缓存目录结构
 
 ```
-state/
-├── holidays/          # 节假日原始年度数据缓存
+cache/
+├── data/              # 日期数据文件
+│   ├── 2026-02-09.json
+│   └── 2026-02-10.json
+├── images/            # 生成的图片文件
+│   ├── moyuren_20260209_072232.jpg
+│   └── moyuren_20260210_183000.jpg
+├── daily/             # 日级缓存（数据源）
+│   ├── news.json
+│   ├── fun_content.json
+│   ├── kfc.json
+│   └── holidays.json
+├── holidays/          # 节假日原始年度数据
 │   ├── 2025.json
-│   ├── 2026.json
-│   └── 2027.json
-├── cache/             # 日级缓存目录
-│   ├── news.json      # 新闻数据
-│   ├── fun_content.json  # 趣味内容
-│   ├── kfc.json       # KFC 文案（仅周四有效）
-│   └── holidays.json  # 聚合后的节假日列表
-├── latest.json        # 最新图片状态
+│   └── 2026.json
 └── .generation.lock   # 生成锁文件
-```
-
-日级缓存文件格式：
-```json
-{
-  "date": "2026-02-05",
-  "data": { ... },
-  "fetched_at": 1738713600000
-}
 ```
 
 ### 配置示例
@@ -409,9 +323,7 @@ timezone:
   display: "local"
 
 paths:
-  static_dir: "static"
-  template_path: "templates/moyuren.html"
-  state_path: "state/latest.json"
+  cache_dir: "cache"
 
 scheduler:
   mode: "daily"
@@ -464,6 +376,12 @@ fun_content:
       data_path: "data.hitokoto"
       display_title: "💬 一言"
 
+cache:
+  retain_days: 30
+
+ops:
+  api_key: ""  # 运维 API Key（留空则禁用 ops 端点）
+
 logging:
   level: "INFO"
   file: "logs/app.log"
@@ -501,8 +419,7 @@ moyuren_server/
 │   ├── detail_crazy_thursday.json # 疯狂星期四响应示例
 │   ├── detail_holiday.json        # 节假日响应示例
 │   └── detail_solar_term.json     # 节气当天响应示例
-├── static/               # 图片输出目录（可配置）
-├── state/                # 状态文件目录（latest.json）
+├── cache/                # 缓存目录（数据/图片/日级缓存）
 ├── logs/                 # 日志目录
 ├── tests/                # 测试
 ├── config.yaml           # 配置文件
