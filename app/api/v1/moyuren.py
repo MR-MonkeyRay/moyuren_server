@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Query, Request, status
@@ -62,7 +62,7 @@ def _build_cache_headers(target_date: date, updated_at: int) -> dict[str, str]:
     else:
         # Today's data - use ETag and Last-Modified
         etag = f'"{updated_at}"'
-        last_modified = datetime.fromtimestamp(updated_at / 1000, tz=timezone.utc).strftime(
+        last_modified = datetime.fromtimestamp(updated_at / 1000, tz=UTC).strftime(
             "%a, %d %b %Y %H:%M:%S GMT"
         )
         return {
@@ -94,7 +94,7 @@ def _check_not_modified(request: Request, updated_at: int) -> bool:
     if if_modified_since:
         try:
             client_time = datetime.strptime(if_modified_since, "%a, %d %b %Y %H:%M:%S GMT")
-            server_time = datetime.fromtimestamp(updated_at / 1000, tz=timezone.utc).replace(tzinfo=None)
+            server_time = datetime.fromtimestamp(updated_at / 1000, tz=UTC).replace(tzinfo=None)
             if client_time >= server_time:
                 return True
         except ValueError:

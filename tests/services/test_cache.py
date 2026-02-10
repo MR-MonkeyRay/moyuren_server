@@ -1,7 +1,7 @@
 """Tests for app/services/cache.py - cache cleanup service."""
 
 import logging
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 

@@ -144,9 +144,9 @@ async def main():
 
     # 4. Update data file
     data_dir = cache_dir / "data"
+    now = datetime.now(get_display_timezone())
     today_str = now.strftime("%Y-%m-%d")
     data_file = data_dir / f"{today_str}.json"
-    now = datetime.now(get_display_timezone())
 
     # Extract data from template_data
     date_info = template_data.get("date", {})
