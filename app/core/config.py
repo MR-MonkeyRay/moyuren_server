@@ -397,7 +397,7 @@ class TimezoneConfig(BaseModel):
         try:
             ZoneInfo(value)
             return value
-        except Exception:
+        except Exception:  # nosec B110 - intentional fallback to UTC offset parsing
             pass
 
         match = _UTC_OFFSET_PATTERN.match(value)

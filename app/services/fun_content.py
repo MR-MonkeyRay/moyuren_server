@@ -62,7 +62,7 @@ class FunContentService:
             Shuffled list of endpoint configurations.
         """
         seed = int(target_date.strftime("%Y%m%d"))
-        rng = random.Random(seed)
+        rng = random.Random(seed)  # nosec B311 - not used for security/crypto
         endpoints = list(self.config.endpoints)
         rng.shuffle(endpoints)
         return endpoints

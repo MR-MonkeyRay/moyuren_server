@@ -11,8 +11,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 单元测试与覆盖率检查
   test:
     name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests with coverage
+        run: |
+          coverage run -m pytest -m "not e2e" --tb=short
+          coverage report --fail-under=75
+          coverage xml
+
+      - name: Run diff-cover on changed lines (PR only)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          diff-cover coverage.xml --compare-branch=origin/${{ github.base_ref }} --fail-under=80
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7
+
+  # 类型检查（mypy）
+  typecheck:
+    name: Type Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,16 +76,193 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Run tests with coverage
+      - name: Run mypy type checking
+        # 宽松起步，不阻断 CI（软失败）
+        continue-on-error: true
         run: |
-          coverage run -m pytest --tb=short
-          coverage report --fail-under=60
-          coverage xml
+          mypy app --ignore-missing-imports
 
-      - name: Upload coverage report
+  # 安全审计（pip-audit）
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run pip-audit security scan
+        run: |
+          pip-audit -r requirements.txt -r requirements-dev.txt
+
+  # Dockerfile 规范检查（Hadolint）
+  hadolint:
+    name: Hadolint
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+
+  # Python 代码安全静态分析（Bandit）
+  bandit:
+    name: Bandit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install bandit
+        run: pip install 'bandit>=1.7'
+
+      - name: Run bandit security scan
+        run: bandit -r app --skip B101
+
+  # 密钥泄露扫描（Gitleaks）
+  gitleaks:
+    name: Gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 生成依赖 SBOM（软失败）
+  sbom:
+    name: SBOM
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install cyclonedx-bom
+        run: |
+          python -m pip install --upgrade pip
+          pip install cyclonedx-bom
+
+      - name: Generate SBOM
+        run: cyclonedx-py requirements requirements.txt -o sbom.json --of json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+
+  # Playwright 渲染冒烟测试（软失败）
+  render-smoke:
+    name: Render Smoke Test
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+
+      - name: Install Playwright Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run render smoke test
+        run: |
+          python scripts/render_once.py
+          python -c "
+          from pathlib import Path
+          candidates = sorted(Path('cache/images').glob('*.jpg'), key=lambda p: p.stat().st_mtime, reverse=True)
+          if not candidates:
+              raise SystemExit('No JPEG output found under cache/images')
+          img = candidates[0]
+          data = img.read_bytes()
+          if len(data) < 4 or data[:3] != b'\xff\xd8\xff' or data[-2:] != b'\xff\xd9':
+              raise SystemExit(f'Invalid JPEG output: {img}')
+          if len(data) < 10240:
+              raise SystemExit(f'JPEG output too small ({len(data)} bytes), likely blank or error: {img}')
+          print(f'Validated JPEG output: {img} ({len(data)} bytes)')
+          "
+
+      - name: Upload rendered image artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report
-          path: coverage.xml
-          retention-days: 7
+          name: render-smoke-output
+          path: cache/images/*.jpg
+          retention-days: 3
+
+  # 质量门禁汇总（test/security/bandit/gitleaks 必须成功，其余检查仅报告）
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    needs: [test, typecheck, security, hadolint, bandit, gitleaks, sbom, render-smoke]
+    if: always()
+    steps:
+      - name: Check test results
+        run: |
+          if [[ "${{ needs.test.result }}" != "success" ]]; then
+            echo "::error::Test job failed or was cancelled"
+            exit 1
+          fi
+          if [[ "${{ needs.security.result }}" != "success" ]]; then
+            echo "::error::Security job failed or was cancelled"
+            exit 1
+          fi
+          if [[ "${{ needs.bandit.result }}" != "success" ]]; then
+            echo "::error::Bandit security scan failed"
+            exit 1
+          fi
+          if [[ "${{ needs.gitleaks.result }}" != "success" ]]; then
+            echo "::error::Gitleaks secret scan failed"
+            exit 1
+          fi
+          if [[ "${{ needs.typecheck.result }}" == "failure" || "${{ needs.typecheck.result }}" == "cancelled" ]]; then
+            echo "::warning::Typecheck job is ${{ needs.typecheck.result }} (soft-fail)"
+          fi
+
+          echo "✅ Required quality gate passed (test: ${{ needs.test.result }}, security: ${{ needs.security.result }}, bandit: ${{ needs.bandit.result }}, gitleaks: ${{ needs.gitleaks.result }})"
+          echo "ℹ️ Optional checks (soft-fail): typecheck=${{ needs.typecheck.result }}, hadolint=${{ needs.hadolint.result }}, sbom=${{ needs.sbom.result }}, render-smoke=${{ needs.render-smoke.result }}"

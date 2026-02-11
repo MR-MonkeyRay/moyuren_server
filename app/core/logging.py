@@ -48,4 +48,25 @@ def setup_logging(config: LoggingConfig, logger_name: str | None = None) -> logg
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
+    # Configure Uvicorn loggers to use the same format
+    uvicorn_loggers = ["uvicorn", "uvicorn.error", "uvicorn.access"]
+    for uvicorn_logger_name in uvicorn_loggers:
+        uvicorn_logger = logging.getLogger(uvicorn_logger_name)
+        uvicorn_logger.handlers.clear()
+        uvicorn_logger.setLevel(getattr(logging, config.level, logging.INFO))
+        uvicorn_logger.propagate = False
+
+        # Add console handler
+        uvicorn_console_handler = logging.StreamHandler(sys.stdout)
+        uvicorn_console_handler.setLevel(getattr(logging, config.level, logging.INFO))
+        uvicorn_console_handler.setFormatter(formatter)
+        uvicorn_logger.addHandler(uvicorn_console_handler)
+
+        # Add file handler if configured
+        if config.file:
+            uvicorn_file_handler = logging.FileHandler(log_file_path, encoding="utf-8")
+            uvicorn_file_handler.setLevel(getattr(logging, config.level, logging.INFO))
+            uvicorn_file_handler.setFormatter(formatter)
+            uvicorn_logger.addHandler(uvicorn_file_handler)
+
     return logger

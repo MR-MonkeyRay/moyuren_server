@@ -76,7 +76,7 @@ def nl2br(value: str | None) -> Markup:
         return Markup("")
     # 先转义 HTML 特殊字符，再将换行转为 <br>
     escaped = escape(str(value))
-    return Markup(str(escaped).replace("\n", "<br>\n"))
+    return Markup(str(escaped).replace("\n", "<br>\n"))  # nosec B704 - input already escaped
 
 
 class ImageRenderer:
