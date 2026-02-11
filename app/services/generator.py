@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
-from filelock import FileLock, Timeout
+from app.core.filelock import FileLockTimeout, async_file_lock
 
 from app.core.errors import StorageError
 from app.services.calendar import get_display_timezone, today_business
@@ -246,8 +246,6 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
 
     # 获取文件锁路径
     lock_file = cache_dir / ".generation.lock"
-    lock_file.parent.mkdir(parents=True, exist_ok=True)
-    file_lock = FileLock(str(lock_file), timeout=5)
 
     # 快速获取进程内锁（避免请求排队）
     acquired = False
@@ -260,8 +258,7 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
 
     try:
         try:
-            await asyncio.to_thread(file_lock.acquire)
-            try:
+            async with async_file_lock(lock_file, timeout=5.0):
                 # 二次检查：获取锁后检查是否已有新生成的文件
                 today_str = today_business().isoformat()
                 data_file = data_dir / f"{today_str}.json"
@@ -309,12 +306,7 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
                 _schedule_cache_cleanup(app.state.cache_cleaner, logger)
 
                 return filename
-            finally:
-                try:
-                    await asyncio.to_thread(file_lock.release)
-                except Exception as e:
-                    logger.warning(f"Failed to release file lock: {e}")
-        except Timeout as exc:
+        except FileLockTimeout as exc:
             logger.warning("Image generation skipped: another process is generating")
             raise GenerationBusyError("Image generation locked by another process") from exc
     finally:

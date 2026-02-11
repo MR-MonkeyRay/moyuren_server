@@ -1,11 +1,12 @@
 import asyncio
 import json
+from contextlib import asynccontextmanager
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-from filelock import Timeout
 
+from app.core.filelock import FileLockTimeout
 from app.services.generator import (
     GenerationBusyError,
     _get_async_lock,
@@ -190,17 +191,22 @@ class TestGenerationBusyErrorExceptionChain:
 
     @pytest.mark.asyncio
     async def test_busy_error_preserves_filelock_timeout_cause(self, tmp_path: Path) -> None:
-        """Test generate_and_save_image preserves filelock.Timeout as __cause__."""
+        """Test generate_and_save_image preserves FileLockTimeout as __cause__."""
         app = self._build_app(tmp_path)
+
+        @asynccontextmanager
+        async def _raise_timeout(*args, **kwargs):
+            raise FileLockTimeout("lock")
+            yield  # noqa: unreachable
 
         with (
             patch("app.services.generator._get_async_lock", return_value=asyncio.Lock()),
             patch(
-                "app.services.generator.asyncio.to_thread",
-                new=AsyncMock(side_effect=Timeout("lock")),
+                "app.services.generator.async_file_lock",
+                new=_raise_timeout,
             ),
             pytest.raises(GenerationBusyError) as exc_info,
         ):
             await generate_and_save_image(app)
 
-        assert isinstance(exc_info.value.__cause__, Timeout)
+        assert isinstance(exc_info.value.__cause__, FileLockTimeout)
