@@ -6,9 +6,14 @@ pytest-httpx>=0.30
 respx>=0.21
 freezegun>=1.5
 coverage[toml]>=7.6
+diff-cover>=9.0
 
 # Type checking
 mypy>=1.10
 
 # Security audit
 pip-audit>=2.7
+bandit>=1.7
+
+# Supply-chain tooling
+cyclonedx-bom>=4.0

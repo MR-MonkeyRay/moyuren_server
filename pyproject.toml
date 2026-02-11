@@ -9,9 +9,9 @@
 python_version = "3.12"
 ignore_missing_imports = true
 
-# 宽松起步：暂不强制类型注解
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
+# 阶段 3：逐步收紧类型约束
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
 
 # 启用基础检查
 check_untyped_defs = true
@@ -31,7 +31,7 @@ omit = [
 ]
 
 [tool.coverage.report]
-fail_under = 60
+fail_under = 75
 show_missing = true
 exclude_lines = [
     "pragma: no cover",
@@ -47,8 +47,13 @@ output = "coverage.xml"
 # pytest 测试配置
 # ----------------------------------------------------------------------------
 [tool.pytest.ini_options]
-addopts = "-q --disable-warnings --maxfail=3"
+addopts = "-q --disable-warnings --maxfail=3 --strict-markers"
 testpaths = ["tests"]
+markers = [
+    "unit: 单元测试",
+    "integration: 集成测试",
+    "e2e: 端到端测试",
+]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [

@@ -7,6 +7,17 @@ on:
     types: [completed]
     branches: [main, develop]
   workflow_dispatch:
+    inputs:
+      force_publish:
+        description: 'Force publish without CI gate (use with caution)'
+        required: false
+        type: boolean
+        default: false
+      force_reason:
+        description: 'Reason for force publish (recommended when force_publish=true)'
+        required: false
+        type: string
+        default: ''
 
 env:
   GHCR_REGISTRY: ghcr.io
@@ -26,6 +37,7 @@ jobs:
        github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main')
     permissions:
       contents: write
+      actions: read
     outputs:
       version: ${{ steps.tag.outputs.version }}
       tag_created: ${{ steps.tag.outputs.tag_created }}
@@ -37,6 +49,14 @@ jobs:
           # workflow_run 触发时需要 checkout CI 测试过的提交
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
+
+      - name: Verify latest CI status for manual publish
+        if: github.event_name == 'workflow_dispatch' && inputs.force_publish != true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const script = require('./.github/scripts/verify-ci-status.js');
+            await script({github, context, core});
 
       - name: Configure Git
         run: |
@@ -76,15 +96,23 @@ jobs:
   build:
     runs-on: ubuntu-latest
     needs: [create-tag]
-    # workflow_run 触发时检查 CI 是否成功且来自 push 事件，workflow_dispatch 手动触发时跳过检查
+    # workflow_run 触发时要求 CI 成功；workflow_dispatch 需 force_publish=true 或在 main/develop 分支
     if: |
       always() &&
       (needs.create-tag.result == 'success' || needs.create-tag.result == 'skipped') &&
-      (github.event_name == 'workflow_dispatch' ||
-       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+      (
+        (github.event_name == 'workflow_run' &&
+         github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.event == 'push') ||
+        (github.event_name == 'workflow_dispatch' &&
+         (inputs.force_publish == true ||
+          github.ref == 'refs/heads/main' ||
+          github.ref == 'refs/heads/develop'))
+      )
     permissions:
       contents: read
       packages: write
+      actions: read
       security-events: write
 
     steps:
@@ -94,6 +122,23 @@ jobs:
           # workflow_run 触发时需要 checkout CI 测试过的提交
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
+
+      - name: Validate force publish reason
+        if: github.event_name == 'workflow_dispatch' && inputs.force_publish == true
+        run: |
+          if [[ -z "${{ inputs.force_reason }}" ]]; then
+            echo "::warning::Force publish without reason. Consider providing force_reason for audit trail."
+          else
+            echo "Force publish reason: ${{ inputs.force_reason }}"
+          fi
+
+      - name: Verify latest CI status for manual publish
+        if: github.event_name == 'workflow_dispatch' && inputs.force_publish != true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const script = require('./.github/scripts/verify-ci-status.js');
+            await script({github, context, core});
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -152,6 +197,7 @@ jobs:
             # main 分支：始终推送 latest
             GHCR_TAGS="${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:latest"
             DOCKERHUB_TAGS="${{ env.DOCKERHUB_REGISTRY }}/${DOCKERHUB_IMAGE_LOWER}:latest"
+            SCAN_IMAGE_REF="${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:latest"
 
             # 仅当创建了新 tag 时才推送版本号 tag（防止覆盖旧版本）
             if [[ "${TAG_CREATED}" == "true" ]]; then
@@ -169,6 +215,7 @@ jobs:
             GHCR_TAGS="${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:v${PROJECT_VERSION}-${SHORT_SHA}-${BRANCH_SUFFIX}"
             GHCR_TAGS="${GHCR_TAGS},${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:latest-${BRANCH_SUFFIX}"
             DOCKERHUB_TAGS="${{ env.DOCKERHUB_REGISTRY }}/${DOCKERHUB_IMAGE_LOWER}:v${PROJECT_VERSION}-${SHORT_SHA}-${BRANCH_SUFFIX}"
+            SCAN_IMAGE_REF="${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:latest-${BRANCH_SUFFIX}"
             DOCKERHUB_TAGS="${DOCKERHUB_TAGS},${{ env.DOCKERHUB_REGISTRY }}/${DOCKERHUB_IMAGE_LOWER}:latest-${BRANCH_SUFFIX}"
           fi
 
@@ -178,6 +225,7 @@ jobs:
           echo "tags=${ALL_TAGS}" >> $GITHUB_OUTPUT
           echo "image_name=${IMAGE_NAME_LOWER}" >> $GITHUB_OUTPUT
           echo "dockerhub_image=${DOCKERHUB_IMAGE_LOWER}" >> $GITHUB_OUTPUT
+          echo "scan_image_ref=${SCAN_IMAGE_REF}" >> $GITHUB_OUTPUT
           echo "Generated tags: ${ALL_TAGS}"
 
       - name: Extract metadata for Docker
@@ -200,16 +248,15 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Trivy 安全扫描（CRITICAL + HIGH 漏洞）
+      # Trivy 安全扫描（CRITICAL 漏洞阻断发布）
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ steps.tags.outputs.image_name }}:scan
           format: 'sarif'
           output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
-          # 初期不阻断 CI，只告警
-          exit-code: '0'
+          severity: 'CRITICAL'
+          exit-code: '1'
 
       # 上传 Trivy 扫描结果到 GitHub Security
       - name: Upload Trivy scan results to GitHub Security
@@ -229,3 +276,21 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # 推送后扫描 registry 多架构镜像（覆盖 arm64）
+      - name: Run Trivy scanner on pushed multi-arch image
+        uses: aquasecurity/trivy-action@0.28.0
+        env:
+          TRIVY_PLATFORM: linux/arm64
+        with:
+          image-ref: ${{ steps.tags.outputs.scan_image_ref }}
+          format: 'sarif'
+          output: 'trivy-multiarch-results.sarif'
+          severity: 'CRITICAL'
+          exit-code: '1'
+
+      - name: Upload multi-arch Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-multiarch-results.sarif'
