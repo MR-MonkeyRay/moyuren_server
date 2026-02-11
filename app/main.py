@@ -440,7 +440,7 @@ async def readyz(request: Request):
     try:
         cache_dir = Path(request.app.state.config.paths.cache_dir)
         checks["cache_dir"] = cache_dir.exists() and (cache_dir / "data").exists()
-    except Exception:
+    except Exception:  # nosec B110 - readyz check: keep cache_dir=False on failure
         pass
 
     all_ready = all(checks.values())

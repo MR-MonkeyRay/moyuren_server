@@ -34,9 +34,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     TZ=Asia/Shanghai
 
 # 创建用户 + 安装运行时依赖（合并为单层）
+# hadolint ignore=DL3008
 RUN set -eux; \
     (getent group ${GID} || groupadd -g ${GID} appuser); \
-    useradd -u ${UID} -g ${GID} -m appuser; \
+    useradd -l -u ${UID} -g ${GID} -m appuser; \
     apt-get update; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         wget \
