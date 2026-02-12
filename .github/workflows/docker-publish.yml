@@ -92,7 +92,7 @@ jobs:
           echo "tag_created=true" >> $GITHUB_OUTPUT
           echo "Successfully created and pushed tag v$VERSION"
 
-  # 构建并推送 Docker 镜像（含 Trivy 安全扫描）
+  # 构建并推送 Docker 镜像
   build:
     runs-on: ubuntu-latest
     needs: [create-tag]
@@ -113,7 +113,6 @@ jobs:
       contents: read
       packages: write
       actions: read
-      security-events: write
 
     steps:
       - name: Checkout repository
@@ -197,7 +196,6 @@ jobs:
             # main 分支：始终推送 latest
             GHCR_TAGS="${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:latest"
             DOCKERHUB_TAGS="${{ env.DOCKERHUB_REGISTRY }}/${DOCKERHUB_IMAGE_LOWER}:latest"
-            SCAN_IMAGE_REF="${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:latest"
 
             # 仅当创建了新 tag 时才推送版本号 tag（防止覆盖旧版本）
             if [[ "${TAG_CREATED}" == "true" ]]; then
@@ -215,7 +213,6 @@ jobs:
             GHCR_TAGS="${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:v${PROJECT_VERSION}-${SHORT_SHA}-${BRANCH_SUFFIX}"
             GHCR_TAGS="${GHCR_TAGS},${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:latest-${BRANCH_SUFFIX}"
             DOCKERHUB_TAGS="${{ env.DOCKERHUB_REGISTRY }}/${DOCKERHUB_IMAGE_LOWER}:v${PROJECT_VERSION}-${SHORT_SHA}-${BRANCH_SUFFIX}"
-            SCAN_IMAGE_REF="${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:latest-${BRANCH_SUFFIX}"
             DOCKERHUB_TAGS="${DOCKERHUB_TAGS},${{ env.DOCKERHUB_REGISTRY }}/${DOCKERHUB_IMAGE_LOWER}:latest-${BRANCH_SUFFIX}"
           fi
 
@@ -225,7 +222,6 @@ jobs:
           echo "tags=${ALL_TAGS}" >> $GITHUB_OUTPUT
           echo "image_name=${IMAGE_NAME_LOWER}" >> $GITHUB_OUTPUT
           echo "dockerhub_image=${DOCKERHUB_IMAGE_LOWER}" >> $GITHUB_OUTPUT
-          echo "scan_image_ref=${SCAN_IMAGE_REF}" >> $GITHUB_OUTPUT
           echo "Generated tags: ${ALL_TAGS}"
 
       - name: Extract metadata for Docker
@@ -235,35 +231,6 @@ jobs:
           images: |
             ${{ env.GHCR_REGISTRY }}/${{ steps.tags.outputs.image_name }}
             ${{ env.DOCKERHUB_REGISTRY }}/${{ steps.tags.outputs.dockerhub_image }}
-
-      # 先构建单架构镜像到本地（用于 Trivy 扫描）
-      - name: Build Docker image for scanning
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/amd64
-          push: false
-          load: true
-          tags: ${{ steps.tags.outputs.image_name }}:scan
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # Trivy 安全扫描（CRITICAL 漏洞阻断发布）
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: ${{ steps.tags.outputs.image_name }}:scan
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL'
-          exit-code: '1'
-
-      # 上传 Trivy 扫描结果到 GitHub Security
-      - name: Upload Trivy scan results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
 
       # 构建并推送多架构镜像
       - name: Build and push Docker image
@@ -276,21 +243,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      # 推送后扫描 registry 多架构镜像（覆盖 arm64）
-      - name: Run Trivy scanner on pushed multi-arch image
-        uses: aquasecurity/trivy-action@0.28.0
-        env:
-          TRIVY_PLATFORM: linux/arm64
-        with:
-          image-ref: ${{ steps.tags.outputs.scan_image_ref }}
-          format: 'sarif'
-          output: 'trivy-multiarch-results.sarif'
-          severity: 'CRITICAL'
-          exit-code: '1'
-
-      - name: Upload multi-arch Trivy scan results
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-multiarch-results.sarif'

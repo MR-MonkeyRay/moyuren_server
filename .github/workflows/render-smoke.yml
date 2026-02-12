@@ -1,0 +1,64 @@
+name: Render Smoke Test
+
+on:
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'  # 每天 UTC 0:00
+
+jobs:
+  render-smoke:
+    name: Render Smoke Test
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+
+      - name: Install Playwright Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run render smoke test
+        run: |
+          python scripts/render_once.py
+          python -c "
+          from pathlib import Path
+          candidates = sorted(Path('cache/images').glob('*.jpg'), key=lambda p: p.stat().st_mtime, reverse=True)
+          if not candidates:
+              raise SystemExit('No JPEG output found under cache/images')
+          img = candidates[0]
+          data = img.read_bytes()
+          if len(data) < 4 or data[:3] != b'\xff\xd8\xff' or data[-2:] != b'\xff\xd9':
+              raise SystemExit(f'Invalid JPEG output: {img}')
+          if len(data) < 10240:
+              raise SystemExit(f'JPEG output too small ({len(data)} bytes), likely blank or error: {img}')
+          print(f'Validated JPEG output: {img} ({len(data)} bytes)')
+          "
+
+      - name: Upload rendered image artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-smoke-output
+          path: cache/images/*.jpg
+          retention-days: 3
