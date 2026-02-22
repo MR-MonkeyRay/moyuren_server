@@ -23,7 +23,7 @@ env:
   GHCR_REGISTRY: ghcr.io
   DOCKERHUB_REGISTRY: docker.io
   IMAGE_NAME: ${{ github.repository }}
-  DOCKERHUB_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/moyuren-server
+  DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE || format('{0}/moyuren-server', secrets.DOCKERHUB_USERNAME) }}
 
 jobs:
   # 创建 Git Tag（仅 main 分支）
@@ -138,6 +138,21 @@ jobs:
           script: |
             const script = require('./.github/scripts/verify-ci-status.js');
             await script({github, context, core});
+
+      - name: Validate Docker image name
+        run: |
+          set -euo pipefail
+          echo "::group::Effective configuration"
+          echo "  DOCKERHUB_IMAGE: ${DOCKERHUB_IMAGE}"
+          echo "::endgroup::"
+
+          # Must match Docker namespace/image format (segments separated by . _ -)
+          if [[ ! "${DOCKERHUB_IMAGE}" =~ ^[a-z0-9]+([._-][a-z0-9]+)*/[a-z0-9]+([._-][a-z0-9]+)*$ ]]; then
+            echo "::error::DOCKERHUB_IMAGE must match 'namespace/image' format (lowercase), got '${DOCKERHUB_IMAGE}'"
+            exit 1
+          fi
+
+          echo "✅ Docker image name validation passed"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
