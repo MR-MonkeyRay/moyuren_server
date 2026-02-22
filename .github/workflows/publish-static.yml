@@ -18,12 +18,49 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     env:
-      PAGES_REPO: ${{ github.repository_owner }}/moyuren-pages
-      PAGES_BRANCH: main
-      STATIC_BASE_URL: https://moyuren.pages.dev
-      KEEP_DAYS: 30
+      PAGES_REPO: ${{ vars.PAGES_REPO || format('{0}/moyuren-pages', github.repository_owner) }}
+      PAGES_BRANCH: ${{ vars.PAGES_BRANCH || 'main' }}
+      STATIC_BASE_URL: ${{ vars.STATIC_BASE_URL || 'https://moyuren.pages.dev' }}
+      KEEP_DAYS: ${{ vars.KEEP_DAYS || '30' }}
 
     steps:
+      - name: Validate configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::Effective configuration"
+          echo "  PAGES_REPO:      ${PAGES_REPO}"
+          echo "  PAGES_BRANCH:    ${PAGES_BRANCH}"
+          echo "  STATIC_BASE_URL: ${STATIC_BASE_URL}"
+          echo "  KEEP_DAYS:       ${KEEP_DAYS}"
+          echo "::endgroup::"
+
+          # KEEP_DAYS must be a positive integer
+          if [[ ! "${KEEP_DAYS}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::KEEP_DAYS must be a positive integer, got '${KEEP_DAYS}'"
+            exit 1
+          fi
+
+          # STATIC_BASE_URL must be a valid https URL (non-empty host, no spaces)
+          if [[ ! "${STATIC_BASE_URL}" =~ ^https://[^/?#[:space:]]+([/?#][^[:space:]]*)?$ ]]; then
+            echo "::error::STATIC_BASE_URL must be a valid https:// URL, got '${STATIC_BASE_URL}'"
+            exit 1
+          fi
+
+          # PAGES_REPO must match owner/repo format (no trailing .git)
+          if [[ ! "${PAGES_REPO}" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$ ]] || [[ "${PAGES_REPO}" == *.git ]]; then
+            echo "::error::PAGES_REPO must match 'owner/repo' format (without .git suffix), got '${PAGES_REPO}'"
+            exit 1
+          fi
+
+          # PAGES_BRANCH must be a valid Git ref (no spaces, .., ~, ^, :, ?, *, [, \)
+          if [[ -z "${PAGES_BRANCH}" ]] || [[ "${PAGES_BRANCH}" =~ [[:space:]\~\^:\?\*\[\\] ]] || [[ "${PAGES_BRANCH}" == *..* ]]; then
+            echo "::error::PAGES_BRANCH contains invalid Git ref characters, got '${PAGES_BRANCH}'"
+            exit 1
+          fi
+
+          echo "✅ Configuration validation passed"
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -42,8 +79,8 @@ jobs:
           mkdir -p output && chmod 0755 output
           docker run --rm \
             --user "$(id -u):$(id -g)" \
-            -e PATHS_CACHE_DIR=/tmp/cache \
-            -e LOG_FILE= \
+            -e PATHS__CACHE_DIR=/tmp/cache \
+            -e LOGGING__FILE= \
             -v "${GITHUB_WORKSPACE}/output:/output" \
             -v "${GITHUB_WORKSPACE}/scripts:/app/scripts:ro" \
             "${IMAGE}" \
