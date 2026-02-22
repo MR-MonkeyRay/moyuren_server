@@ -38,6 +38,7 @@ https://api.monkeyray.net/api/v1/moyuren
 - Playwright 高质量浏览器渲染
 - 自动清理过期缓存
 - RESTful API + 静态文件服务
+- 静态发布到 Cloudflare Pages（GitHub Actions 定时推送）
 - YAML 配置 + 环境变量覆盖
 
 ## 快速开始
@@ -81,6 +82,30 @@ sudo chown -R 1000:1000 cache logs
 | GET | `/static/{filename}` | 静态图片文件 |
 
 > 注：当无可用图片时，API 会自动触发按需生成；若生成任务已在进行中，将返回 `503` 并附带 `Retry-After: 5` 响应头。Ops 端点需要 `Authorization: Bearer <api_key>` 鉴权。
+
+### 静态发布
+
+通过 GitHub Actions 每 30 分钟自动生成摸鱼日历图片及结构化数据，推送到独立仓库 [moyuren-pages](https://github.com/monkeyray/moyuren-pages)，由 Cloudflare Pages 托管。
+
+**静态站点地址**：https://moyuren.pages.dev
+
+**可用格式**：
+
+| 路径 | 说明 |
+| ---- | ---- |
+| `/latest.json` | 最新数据（JSON） |
+| `/latest.jpg` | 最新图片 |
+| `/latest.txt` | 最新纯文本 |
+| `/latest.md` | 最新 Markdown |
+| `/history.json` | 可用日期列表 |
+| `/{date}/data.json` | 指定日期数据 |
+| `/{date}/moyuren.jpg` | 指定日期图片 |
+| `/{date}/data.txt` | 指定日期纯文本 |
+| `/{date}/data.md` | 指定日期 Markdown |
+
+**相关文件**：
+- `scripts/publish_static.py` — 静态产物生成脚本
+- `.github/workflows/publish-static.yml` — 定时发布 workflow
 
 ### 端点详情
 
@@ -391,6 +416,7 @@ logging:
 
 ```text
 moyuren_server/
+├── .github/workflows/   # CI/CD 工作流
 ├── app/
 │   ├── main.py           # 应用入口
 │   ├── api/v1/           # API 路由
