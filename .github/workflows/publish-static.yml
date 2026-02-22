@@ -1,0 +1,108 @@
+name: Publish Static Artifacts
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: publish-static
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    env:
+      PAGES_REPO: ${{ github.repository_owner }}/moyuren-pages
+      PAGES_BRANCH: main
+      STATIC_BASE_URL: https://moyuren.pages.dev
+      KEEP_DAYS: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE_BASE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          IMAGE_TAG="${GITHUB_SHA::7}"
+          if docker pull "${IMAGE_BASE}:${IMAGE_TAG}" >/dev/null 2>&1; then
+            IMAGE="${IMAGE_BASE}:${IMAGE_TAG}"
+          else
+            echo "⚠️ Image ${IMAGE_TAG} not found, falling back to :latest"
+            IMAGE="${IMAGE_BASE}:latest"
+          fi
+          mkdir -p output && chmod 0755 output
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -e PATHS_CACHE_DIR=/tmp/cache \
+            -e LOG_FILE= \
+            -v "${GITHUB_WORKSPACE}/output:/output" \
+            -v "${GITHUB_WORKSPACE}/scripts:/app/scripts:ro" \
+            "${IMAGE}" \
+            python scripts/publish_static.py --output /output --base-url "${STATIC_BASE_URL}"
+
+      - name: Validate artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f output/latest.json
+          test -f output/latest.jpg
+          test -f output/latest.txt
+          test -f output/latest.md
+          jq -e '.date and .updated and .images' output/latest.json >/dev/null
+          echo "✅ Artifact validation passed"
+
+      - name: Publish to moyuren-pages
+        shell: bash
+        env:
+          PAGES_TOKEN: ${{ secrets.PAGES_TOKEN }}
+        run: |
+          set -euo pipefail
+          DATE="$(jq -r '.date' output/latest.json)"
+
+          # Validate DATE format
+          if [[ ! "${DATE}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            echo "❌ Invalid date format: ${DATE}"
+            exit 1
+          fi
+
+          # Clone pages repo (shallow)
+          git clone --depth=1 --branch "${PAGES_BRANCH}" \
+            "https://x-access-token:${PAGES_TOKEN}@github.com/${PAGES_REPO}.git" pages
+
+          # Copy artifacts
+          mkdir -p "pages/${DATE}"
+          cp -f output/"${DATE}"/* "pages/${DATE}/"
+          cp -f output/latest.* pages/
+
+          # Update history.json (sorted desc, keep KEEP_DAYS)
+          cd pages
+
+          # Cleanup old directories (keep KEEP_DAYS most recent)
+          find . -maxdepth 1 -mindepth 1 -type d -name '20??-??-??' -printf '%f\n' \
+            | sort -r | tail -n +$((KEEP_DAYS + 1)) | xargs -r rm -rf
+
+          # Regenerate history.json
+          find . -maxdepth 1 -mindepth 1 -type d -name '20??-??-??' -printf '%f\n' \
+            | sort -r | jq -Rsc 'split("\n") | map(select(length > 0))' > history.json
+
+          # Commit and push
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to publish."
+            exit 0
+          fi
+
+          git commit -m "chore: publish ${DATE} (${GITHUB_SHA::7})"
+          git push --force-with-lease origin "HEAD:${PAGES_BRANCH}"
