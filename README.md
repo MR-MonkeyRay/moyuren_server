@@ -36,7 +36,7 @@ https://api.monkeyray.net/api/v1/moyuren
   - 数据源：[东方财富](https://www.eastmoney.com)
   - 交易日历：[exchange_calendars](https://github.com/gerrymanoim/exchange_calendars)
 - 周/月/年进度百分比计算
-- 多模板渲染：支持配置多个模板，错误隔离确保部分失败不影响其他模板
+- 多模板渲染：自动发现模板目录中的 HTML 文件，通过 meta 标签自描述渲染参数，错误隔离确保部分失败不影响其他模板
 - Playwright 高质量浏览器渲染
 - 自动清理过期缓存
 - RESTful API + 静态文件服务
@@ -322,8 +322,8 @@ sudo chown -R 1000:1000 cache logs
 | `crazy_thursday.enabled` | - | 是否启用疯狂星期四功能 |
 | `crazy_thursday.url` | - | KFC 文案 API 地址 |
 | `crazy_thursday.timeout_sec` | - | KFC API 超时时间 |
-| `templates.default` | - | 默认模板名（多模板模式） |
-| `templates.items` | - | 模板列表（多模板模式，支持 viewport/jpeg_quality 覆盖） |
+| `templates.default` | - | 默认模板名 |
+| `templates.dir` | - | 模板目录（默认 `templates`，自动扫描 HTML 文件） |
 | `stock_index.quote_url` | - | 大盘指数行情接口地址 |
 | `stock_index.secids` | - | 指数列表（东方财富 secid） |
 | `stock_index.timeout_sec` | - | 行情请求超时（秒） |
@@ -399,21 +399,11 @@ data_sources:
 
 templates:
   default: "moyuren"
-  items:
-    - name: "moyuren"
-      path: "templates/moyuren.html"
-      viewport:
-        width: 794
-        height: 1123
-      show_kfc: true
-      show_stock: true
-    - name: "moyuren_cute"
-      path: "templates/moyuren_cute.html"
-      viewport:
-        width: 794
-        height: 1123
-      show_kfc: true
-      show_stock: true
+  dir: "templates"
+  config:
+    device_scale_factor: 3
+    jpeg_quality: 100
+    use_china_cdn: true
 
 holiday:
   # GitHub 代理镜像站

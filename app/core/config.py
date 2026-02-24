@@ -323,8 +323,9 @@ class TemplatesConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     default: str | None = None
+    dir: str = "templates"
     config: TemplateRenderConfig = Field(default_factory=TemplateRenderConfig)
-    items: list[TemplateItemConfig] = Field(default_factory=list)
+    items: list[TemplateItemConfig] = Field(default_factory=list, exclude=True)
 
     @field_validator("items")
     @classmethod
@@ -333,14 +334,6 @@ class TemplatesConfig(BaseModel):
         if len(set(names)) != len(names):
             raise ValueError("template names must be unique")
         return value
-
-    @model_validator(mode="after")
-    def validate_default_in_items(self) -> "TemplatesConfig":
-        if self.default is not None and self.items:
-            names = [item.name for item in self.items]
-            if self.default not in names:
-                raise ValueError(f"default template '{self.default}' not found in items: {names}")
-        return self
 
     def get_template(self, name: str | None = None) -> TemplateItemConfig:
         if not self.items:
@@ -463,6 +456,16 @@ class AppConfig(BaseSettings):
         return None
 
     def get_templates_config(self) -> TemplatesConfig:
+        if not self.templates.items:
+            from app.services.template_discovery import TemplateDiscovery
+            discovery = TemplateDiscovery()
+            items = discovery.discover(self.templates.dir, self.templates.config)
+            self.templates.items = items
+        # 验证 default（无条件执行）
+        if self.templates.default:
+            names = [item.name for item in self.templates.items]
+            if self.templates.default not in names:
+                raise ValueError(f"default template '{self.templates.default}' not found: {names}")
         return self.templates
 
     @classmethod

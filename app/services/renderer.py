@@ -10,7 +10,7 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, TemplateError
 from markupsafe import Markup, escape
 
-from app.core.config import TemplateRenderConfig, TemplatesConfig, ViewportConfig
+from app.core.config import TemplateItemConfig, TemplateRenderConfig, TemplatesConfig, ViewportConfig
 from app.core.errors import RenderError
 from app.services.browser import browser_manager
 
@@ -139,7 +139,7 @@ class ImageRenderer:
         template_item = self.templates_config.get_template(template_name)
 
         # Step 1: Render HTML with Jinja2
-        html_content = self._render_template(data, template_item.path)
+        html_content = self._render_template(data, template_item)
 
         # Step 2: Generate screenshot with Playwright
         viewport = template_item.viewport
@@ -154,12 +154,12 @@ class ImageRenderer:
         self.logger.info(f"Successfully rendered image: {filename}")
         return filename
 
-    def _render_template(self, data: dict[str, Any], template_path: str) -> str:
+    def _render_template(self, data: dict[str, Any], template_item: TemplateItemConfig) -> str:
         """Render Jinja2 template with provided data.
 
         Args:
             data: Template context data.
-            template_path: Template file path.
+            template_item: Template item configuration.
 
         Returns:
             Rendered HTML content.
@@ -168,12 +168,14 @@ class ImageRenderer:
             RenderError: If template rendering fails.
         """
         try:
-            env = self._get_jinja_env(template_path)
-            template_name = Path(template_path).name
+            env = self._get_jinja_env(template_item.path)
+            template_name = Path(template_item.path).name
             template = env.get_template(template_name)
             render_context = {
                 **data,
                 "use_china_cdn": self.render_config.use_china_cdn,
+                "show_kfc": template_item.show_kfc,
+                "show_stock": template_item.show_stock,
             }
             return template.render(**render_context)
         except TemplateError as e:

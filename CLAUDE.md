@@ -28,6 +28,7 @@
 | KFC | `app/services/kfc.py` | 疯狂星期四文案获取（仅周四生效） |
 | 计算 | `app/services/compute.py` | 原始数据 → 模板上下文 |
 | 渲染 | `app/services/renderer.py` | Jinja2 + Playwright 截图 |
+| 模板发现 | `app/services/template_discovery.py` | 自动扫描模板目录，解析 meta 标签 |
 | 图片生成 | `app/services/generator.py` | 图片生成流水线（支持文件锁防并发、缓存管理） |
 | 调度 | `app/core/scheduler.py` | APScheduler 定时任务 |
 | 配置 | `app/core/config.py` | YAML + 环境变量 |
@@ -72,6 +73,7 @@ docker-compose up -d
 - `crazy_thursday.enabled`: 是否启用疯狂星期四功能
 - `crazy_thursday.url`: KFC 文案 API 地址
 - `crazy_thursday.timeout_sec`: API 超时时间
+- `templates.dir`: 模板目录路径（默认 `templates`，自动扫描 `*.html` 文件）
 
 ## 开发指引
 
@@ -82,6 +84,8 @@ docker-compose up -d
 **修改趣味内容**：`fun_content.py` → `compute.py` → `templates/moyuren.html`
 
 **修改 KFC 功能**：`kfc.py` → `compute.py` → `templates/moyuren.html`
+
+**添加新模板**：在 `templates/` 目录创建 HTML 文件，在 `<head>` 中添加 `<meta name="moyuren:viewport-width" content="794">` 等 meta 标签，重启后自动发现
 
 **添加 API**：在 `app/api/v1/` 创建路由 → `main.py` 注册
 

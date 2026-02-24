@@ -2,6 +2,10 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
+  <meta name="moyuren:viewport-width" content="794">
+  <meta name="moyuren:viewport-height" content="1123">
+  <meta name="moyuren:show-kfc" content="true">
+  <meta name="moyuren:show-stock" content="true">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>摸鱼日历 {{ date.year_month }} - 棉花糖波普版</title>
   {% if use_china_cdn %}
@@ -614,6 +618,7 @@
     {% endif %}
 
     <!-- 5. 股票行情 -->
+    {% if show_stock %}
     <section class="stock-card card">
       <div class="card-title font-cute">📈 摸鱼看盘</div>
       {% if stock_indices and not stock_indices.is_data_missing and stock_indices.indices %}
@@ -640,9 +645,10 @@
       <div class="empty-state font-cute">(っ˘ω˘ς ) 股市休息中...</div>
       {% endif %}
     </section>
+    {% endif %}
 
     <!-- 6. 疯狂星期四 -->
-    {% if kfc_content %}
+    {% if show_kfc and kfc_content %}
     <section class="kfc-card card">
       <div class="card-title font-cute">🍗 {{ kfc_content.title }}</div>
       <div class="kfc-content truncate-3">{{ kfc_content.content }}</div>

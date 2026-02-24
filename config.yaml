@@ -24,25 +24,11 @@ ops:
 
 templates:
   default: "moyuren"
+  dir: "templates"
   config:
     device_scale_factor: 3
     jpeg_quality: 100
     use_china_cdn: true
-  items:
-    - name: "moyuren"
-      path: "templates/moyuren.html"
-      viewport:
-        width: 794
-        height: 1123
-      show_kfc: true
-      show_stock: true
-    - name: "moyuren_cute"
-      path: "templates/moyuren_cute.html"
-      viewport:
-        width: 794
-        height: 1123
-      show_kfc: true
-      show_stock: true
 
 data_sources:
   - type: "news"
