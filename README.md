@@ -35,6 +35,8 @@ https://api.monkeyray.net/api/v1/moyuren
 - 大盘指数实时行情（上证、深证、创业板、恒生、道琼斯）
   - 数据源：[东方财富](https://www.eastmoney.com)
   - 交易日历：[exchange_calendars](https://github.com/gerrymanoim/exchange_calendars)
+- 周/月/年进度百分比计算
+- 多模板渲染：支持配置多个模板，错误隔离确保部分失败不影响其他模板
 - Playwright 高质量浏览器渲染
 - 自动清理过期缓存
 - RESTful API + 静态文件服务
@@ -200,6 +202,11 @@ sudo chown -R 1000:1000 cache logs
       "name": "moyuren",
       "description": "摸鱼日历moyuren模板",
       "image": "https://api.monkeyray.net/static/moyuren_20260210_072232.jpg"
+    },
+    {
+      "name": "moyuren_cute",
+      "description": "摸鱼日历moyuren_cute模板",
+      "image": "https://api.monkeyray.net/static/moyuren_cute_20260210_072232.jpg"
     }
   ]
 }
@@ -215,6 +222,24 @@ sudo chown -R 1000:1000 cache logs
 所有 Ops 端点需要 `Authorization: Bearer <api_key>` 请求头。
 
 **GET /api/v1/ops/generate** - 手动触发图片生成
+
+成功响应包含所有模板的生成结果：
+```json
+{
+  "data": {
+    "date": "2026-02-10",
+    "results": {
+      "moyuren": "moyuren_20260210_072232.jpg",
+      "moyuren_cute": "moyuren_cute_20260210_072232.jpg"
+    },
+    "total_templates": 2,
+    "images": {
+      "moyuren": "moyuren_20260210_072232.jpg",
+      "moyuren_cute": "moyuren_cute_20260210_072232.jpg"
+    }
+  }
+}
+```
 
 **GET /api/v1/ops/cache/clean** - 清理过期缓存
 - 可选参数：`keep_days`（保留最近 N 天）
@@ -279,18 +304,17 @@ sudo chown -R 1000:1000 cache logs
 | `scheduler.mode` | `SCHEDULER_MODE` | 调度模式（`daily` 或 `hourly`） |
 | `scheduler.daily_times` | `SCHEDULER_DAILY_TIMES` | 生成时间（逗号分隔） |
 | `scheduler.minute_of_hour` | `SCHEDULER_MINUTE_OF_HOUR` | 每小时模式下的触发分钟（0-59） |
-| `render.viewport_width` | `RENDER_VIEWPORT_WIDTH` | 视口宽度 |
-| `render.viewport_height` | `RENDER_VIEWPORT_HEIGHT` | 视口最小高度 |
-| `render.device_scale_factor` | `RENDER_DEVICE_SCALE_FACTOR` | 缩放因子 |
-| `render.jpeg_quality` | `RENDER_JPEG_QUALITY` | JPEG 质量（1-100） |
-| `render.use_china_cdn` | `RENDER_USE_CHINA_CDN` | 字体 CDN 开关（true: 大陆 CDN fonts.googleapis.cn, false: 国际 CDN fonts.googleapis.com） |
+| `templates.config.device_scale_factor` | - | 缩放因子（默认 3） |
+| `templates.config.jpeg_quality` | - | JPEG 质量（1-100，默认 100） |
+| `templates.config.use_china_cdn` | - | 字体 CDN 开关（true: 大陆 CDN, false: 国际 CDN） |
+| `templates.items[].viewport` | - | 各模板视口尺寸（width/height） |
 | `cache.retain_days` | `CACHE_RETAIN_DAYS` | 缓存保留天数（默认 30） |
 | `ops.api_key` | `OPS_API_KEY` | 运维 API Key（留空则禁用 ops 端点） |
 | `logging.level` | `LOG_LEVEL` | 日志级别 |
 | `logging.file` | `LOG_FILE` | 日志文件路径（空字符串表示只输出到标准输出） |
 | `timezone.business` | - | 业务时区（节假日/节气/周末判断） |
 | `timezone.display` | - | 显示时区（图片时间戳、API 响应时间；支持 `local`） |
-| `fetch.api_endpoints` | - | 外部数据源端点配置（如新闻） |
+| `data_sources` | - | 外部数据源配置列表（新闻、趣味内容等） |
 | `holiday.mirror_urls` | `HOLIDAY_MIRROR_URLS` | GitHub 代理镜像站（逗号分隔） |
 | `holiday.timeout_sec` | `HOLIDAY_TIMEOUT_SEC` | 节假日数据请求超时 |
 | `fun_content.timeout_sec` | - | 趣味内容 API 超时 |
@@ -299,7 +323,7 @@ sudo chown -R 1000:1000 cache logs
 | `crazy_thursday.url` | - | KFC 文案 API 地址 |
 | `crazy_thursday.timeout_sec` | - | KFC API 超时时间 |
 | `templates.default` | - | 默认模板名（多模板模式） |
-| `templates.items` | - | 模板列表（多模板模式，支持 viewport/theme/jpeg_quality 覆盖） |
+| `templates.items` | - | 模板列表（多模板模式，支持 viewport/jpeg_quality 覆盖） |
 | `stock_index.quote_url` | - | 大盘指数行情接口地址 |
 | `stock_index.secids` | - | 指数列表（东方财富 secid） |
 | `stock_index.timeout_sec` | - | 行情请求超时（秒） |
@@ -323,7 +347,9 @@ cache/
 │   └── 2026-02-10.json
 ├── images/            # 生成的图片文件
 │   ├── moyuren_20260209_072232.jpg
-│   └── moyuren_20260210_183000.jpg
+│   ├── moyuren_20260210_183000.jpg
+│   ├── moyuren_cute_20260209_072232.jpg
+│   └── moyuren_cute_20260210_183000.jpg
 ├── daily/             # 日级缓存（数据源）
 │   ├── news.json
 │   ├── fun_content.json
@@ -364,23 +390,30 @@ scheduler:
 #     - "06:00"   # hourly 模式下会被忽略，仅用于回退 daily 时复用
 #   minute_of_hour: 0
 
-fetch:
-  api_endpoints:
-    - name: "news"
-      url: "https://60s.viki.moe/v2/60s"
-      timeout_sec: 10
-      params:
-        "force-update": "false"
+data_sources:
+  - type: "news"
+    url: "https://60s.viki.moe/v2/60s"
+    timeout_sec: 10
+    params:
+      "force-update": "false"
 
-render:
-  viewport_width: 794
-  viewport_height: 1123
-  device_scale_factor: 3
-  jpeg_quality: 100
-  # 字体 CDN 配置
-  # true: 使用大陆 CDN (fonts.googleapis.cn)
-  # false: 使用国际 CDN (fonts.googleapis.com)
-  use_china_cdn: false
+templates:
+  default: "moyuren"
+  items:
+    - name: "moyuren"
+      path: "templates/moyuren.html"
+      viewport:
+        width: 794
+        height: 1123
+      show_kfc: true
+      show_stock: true
+    - name: "moyuren_cute"
+      path: "templates/moyuren_cute.html"
+      viewport:
+        width: 794
+        height: 1123
+      show_kfc: true
+      show_stock: true
 
 holiday:
   # GitHub 代理镜像站

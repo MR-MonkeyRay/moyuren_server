@@ -138,9 +138,13 @@ async def main():
     template_data = data_computer.compute(raw_data)
     logger.info("Template data computed")
 
-    # 3. Render image
-    filename = await image_renderer.render(template_data)
-    logger.info(f"Image rendered: {filename}")
+    # 3. Render all templates
+    all_filenames: dict[str, str] = {}
+    for template_item in templates_config.items:
+        tname = template_item.name
+        filename = await image_renderer.render(template_data, template_name=tname)
+        all_filenames[tname] = filename
+        logger.info(f"Image rendered for '{tname}': {filename}")
 
     # 4. Update data file
     data_dir = cache_dir / "data"
@@ -179,7 +183,7 @@ async def main():
         "date": now.strftime("%Y-%m-%d"),
         "updated": now.strftime("%Y/%m/%d %H:%M:%S"),
         "updated_at": int(now.timestamp() * 1000),
-        "images": {"moyuren": filename},
+        "images": all_filenames,
         # New content fields
         "weekday": date_info.get("week_cn", ""),
         "lunar_date": date_info.get("lunar_date", ""),
@@ -215,10 +219,14 @@ async def main():
     os.replace(tmp_path, data_file)
     logger.info(f"Data file updated: {data_file}")
 
-    # Print result
-    image_path = cache_dir / "images" / filename
-    print(f"\n✅ Image generated: {image_path}")
-    print(f"   Size: {image_path.stat().st_size / 1024:.1f} KB")
+    # Print results
+    print(f"\n{'='*50}")
+    print(f"Generated {len(all_filenames)} template(s):")
+    for tname, fname in all_filenames.items():
+        image_path = cache_dir / "images" / fname
+        size_kb = image_path.stat().st_size / 1024 if image_path.exists() else 0
+        print(f"  [{tname}] {image_path} ({size_kb:.1f} KB)")
+    print(f"{'='*50}")
 
 
 if __name__ == "__main__":

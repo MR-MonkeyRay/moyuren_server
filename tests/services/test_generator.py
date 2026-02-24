@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.core.errors import StorageError
 from app.core.filelock import FileLockTimeout
 from app.services.generator import (
     GenerationBusyError,
@@ -161,6 +162,7 @@ class TestGenerationBusyErrorExceptionChain:
         template_item.name = "moyuren"
         templates_config = MagicMock()
         templates_config.get_template.return_value = template_item
+        templates_config.items = [template_item]
 
         config = MagicMock()
         config.paths.cache_dir = str(tmp_path / "cache")
@@ -504,7 +506,7 @@ class TestGenerateAndSaveImageNormalFlow:
         logger = MagicMock()
         template_item = SimpleNamespace(name="moyuren")
         templates_config = MagicMock()
-        templates_config.get_template.return_value = template_item
+        templates_config.items = [template_item]
 
         config = MagicMock()
         config.paths = SimpleNamespace(cache_dir=str(cache_dir))
@@ -549,9 +551,9 @@ class TestGenerateAndSaveImageNormalFlow:
             patch("app.services.generator._update_data_file", new=mock_update),
             patch("app.services.generator._schedule_cache_cleanup") as mock_cleanup,
         ):
-            filename = await generate_and_save_image(app)
+            results = await generate_and_save_image(app)
 
-        assert filename == "moyuren_20260205.jpg"
+        assert results == {"moyuren": "moyuren_20260205.jpg"}
         mock_fetch.assert_awaited_once()
         data_computer.compute.assert_called_once_with(raw_data)
         image_renderer.render.assert_awaited_once()
@@ -575,7 +577,7 @@ class TestGenerateAndSaveImageNormalFlow:
         logger = MagicMock()
         template_item = SimpleNamespace(name="moyuren")
         templates_config = MagicMock()
-        templates_config.get_template.return_value = template_item
+        templates_config.items = [template_item]
 
         config = MagicMock()
         config.paths = SimpleNamespace(cache_dir=str(cache_dir))
@@ -597,7 +599,221 @@ class TestGenerateAndSaveImageNormalFlow:
             patch("app.services.generator._is_recently_updated", return_value=True),
             patch("app.services.generator._read_latest_filename", return_value="moyuren_cached.jpg"),
         ):
-            filename = await generate_and_save_image(app)
+            results = await generate_and_save_image(app)
 
-        assert filename == "moyuren_cached.jpg"
+        assert results == {"moyuren": "moyuren_cached.jpg"}
         assert not async_lock.locked()
+
+    @pytest.mark.asyncio
+    async def test_partial_template_failure(self, tmp_path: Path) -> None:
+        """Test that partial template failure returns successful results only."""
+        from datetime import date
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        business_date = date(2026, 2, 5)
+        data_dir = cache_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        data_file = data_dir / f"{business_date.isoformat()}.json"
+        data_file.write_text("{}", encoding="utf-8")
+
+        logger = MagicMock()
+        template_a = SimpleNamespace(name="moyuren")
+        template_b = SimpleNamespace(name="moyuren_cute")
+        templates_config = MagicMock()
+        templates_config.items = [template_a, template_b]
+
+        config = MagicMock()
+        config.paths = SimpleNamespace(cache_dir=str(cache_dir))
+        config.get_templates_config.return_value = templates_config
+
+        data_computer = MagicMock()
+        image_renderer = MagicMock()
+        # First template succeeds, second fails
+        image_renderer.render = AsyncMock(
+            side_effect=["moyuren_20260205.jpg", Exception("render error")]
+        )
+        cache_cleaner = MagicMock()
+
+        app = SimpleNamespace(
+            state=SimpleNamespace(
+                logger=logger,
+                config=config,
+                data_computer=data_computer,
+                image_renderer=image_renderer,
+                cache_cleaner=cache_cleaner,
+            )
+        )
+
+        raw_data = {"api_data": "ok"}
+        data_computer.compute.return_value = {"date": {"week_cn": "星期四"}}
+
+        async_lock = asyncio.Lock()
+
+        @asynccontextmanager
+        async def _fake_file_lock(*args, **kwargs):
+            yield
+
+        mock_fetch = AsyncMock(return_value=raw_data)
+        mock_update = AsyncMock()
+
+        with (
+            patch("app.services.generator._get_async_lock", return_value=async_lock),
+            patch("app.services.generator.async_file_lock", new=_fake_file_lock),
+            patch("app.services.generator.today_business", return_value=business_date),
+            patch("app.services.generator._read_data_file", return_value={"updated_at": 1}),
+            patch("app.services.generator._is_recently_updated", return_value=True),
+            patch("app.services.generator._read_latest_filename", return_value=None),
+            patch("app.services.generator._fetch_all_data_parallel", new=mock_fetch),
+            patch("app.services.generator._update_data_file", new=mock_update),
+            patch("app.services.generator._schedule_cache_cleanup"),
+        ):
+            results = await generate_and_save_image(app)
+
+        # Only the successful template should be in results
+        assert results == {"moyuren": "moyuren_20260205.jpg"}
+        assert "moyuren_cute" not in results
+
+    @pytest.mark.asyncio
+    async def test_all_templates_fail_raises_storage_error(self, tmp_path: Path) -> None:
+        """Test that all templates failing raises StorageError."""
+        from datetime import date
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        business_date = date(2026, 2, 5)
+        data_dir = cache_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        data_file = data_dir / f"{business_date.isoformat()}.json"
+        data_file.write_text("{}", encoding="utf-8")
+
+        logger = MagicMock()
+        template_a = SimpleNamespace(name="moyuren")
+        template_b = SimpleNamespace(name="moyuren_cute")
+        templates_config = MagicMock()
+        templates_config.items = [template_a, template_b]
+
+        config = MagicMock()
+        config.paths = SimpleNamespace(cache_dir=str(cache_dir))
+        config.get_templates_config.return_value = templates_config
+
+        data_computer = MagicMock()
+        image_renderer = MagicMock()
+        # Both templates fail
+        image_renderer.render = AsyncMock(side_effect=Exception("render error"))
+        cache_cleaner = MagicMock()
+
+        app = SimpleNamespace(
+            state=SimpleNamespace(
+                logger=logger,
+                config=config,
+                data_computer=data_computer,
+                image_renderer=image_renderer,
+                cache_cleaner=cache_cleaner,
+            )
+        )
+
+        data_computer.compute.return_value = {"date": {"week_cn": "星期四"}}
+
+        async_lock = asyncio.Lock()
+
+        @asynccontextmanager
+        async def _fake_file_lock(*args, **kwargs):
+            yield
+
+        mock_fetch = AsyncMock(return_value={"api_data": "ok"})
+
+        with (
+            patch("app.services.generator._get_async_lock", return_value=async_lock),
+            patch("app.services.generator.async_file_lock", new=_fake_file_lock),
+            patch("app.services.generator.today_business", return_value=business_date),
+            patch("app.services.generator._read_data_file", return_value={"updated_at": 1}),
+            patch("app.services.generator._is_recently_updated", return_value=True),
+            patch("app.services.generator._read_latest_filename", return_value=None),
+            patch("app.services.generator._fetch_all_data_parallel", new=mock_fetch),
+            patch("app.services.generator._update_data_file", new=AsyncMock()),
+            patch("app.services.generator._schedule_cache_cleanup"),
+        ):
+            with pytest.raises(StorageError, match="All templates failed to render"):
+                await generate_and_save_image(app)
+
+    @pytest.mark.asyncio
+    async def test_partial_cache_renders_missing_only(self, tmp_path: Path) -> None:
+        """Test that cached templates are reused and only missing ones are rendered."""
+        from datetime import date
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        business_date = date(2026, 2, 5)
+        data_dir = cache_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        data_file = data_dir / f"{business_date.isoformat()}.json"
+        data_file.write_text("{}", encoding="utf-8")
+
+        logger = MagicMock()
+        template_a = SimpleNamespace(name="moyuren")
+        template_b = SimpleNamespace(name="moyuren_cute")
+        templates_config = MagicMock()
+        templates_config.items = [template_a, template_b]
+
+        config = MagicMock()
+        config.paths = SimpleNamespace(cache_dir=str(cache_dir))
+        config.get_templates_config.return_value = templates_config
+
+        data_computer = MagicMock()
+        image_renderer = MagicMock()
+        # Only renders the missing template (moyuren_cute)
+        image_renderer.render = AsyncMock(return_value="cute_20260205.jpg")
+        cache_cleaner = MagicMock()
+
+        app = SimpleNamespace(
+            state=SimpleNamespace(
+                logger=logger,
+                config=config,
+                data_computer=data_computer,
+                image_renderer=image_renderer,
+                cache_cleaner=cache_cleaner,
+            )
+        )
+
+        data_computer.compute.return_value = {"date": {"week_cn": "星期四"}}
+
+        async_lock = asyncio.Lock()
+
+        @asynccontextmanager
+        async def _fake_file_lock(*args, **kwargs):
+            yield
+
+        mock_fetch = AsyncMock(return_value={"api_data": "ok"})
+        mock_update = AsyncMock()
+
+        # _read_latest_filename returns cached file for "moyuren" but None for "moyuren_cute"
+        def fake_read_latest(data_file_path, tname):
+            if tname == "moyuren":
+                return "moyuren_cached.jpg"
+            return None
+
+        with (
+            patch("app.services.generator._get_async_lock", return_value=async_lock),
+            patch("app.services.generator.async_file_lock", new=_fake_file_lock),
+            patch("app.services.generator.today_business", return_value=business_date),
+            patch("app.services.generator._read_data_file", return_value={"updated_at": 999}),
+            patch("app.services.generator._is_recently_updated", return_value=True),
+            patch("app.services.generator._read_latest_filename", side_effect=fake_read_latest),
+            patch("app.services.generator._fetch_all_data_parallel", new=mock_fetch),
+            patch("app.services.generator._update_data_file", new=mock_update),
+            patch("app.services.generator._schedule_cache_cleanup"),
+        ):
+            results = await generate_and_save_image(app)
+
+        # moyuren from cache, moyuren_cute newly rendered
+        assert results == {"moyuren": "moyuren_cached.jpg", "moyuren_cute": "cute_20260205.jpg"}
+        # render should only be called once (for the missing template)
+        image_renderer.render.assert_awaited_once()
+

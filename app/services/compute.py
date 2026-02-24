@@ -1,6 +1,7 @@
 """Business computation service module."""
 
 import logging
+import math
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -191,6 +192,7 @@ class DomainDataAggregator:
         return {
             "date": self._compute_date(now),
             "weekend": self._compute_weekend(now),
+            **self._compute_progress(now),
             "solar_term": self._compute_solar_term(now),
             "guide": self._compute_guide(now),
             "history": history,
@@ -358,6 +360,47 @@ class DomainDataAggregator:
         else:
             days_left = 5 - weekday
         return {"days_left": days_left, "is_weekend": is_weekend}
+
+    def _compute_progress(self, now: datetime) -> dict[str, float]:
+        """Compute week/month/year progress percentages.
+
+        Args:
+            now: Current datetime in business timezone.
+
+        Returns:
+            Dictionary with week_progress, month_progress, year_progress in [0.0, 100.0].
+        """
+        now_ts = now.timestamp()
+
+        week_start = (now - timedelta(days=now.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        week_end = week_start + timedelta(days=7)
+
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if now.month == 12:
+            month_end = month_start.replace(year=now.year + 1, month=1)
+        else:
+            month_end = month_start.replace(month=now.month + 1)
+
+        year_start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        year_end = year_start.replace(year=now.year + 1)
+
+        def _calc_progress(start: datetime, end: datetime) -> float:
+            start_ts = start.timestamp()
+            end_ts = end.timestamp()
+            total = end_ts - start_ts
+            if total <= 0:
+                return 0.0
+            elapsed = now_ts - start_ts
+            value = round(elapsed / total * 100, 1)
+            return min(100.0, max(0.0, value))
+
+        return {
+            "week_progress": _calc_progress(week_start, week_end),
+            "month_progress": _calc_progress(month_start, month_end),
+            "year_progress": _calc_progress(year_start, year_end),
+        }
 
     def _compute_solar_term(self, now: datetime) -> dict[str, Any]:
         """Compute next solar term using CalendarService.
@@ -676,6 +719,25 @@ class TemplateAdapter:
             data["news_meta"] = {}
         if data.get("holidays") is None:
             data["holidays"] = []
+
+        for key in ("week_progress", "month_progress", "year_progress"):
+            value = data.get(key, 0.0)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                data[key] = 0.0
+                continue
+
+            normalized = float(value)
+            if not math.isfinite(normalized):
+                data[key] = 0.0
+                continue
+
+            normalized = round(normalized, 1)
+            if normalized < 0.0:
+                normalized = 0.0
+            elif normalized > 100.0:
+                normalized = 100.0
+            data[key] = normalized
+
         if "is_fallback_mode" not in data:
             news_list = data.get("news_list") or []
             history = data.get("history") or {}

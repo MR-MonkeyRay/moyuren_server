@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>摸鱼日历 {{ date.year_month }} - 棉花糖波普版</title>
+  {% if use_china_cdn %}
+  <link rel="preconnect" href="https://fonts.googleapis.cn" crossorigin>
+  <link rel="preconnect" href="https://fonts.gstatic.cn" crossorigin>
+  <link href="https://fonts.googleapis.cn/css2?family=ZCOOL+KuaiLe&family=Nunito:wght@700;900&display=swap" rel="stylesheet">
+  {% else %}
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Nunito:wght@700;900&display=swap" rel="stylesheet">
+  {% endif %}
+  <style>
+    :root {
+      /* 核心色彩 Token */
+      --bg-cream: #FFFDF7;
+      --line-coffee: #4A3728;
+      --card-bg: #FFFFFF;
+
+      /* 马卡龙高光色 */
+      --m-pink: #FFB7B2;
+      --m-mint: #B5EAD7;
+      --m-peach: #FFDAC1;
+      --m-lilac: #C7CEEA;
+      --m-soft-red: #FF9AA2;
+      --m-gray: #E8E4E0;
+
+      /* 边框与阴影规范 (Cute Neo-Brutalism) */
+      --border-thick: 3px solid var(--line-coffee);
+      --border-thin: 2px solid var(--line-coffee);
+      --shadow-hard: 4px 4px 0px var(--line-coffee);
+      --shadow-sm: 2px 2px 0px var(--line-coffee);
+
+      /* 圆角规范 */
+      --radius-xl: 16px;
+      --radius-lg: 16px;
+      --radius-pill: 50px;
+      --radius-sm: 8px;
+
+      /* 字体系统 */
+      --font-cute: 'ZCOOL KuaiLe', 'PingFang SC', 'Microsoft YaHei', cursive;
+      --font-body: 'Nunito', 'Varela Round', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      width: 794px;
+      height: 1123px;
+      background-color: var(--bg-cream);
+      color: var(--line-coffee);
+      font-family: var(--font-body);
+      font-weight: 700;
+      overflow: hidden;
+    }
+
+    .font-cute { font-family: var(--font-cute); font-weight: normal; }
+
+    .canvas {
+      width: 100%;
+      height: 100%;
+      padding: 16px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* --- 卡片基础类 --- */
+    .card {
+      background: var(--card-bg);
+      border: var(--border-thick);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-hard);
+      padding: 10px 14px;
+      flex-shrink: 0;
+    }
+
+    .card-title {
+      font-size: 18px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    /* --- 1. 头部 Header --- */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 20px;
+      background-image: radial-gradient(var(--m-peach) 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+    .header-left { display: flex; flex-direction: column; gap: 4px; }
+    .date-main {
+      font-size: 36px;
+      line-height: 1;
+      text-shadow: 2px 2px 0px var(--m-pink);
+      letter-spacing: 1px;
+    }
+    .date-sub { font-size: 14px; opacity: 0.85; }
+    .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    .badge-week {
+      background: var(--card-bg);
+      border: var(--border-thin);
+      box-shadow: var(--shadow-sm);
+      border-radius: var(--radius-lg);
+      padding: 6px 16px;
+      font-size: 24px;
+      transform: rotate(4deg);
+    }
+    .badge-weekend {
+      font-size: 13px;
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      border: var(--border-thin);
+      box-shadow: var(--shadow-sm);
+    }
+    .badge-relax { background: var(--m-mint); }
+    .badge-work { background: var(--m-pink); }
+
+    /* --- 2. 进度条区域 --- */
+    .progress-section {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+    }
+    .prog-item {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .prog-label { font-size: 16px; white-space: nowrap; }
+    .prog-track {
+      flex-grow: 1;
+      height: 22px;
+      background: var(--bg-cream);
+      border: var(--border-thin);
+      border-radius: var(--radius-pill);
+      overflow: hidden;
+      position: relative;
+      box-shadow: inset 2px 2px 0px rgba(74, 55, 40, 0.08);
+    }
+    .prog-fill {
+      height: 100%;
+      border-radius: 50px 0 0 50px;
+      min-width: 2px;
+    }
+    .prog-text {
+      position: absolute;
+      width: 100%;
+      text-align: center;
+      top: 0;
+      line-height: 22px;
+      font-size: 12px;
+      font-weight: 900;
+      z-index: 2;
+      color: var(--line-coffee);
+    }
+    /* 糖果条纹 */
+    .fill-pink { background: repeating-linear-gradient(-45deg, var(--m-pink), var(--m-pink) 10px, #FFC6C2 10px, #FFC6C2 20px); }
+    .fill-mint { background: repeating-linear-gradient(-45deg, var(--m-mint), var(--m-mint) 10px, #C2EEDB 10px, #C2EEDB 20px); }
+    .fill-peach { background: repeating-linear-gradient(-45deg, var(--m-peach), var(--m-peach) 10px, #FFE2CD 10px, #FFE2CD 20px); }
+
+    /* --- 3. 中间两列网格 (黄历 + 趣味内容) --- */
+    .grid-2col {
+      display: flex;
+      gap: 12px;
+      flex: 1 1 auto;
+      min-height: 150px;
+    }
+    .col-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    /* 黄历宜忌 */
+    .solar-term-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+    .stamp-term {
+      display: inline-block;
+      padding: 2px 8px;
+      border: 2px dashed var(--m-soft-red);
+      color: var(--m-soft-red);
+      border-radius: 6px;
+      transform: rotate(-3deg);
+      font-size: 13px;
+    }
+    .yiji-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .yiji-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: var(--border-thin);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+      box-shadow: var(--shadow-sm);
+    }
+    .icon-yi { background: var(--m-pink); }
+    .icon-ji { background: var(--m-lilac); }
+    .yiji-content {
+      font-size: 14px;
+      line-height: 1.6;
+      padding-top: 5px;
+    }
+
+    /* 趣事内容 */
+    .fun-content {
+      font-size: 14px;
+      line-height: 1.6;
+      text-align: justify;
+      overflow: hidden;
+      flex: 1 1 auto;
+    }
+
+    /* --- 4. 假期区块 --- */
+    .holidays-card { padding: 10px 14px; flex-shrink: 1; overflow: hidden; }
+    .holidays-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    /* 基础假期卡片 */
+    .holiday-card {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      border: var(--border-thin);
+      border-radius: var(--radius-lg);
+      padding: 8px 6px;
+      color: var(--line-coffee);
+      box-shadow: var(--shadow-sm);
+      background: var(--card-bg);
+      text-align: center;
+      gap: 4px;
+    }
+
+    /* 卡片左侧：信息区 */
+    .hc-info {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+    }
+    .hc-name {
+      font-size: 13px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      line-height: 1.2;
+    }
+    .hc-icon { font-size: 14px; flex-shrink: 0; }
+    .hc-tags {
+      display: flex;
+      gap: 3px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .hc-tag {
+      font-size: 10px;
+      font-weight: 800;
+      padding: 1px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--line-coffee);
+      color: var(--line-coffee);
+      width: fit-content;
+    }
+    .tag-duration { background: var(--card-bg); }
+    .tag-legal { background: var(--m-soft-red); color: #fff; border-color: var(--m-soft-red); }
+    .tag-work { background: var(--m-gray); }
+
+    /* 卡片右侧：倒计时 */
+    .hc-countdown {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-left: 0;
+    }
+    .cd-value {
+      font-size: 18px;
+      font-weight: 900;
+      line-height: 1;
+      margin: 0 2px;
+      text-shadow: 1px 1px 0 #fff;
+    }
+    .cd-unit { font-size: 10px; font-weight: 800; opacity: 0.8; }
+    .cd-today { font-size: 13px; font-weight: 900; }
+
+    /* 类型变体：法定假日 */
+    .hc-legal {
+      background: var(--m-pink);
+      --cd-color: #E74C3C;
+    }
+    .hc-legal .cd-value { color: var(--cd-color); }
+
+    /* 类型变体：普通假期 */
+    .hc-normal {
+      background: var(--m-mint);
+      --cd-color: #00796B;
+    }
+    .hc-normal .cd-value { color: var(--cd-color); }
+
+    /* 类型变体：补班日 — 视觉降级 */
+    .hc-work {
+      background: transparent;
+      border: 2px dashed rgba(92, 64, 51, 0.35);
+      box-shadow: none;
+    }
+    .hc-work .hc-name { opacity: 0.7; }
+    .hc-work .hc-icon { filter: grayscale(100%); opacity: 0.6; }
+    .hc-work .cd-value { color: var(--line-coffee); opacity: 0.6; }
+
+    /* Hero Card：首项跨列高亮 */
+    .holiday-card.is-hero {
+      grid-column: 1 / -1;
+      flex-direction: row;
+      justify-content: space-between;
+      border: var(--border-thick);
+      box-shadow: var(--shadow-hard);
+      padding: 10px 14px;
+      border-radius: var(--radius-xl);
+      background: var(--m-peach);
+    }
+    .holiday-card.is-hero .hc-info {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .holiday-card.is-hero .hc-countdown {
+        margin-left: 6px;
+    }
+    .holiday-card.hc-work.is-hero {
+      background: #E8E0D6;
+      border: 2.5px dashed var(--line-coffee);
+    }
+    .holiday-card.is-hero .hc-icon { font-size: 18px; }
+    .holiday-card.is-hero .hc-name { font-size: 15px; }
+    .holiday-card.is-hero .hc-tag { font-size: 11px; padding: 2px 6px; }
+    .holiday-card.is-hero .cd-value { font-size: 28px; }
+    .holiday-card.is-hero .cd-unit { font-size: 11px; }
+    .holiday-card.is-hero .cd-today { font-size: 14px; }
+
+    /* --- 5. 股票区块 --- */
+    .stock-card { padding: 10px 14px; }
+    .stock-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    .stock-item {
+      border: var(--border-thin);
+      border-radius: var(--radius-lg);
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-shadow: var(--shadow-sm);
+      gap: 2px;
+    }
+    .trend-up { background: rgba(255, 154, 162, 0.3); }
+    .trend-down { background: rgba(181, 234, 215, 0.4); }
+    .trend-flat { background: var(--m-gray); }
+    .stock-name { font-size: 13px; opacity: 0.85; }
+    .stock-price { font-size: 16px; font-weight: 900; }
+    .stock-pct { font-size: 13px; }
+    .stock-updated {
+      text-align: right;
+      font-size: 11px;
+      opacity: 0.5;
+      margin-top: 6px;
+    }
+
+    /* --- 6. KFC 区块 --- */
+    .kfc-card {
+      border-color: #D62828;
+      background-image: linear-gradient(135deg, rgba(255,154,162,0.1) 25%, transparent 25%, transparent 50%, rgba(255,154,162,0.1) 50%, rgba(255,154,162,0.1) 75%, transparent 75%, transparent);
+      background-size: 20px 20px;
+    }
+    .kfc-content { font-size: 14px; line-height: 1.5; margin-top: 6px; }
+
+    /* --- 7. 页脚 --- */
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      color: var(--line-coffee);
+      opacity: 0.6;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      padding-top: 4px;
+      flex-shrink: 0;
+    }
+    .fallback-badge {
+      background: var(--line-coffee);
+      color: var(--bg-cream);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+    }
+
+    /* --- 工具类: 防溢出截断 --- */
+    .truncate-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; }
+    .truncate-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; }
+    .truncate-8 { display: -webkit-box; -webkit-line-clamp: 7; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; }
+
+    .empty-state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      min-height: 50px;
+      font-size: 16px;
+      color: var(--line-coffee);
+      opacity: 0.5;
+    }
+
+    /* 防溢出保护 */
+    .date-main, .badge-week, .prog-label, .stock-name, .stock-price, .stock-pct, .hc-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  </style>
+</head>
+<body>
+  <div class="canvas">
+    <!-- 1. Header -->
+    <header class="header card">
+      <div class="header-left">
+        <div class="date-main font-cute">{{ date.year_month }} {{ date.day }}日</div>
+        <div class="date-sub">{{ date.lunar_year }}年 {{ date.lunar_date }}</div>
+        <div class="date-sub">{{ date.week_en }}</div>
+      </div>
+      <div class="header-right">
+        <div class="badge-week font-cute">{{ date.week_cn }}</div>
+        {% if weekend.is_weekend %}
+        <div class="badge-weekend badge-relax font-cute">🎉 周末啦！</div>
+        {% else %}
+        <div class="badge-weekend badge-work font-cute">⏳ 距周末 {{ weekend.days_left }} 天</div>
+        {% endif %}
+      </div>
+    </header>
+
+    <!-- 2. 进度条 -->
+    <section class="progress-section card">
+      <div class="prog-item">
+        <div class="prog-label font-cute">本周</div>
+        <div class="prog-track">
+          <div class="prog-fill fill-pink" style="width: {{ week_progress }}%;"></div>
+          <div class="prog-text">{{ "%.1f"|format(week_progress) }}%</div>
+        </div>
+      </div>
+      <div class="prog-item">
+        <div class="prog-label font-cute">本月</div>
+        <div class="prog-track">
+          <div class="prog-fill fill-mint" style="width: {{ month_progress }}%;"></div>
+          <div class="prog-text">{{ "%.1f"|format(month_progress) }}%</div>
+        </div>
+      </div>
+      <div class="prog-item">
+        <div class="prog-label font-cute">今年</div>
+        <div class="prog-track">
+          <div class="prog-fill fill-peach" style="width: {{ year_progress }}%;"></div>
+          <div class="prog-text">{{ "%.1f"|format(year_progress) }}%</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. 网格区域: 黄历 & 趣事 -->
+    <section class="grid-2col">
+      <!-- 黄历宜忌 -->
+      <div class="col-card card">
+        <div class="card-title font-cute">📅 今日黄历</div>
+        <div class="solar-term-row">
+          {% if solar_term.is_today %}
+          <span class="stamp-term font-cute">今日 {{ solar_term.name }}</span>
+          {% else %}
+          <span>{{ solar_term.name }} · {{ solar_term.name_en }} · 还有 {{ solar_term.days_left }} 天</span>
+          {% endif %}
+        </div>
+        <div class="yiji-row">
+          <div class="yiji-icon icon-yi font-cute">宜</div>
+          <div class="yiji-content truncate-3">{{ guide.yi | join(' / ') }}</div>
+        </div>
+        <div class="yiji-row">
+          <div class="yiji-icon icon-ji font-cute">忌</div>
+          <div class="yiji-content truncate-3">{{ guide.ji | join(' / ') }}</div>
+        </div>
+      </div>
+
+      <!-- 趣味内容 -->
+      <div class="col-card card">
+        <div class="card-title font-cute">{{ history.title if history else '🐟 摸鱼小贴士' }}</div>
+        {% if history and history.content %}
+        <div class="fun-content truncate-8">{{ history.content }}</div>
+        {% else %}
+        <div class="empty-state font-cute">( ˘▽˘)っ♨ 今日暂无趣事</div>
+        {% endif %}
+      </div>
+    </section>
+
+    <!-- 4. 假期余额 -->
+    {% if holidays %}
+    <section class="holidays-card card">
+      <div class="card-title font-cute">🎉 假期余额</div>
+      <div class="holidays-grid">
+        {% for holiday in holidays %}
+
+        {% if holiday.is_off_day is false %}
+        {# 补班日 #}
+        <div class="holiday-card hc-work {{ 'is-hero' if loop.first else '' }}">
+          <div class="hc-info">
+            <div class="hc-name font-cute"><span class="hc-icon">💼</span>{{ holiday.name }}</div>
+            <div class="hc-tags"><span class="hc-tag tag-work font-cute">补班</span></div>
+          </div>
+          <div class="hc-countdown">
+            {% if holiday.days_left == 0 %}
+            <span class="cd-today font-cute">今天!</span>
+            {% else %}
+            <span class="cd-unit">距今</span>
+            <span class="cd-value font-cute">{{ holiday.days_left }}</span>
+            <span class="cd-unit">天</span>
+            {% endif %}
+          </div>
+        </div>
+
+        {% elif holiday.is_legal_holiday %}
+        {# 法定假日 #}
+        <div class="holiday-card hc-legal {{ 'is-hero' if loop.first else '' }}">
+          <div class="hc-info">
+            <div class="hc-name font-cute"><span class="hc-icon">🎉</span>{{ holiday.name }}</div>
+            <div class="hc-tags">
+              {% if holiday.duration and holiday.duration > 0 %}
+              <span class="hc-tag tag-duration font-cute">休{{ holiday.duration }}天</span>
+              {% endif %}
+              <span class="hc-tag tag-legal font-cute">法定</span>
+            </div>
+          </div>
+          <div class="hc-countdown">
+            {% if holiday.days_left == 0 %}
+            <span class="cd-today font-cute">今天!</span>
+            {% else %}
+            <span class="cd-unit">剩</span>
+            <span class="cd-value font-cute">{{ holiday.days_left }}</span>
+            <span class="cd-unit">天</span>
+            {% endif %}
+          </div>
+        </div>
+
+        {% else %}
+        {# 普通假期 #}
+        <div class="holiday-card hc-normal {{ 'is-hero' if loop.first else '' }}">
+          <div class="hc-info">
+            <div class="hc-name font-cute"><span class="hc-icon">🏖️</span>{{ holiday.name }}</div>
+            <div class="hc-tags">
+              {% if holiday.duration and holiday.duration > 0 %}
+              <span class="hc-tag tag-duration font-cute">连休{{ holiday.duration }}天</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="hc-countdown">
+            {% if holiday.days_left == 0 %}
+            <span class="cd-today font-cute">今天!</span>
+            {% else %}
+            <span class="cd-unit">剩</span>
+            <span class="cd-value font-cute">{{ holiday.days_left }}</span>
+            <span class="cd-unit">天</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
+        {% endfor %}
+      </div>
+    </section>
+    {% else %}
+    <section class="holidays-card card">
+      <div class="card-title font-cute">🎉 假期余额</div>
+      <div class="empty-state font-cute">(Ｔ▽Ｔ) 努力搬砖中...</div>
+    </section>
+    {% endif %}
+
+    <!-- 5. 股票行情 -->
+    <section class="stock-card card">
+      <div class="card-title font-cute">📈 摸鱼看盘</div>
+      {% if stock_indices and not stock_indices.is_data_missing and stock_indices.indices %}
+      <div class="stock-grid">
+        {% for idx in stock_indices.indices %}
+        <div class="stock-item trend-{{ idx.trend }}">
+          <div class="stock-name">{{ idx.name }}</div>
+          <div class="stock-price">{{ idx.price if idx.price else '--' }}</div>
+          <div class="stock-pct font-cute">
+            {% if idx.is_trading_day %}
+            {% if idx.trend == 'up' %}🚀{% elif idx.trend == 'down' %}🐢{% else %}→{% endif %}
+            {{ idx.change_pct }}
+            {% else %}
+            休市
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% if stock_indices.updated %}
+      <div class="stock-updated">更新于 {{ stock_indices.updated | format_datetime }}</div>
+      {% endif %}
+      {% else %}
+      <div class="empty-state font-cute">(っ˘ω˘ς ) 股市休息中...</div>
+      {% endif %}
+    </section>
+
+    <!-- 6. 疯狂星期四 -->
+    {% if kfc_content %}
+    <section class="kfc-card card">
+      <div class="card-title font-cute">🍗 {{ kfc_content.title }}</div>
+      <div class="kfc-content truncate-3">{{ kfc_content.content }}</div>
+    </section>
+    {% endif %}
+
+    <!-- 7. 页脚 -->
+    <footer class="footer">
+      {% if is_fallback_mode %}
+      <span class="fallback-badge">Fallback Mode</span>
+      {% endif %}
+      <span>{{ github_url | default('MR-MonkeyRay/moyuren_server') }}</span>
+      <span>·</span>
+      <span>{{ version | default('v0.1.0') }}</span>
+    </footer>
+  </div>
+</body>
+</html>

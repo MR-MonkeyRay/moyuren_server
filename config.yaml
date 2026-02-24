@@ -36,6 +36,13 @@ templates:
         height: 1123
       show_kfc: true
       show_stock: true
+    - name: "moyuren_cute"
+      path: "templates/moyuren_cute.html"
+      viewport:
+        width: 794
+        height: 1123
+      show_kfc: true
+      show_stock: true
 
 data_sources:
   - type: "news"

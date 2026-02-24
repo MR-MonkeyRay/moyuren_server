@@ -210,25 +210,30 @@ def _schedule_cache_cleanup(cache_cleaner, logger) -> None:
     asyncio.create_task(_cleanup_task())
 
 
-async def generate_and_save_image(app: FastAPI, template_name: str | None = None) -> str:
-    """Generate image and update data file.
+async def generate_and_save_image(
+    app: FastAPI, template_name: str | None = None
+) -> dict[str, str]:
+    """Generate images and update data file.
 
     This function performs the complete image generation pipeline:
     1. Fetch data from API endpoints
     2. Compute template context
-    3. Render HTML to image
+    3. Render HTML to image for each template
     4. Update cache/data/{date}.json atomically
+
+    When template_name is None, all configured templates are rendered.
+    When template_name is specified, only that template is rendered.
 
     Args:
         app: FastAPI application instance with services in app.state.
-        template_name: Optional template name to use for rendering.
+        template_name: Optional template name. None renders all templates.
 
     Returns:
-        Generated image filename.
+        Dict mapping template names to generated image filenames.
+        Templates that failed to render will be omitted from the dict.
 
     Raises:
-        RenderError: If image rendering fails.
-        StorageError: If state file update fails.
+        StorageError: If no templates are configured or all templates fail to render.
         GenerationBusyError: If generation is locked by another process.
     """
     logger = app.state.logger
@@ -236,10 +241,15 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
     cache_dir = Path(config.paths.cache_dir)
     data_dir = cache_dir / "data"
 
-    # Resolve template name
+    # Determine which templates to render
     templates_config = config.get_templates_config()
-    template_item = templates_config.get_template(template_name)
-    resolved_template_name = template_item.name
+    if template_name:
+        templates_to_render = [templates_config.get_template(template_name)]
+    else:
+        templates_to_render = list(templates_config.items)
+
+    if not templates_to_render:
+        raise StorageError("No templates configured for rendering")
 
     # 获取进程内锁
     async_lock = _get_async_lock()
@@ -259,53 +269,85 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
     try:
         try:
             async with async_file_lock(lock_file, timeout=5.0):
+                pre_cached: dict[str, str] = {}
                 # 二次检查：获取锁后检查是否已有新生成的文件
                 today_str = today_business().isoformat()
                 data_file = data_dir / f"{today_str}.json"
                 if data_file.exists():
                     data = _read_data_file(data_file)
                     if data and _is_recently_updated(data, threshold_sec=10):
-                        filename = _read_latest_filename(
-                            data_file,
-                            resolved_template_name,
-                        )
-                        if filename:
+                        cached_results: dict[str, str] = {}
+                        missing_templates = []
+                        for t in templates_to_render:
+                            fn = _read_latest_filename(data_file, t.name)
+                            if fn:
+                                cached_results[t.name] = fn
+                            else:
+                                missing_templates.append(t)
+                        if not missing_templates:
                             logger.info(
-                                f"Data file recently updated for template '{resolved_template_name}', skipping generation"
+                                f"All {len(templates_to_render)} template(s) recently updated, skipping generation"
                             )
-                            return filename
-                        logger.warning("Data file exists but unreadable, proceeding with generation")
+                            return cached_results
+                        # Only render missing templates, carry over cached results
+                        templates_to_render = missing_templates
+                        pre_cached = cached_results
+                        logger.info(
+                            f"Found {len(cached_results)} cached, {len(missing_templates)} to render"
+                        )
 
-                logger.info("Starting image generation...")
+                logger.info(
+                    f"Starting image generation for {len(templates_to_render)} template(s)..."
+                )
 
                 # 1. Fetch all data sources in parallel (使用缓存服务)
                 raw_data = await _fetch_all_data_parallel(app, logger)
 
-                # 2. Compute template context
+                # 2. Compute template context (once for all templates)
                 template_data = app.state.data_computer.compute(raw_data)
                 logger.info("Template data computed")
 
-                # 3. Render image
-                filename = await app.state.image_renderer.render(
-                    template_data,
-                    template_name=resolved_template_name,
-                )
-                logger.info(f"Image rendered: {filename}")
+                # 3. Render each template and update data file
+                # TODO: Consider using asyncio.gather for parallel rendering when template count grows
+                results: dict[str, str] = dict(pre_cached)
+                failed_templates: list[str] = []
+                for template_item in templates_to_render:
+                    tname = template_item.name
+                    try:
+                        t_start = time.monotonic()
+                        filename = await app.state.image_renderer.render(
+                            template_data,
+                            template_name=tname,
+                        )
+                        t_elapsed = time.monotonic() - t_start
+                        logger.info(f"Image rendered for '{tname}': {filename} ({t_elapsed:.1f}s)")
 
-                # 4. Update cache/data/{date}.json atomically
-                await _update_data_file(
-                    data_dir=str(data_dir),
-                    filename=filename,
-                    template_data=template_data,
-                    raw_data=raw_data,
-                    config=config,
-                    template_name=resolved_template_name,
-                )
+                        await _update_data_file(
+                            data_dir=str(data_dir),
+                            filename=filename,
+                            template_data=template_data,
+                            raw_data=raw_data,
+                            config=config,
+                            template_name=tname,
+                        )
+                        results[tname] = filename
+                    except Exception:
+                        logger.exception(f"Failed to render template '{tname}'")
+                        failed_templates.append(tname)
 
-                # 5. Clean up old cache (fire-and-forget, non-blocking)
+                if not results:
+                    raise StorageError("All templates failed to render")
+
+                if failed_templates:
+                    logger.warning(
+                        f"Partial render failure: {len(failed_templates)} template(s) failed: "
+                        f"{', '.join(failed_templates)}"
+                    )
+
+                # 4. Clean up old cache (fire-and-forget, non-blocking)
                 _schedule_cache_cleanup(app.state.cache_cleaner, logger)
 
-                return filename
+                return results
         except FileLockTimeout as exc:
             logger.warning("Image generation skipped: another process is generating")
             raise GenerationBusyError("Image generation locked by another process") from exc

@@ -189,7 +189,47 @@ class TestDomainDataAggregator:
         assert "date" in result
         assert "weekend" in result
         assert "news_list" in result
+        assert "week_progress" in result
+        assert "month_progress" in result
+        assert "year_progress" in result
+        assert isinstance(result["week_progress"], float)
+        assert 0.0 <= result["week_progress"] <= 100.0
         assert result["is_fallback_mode"] is True  # Should be in fallback mode
+
+    def test_compute_progress_at_cycle_start_returns_zero(self, aggregator: DomainDataAggregator) -> None:
+        """Test _compute_progress returns 0.0 at all cycle starts."""
+        # 2024-01-01 00:00:00 is a Monday, start of month, start of year
+        now = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone(timedelta(hours=8)))
+
+        result = aggregator._compute_progress(now)
+
+        assert result["week_progress"] == 0.0
+        assert result["month_progress"] == 0.0
+        assert result["year_progress"] == 0.0
+
+    def test_compute_progress_mid_cycle_returns_expected_values(self, aggregator: DomainDataAggregator) -> None:
+        """Test _compute_progress returns expected values in mid-cycle."""
+        # 2026-07-02 12:00:00+08:00 is Thursday noon
+        now = datetime(2026, 7, 2, 12, 0, 0, tzinfo=timezone(timedelta(hours=8)))
+
+        result = aggregator._compute_progress(now)
+
+        # Week: Monday 00:00 -> next Monday 00:00, elapsed 3.5/7 days = 50.0
+        assert result["week_progress"] == 50.0
+        # Month: Jul 1 00:00 -> Aug 1 00:00, elapsed 1.5/31 days ≈ 4.8
+        assert result["month_progress"] == 4.8
+        # Year: Jan 1 00:00 -> Jan 1 next year, elapsed 182.5/365 days = 50.0
+        assert result["year_progress"] == 50.0
+
+    def test_compute_progress_end_of_year_rounds_to_hundred(self, aggregator: DomainDataAggregator) -> None:
+        """Test _compute_progress rounds end-of-year value close to 100."""
+        now = datetime(2026, 12, 31, 23, 59, 59, tzinfo=timezone(timedelta(hours=8)))
+
+        result = aggregator._compute_progress(now)
+
+        assert result["year_progress"] == 100.0
+        assert 0.0 <= result["week_progress"] <= 100.0
+        assert 0.0 <= result["month_progress"] <= 100.0
 
     def test_compute_stock_indices_with_valid_data(
         self, aggregator: DomainDataAggregator, sample_stock_data: dict[str, Any]
@@ -358,3 +398,41 @@ class TestTemplateAdapter:
         result = adapter.adapt(domain_data)
 
         assert result["news_meta"] == {}
+
+    def test_adapt_fills_default_progress_values(self, adapter: TemplateAdapter) -> None:
+        """Test adapt fills default progress values when missing."""
+        domain_data: dict[str, Any] = {}
+
+        result = adapter.adapt(domain_data)
+
+        assert result["week_progress"] == 0.0
+        assert result["month_progress"] == 0.0
+        assert result["year_progress"] == 0.0
+
+    def test_adapt_clamps_invalid_progress_values(self, adapter: TemplateAdapter) -> None:
+        """Test adapt clamps invalid progress values."""
+        domain_data: dict[str, Any] = {
+            "week_progress": "invalid",
+            "month_progress": -3.0,
+            "year_progress": 123.456,
+        }
+
+        result = adapter.adapt(domain_data)
+
+        assert result["week_progress"] == 0.0
+        assert result["month_progress"] == 0.0
+        assert result["year_progress"] == 100.0
+
+    def test_adapt_handles_nan_inf_bool_progress(self, adapter: TemplateAdapter) -> None:
+        """Test adapt handles NaN, Inf, and bool progress values."""
+        domain_data: dict[str, Any] = {
+            "week_progress": float("nan"),
+            "month_progress": float("inf"),
+            "year_progress": True,
+        }
+
+        result = adapter.adapt(domain_data)
+
+        assert result["week_progress"] == 0.0
+        assert result["month_progress"] == 0.0
+        assert result["year_progress"] == 0.0
