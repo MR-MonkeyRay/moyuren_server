@@ -432,7 +432,8 @@ class AppConfig(BaseSettings):
 
     model_config = SettingsConfigDict(
         extra="forbid",
-        env_nested_delimiter="__",
+        env_nested_delimiter="_",
+        env_nested_max_split=1,
         env_file=".env",
         env_file_encoding="utf-8",
     )

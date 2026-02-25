@@ -33,8 +33,8 @@
       --m-gray: #E8E4E0;
 
       /* 半透明变体 */
-      --m-pink-light: rgba(255, 154, 162, 0.3);
-      --m-mint-light: rgba(181, 234, 215, 0.4);
+      --m-pink-light: rgba(255, 154, 162, 0.15);
+      --m-mint-light: rgba(181, 234, 215, 0.2);
       --m-gold-bg: #FFF8E1;
 
       /* 边框与阴影规范 (Cute Neo-Brutalism) */
@@ -133,8 +133,8 @@
       border: var(--border-thin);
       box-shadow: var(--shadow-sm);
     }
-    .badge-relax { background: var(--m-mint); }
-    .badge-work { background: var(--m-pink); }
+    .badge-relax { background: rgba(181, 234, 215, 0.4); }
+    .badge-work { background: rgba(255, 183, 178, 0.4); }
 
     /* --- 2. 进度条区域 --- */
     .progress-section {
@@ -370,7 +370,7 @@
       box-shadow: inset 2px 2px 0px rgba(255, 255, 255, 0.6), var(--shadow-md);
       padding: 12px 18px;
       margin-bottom: 8px;
-      background: var(--m-peach);
+      background: rgba(255, 218, 193, 0.4);
       color: var(--line-coffee);
     }
     .holiday-hero .hc-info {
@@ -379,7 +379,7 @@
       align-items: flex-start;
       gap: 3px;
     }
-    .holiday-hero .hc-name { font-size: 19px; }
+    .holiday-hero .hc-name { font-size: 24px; }
     .holiday-hero .hc-icon { font-size: 20px; }
     .holiday-hero .hc-tag { font-size: 14px; padding: 2px 6px; }
     .holiday-hero .cd-value { font-size: 34px; }
@@ -419,7 +419,7 @@
     }
     .trend-up { background: var(--m-pink-light); }
     .trend-down { background: var(--m-mint-light); }
-    .trend-flat { background: var(--m-gray); }
+    .trend-flat { background: rgba(232, 228, 224, 0.5); }
     .stock-name { font-size: 16px; font-weight: 800; opacity: 0.9; line-height: 1; }
     .stock-data {
       display: flex;
@@ -442,25 +442,9 @@
       text-align: right;
       font-size: 13px;
       opacity: 0.5;
-      margin-top: 6px;
+      margin-top: 14px;
     }
-    .gold-price-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 10px;
-      padding: 10px 14px;
-      background-color: var(--m-gold-bg);
-      border: var(--border-thin);
-      box-shadow: var(--shadow-sm);
-      border-radius: var(--radius-lg);
-      color: var(--line-coffee);
-    }
-    .gold-price-bar .stock-data {
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-    }
+    .gold-item { background: var(--m-gold-bg) !important; }
 
     /* --- 6. KFC 区块 --- */
     .kfc-card {
@@ -757,25 +741,37 @@
           </div>
         </div>
         {% endfor %}
+        {# 金价区域 #}
+        {% if gold_price %}
+        <div class="stock-item gold-item trend-{{ gold_price.trend }}">
+          <div class="stock-name">💰 {{ gold_price.name }}</div>
+          <div class="stock-data">
+            <span class="stock-price">{{ gold_price.price }}</span>
+            <span class="stock-pct font-cute">
+              {% if gold_price.trend == 'up' %}🚀{% elif gold_price.trend == 'down' %}🐢{% else %}→{% endif %}
+              {{ gold_price.spread_pct }}
+            </span>
+          </div>
+        </div>
+        {% endif %}
       </div>
       {% if stock_indices.updated %}
       <div class="stock-updated">更新于 {{ stock_indices.updated | format_datetime }}</div>
       {% endif %}
       {% else %}
       <div class="empty-state font-cute">(っ˘ω˘ς ) 股市休息中...</div>
-      {% endif %}
-      {# 金价区域 #}
       {% if gold_price %}
-      <div class="gold-price-bar">
+      <div class="stock-item gold-item trend-{{ gold_price.trend }}" style="margin-top: 10px;">
         <div class="stock-name">💰 {{ gold_price.name }}</div>
         <div class="stock-data">
-          <span class="stock-price">{{ gold_price.price }} {{ gold_price.unit }}</span>
+          <span class="stock-price">{{ gold_price.price }}</span>
           <span class="stock-pct font-cute">
             {% if gold_price.trend == 'up' %}🚀{% elif gold_price.trend == 'down' %}🐢{% else %}→{% endif %}
             {{ gold_price.spread_pct }}
           </span>
         </div>
       </div>
+      {% endif %}
       {% endif %}
     </section>
     {% endif %}

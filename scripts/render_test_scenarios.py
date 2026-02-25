@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.core.config import (
     FunContentSource,
+    GoldPriceSource,
     HolidaySource,
     NewsSource,
     StockIndexSource,
@@ -23,6 +24,7 @@ from app.services.calendar import init_timezones
 from app.services.compute import DataComputer
 from app.services.fetcher import DataFetcher
 from app.services.fun_content import FunContentService
+from app.services.gold_price import GoldPriceService
 from app.services.holiday import HolidayService
 from app.services.renderer import ImageRenderer
 from app.services.stock_index import StockIndexService
@@ -287,6 +289,7 @@ async def get_base_template_data(
     holiday_service: HolidayService,
     fun_content_service: FunContentService,
     stock_index_service: StockIndexService | None,
+    gold_price_service: GoldPriceService | None,
     data_computer: DataComputer,
     logger,
 ) -> dict:
@@ -319,6 +322,17 @@ async def get_base_template_data(
             logger.info(f"获取到 {len(stock_indices.get('items', []))} 条股票指数数据")
         except Exception as e:
             logger.warning(f"获取股票指数失败: {e}")
+
+    # 获取金价数据
+    raw_data["gold_price"] = None
+    if gold_price_service:
+        try:
+            gold_price = await gold_price_service.fetch_gold_price()
+            raw_data["gold_price"] = gold_price
+            if gold_price:
+                logger.info(f"获取到金价数据: {gold_price.get('today_price')}")
+        except Exception as e:
+            logger.warning(f"获取金价数据失败: {e}")
 
     return data_computer.compute(raw_data)
 
@@ -396,6 +410,12 @@ async def main():
     if stock_index_source:
         stock_index_service = StockIndexService(stock_index_source)
 
+    # Initialize gold price service
+    gold_price_service = None
+    gold_price_source = config.get_source(GoldPriceSource)
+    if gold_price_source:
+        gold_price_service = GoldPriceService(gold_price_source)
+
     # Get templates configuration
     templates_config = config.get_templates_config()
 
@@ -416,6 +436,7 @@ async def main():
         holiday_service=holiday_service,
         fun_content_service=fun_content_service,
         stock_index_service=stock_index_service,
+        gold_price_service=gold_price_service,
         data_computer=data_computer,
         logger=logger,
     )

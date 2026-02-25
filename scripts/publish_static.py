@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.core.config import (
     CrazyThursdaySource,
     FunContentSource,
+    GoldPriceSource,
     HolidaySource,
     NewsSource,
     StockIndexSource,
@@ -27,6 +28,7 @@ from app.services.calendar import get_display_timezone, init_timezones
 from app.services.compute import DataComputer
 from app.services.fetcher import DataFetcher
 from app.services.fun_content import FunContentService
+from app.services.gold_price import GoldPriceService
 from app.services.holiday import HolidayService
 from app.services.kfc import KfcService
 from app.services.renderer import ImageRenderer
@@ -279,6 +281,12 @@ async def main():
     if stock_index_source:
         stock_index_service = StockIndexService(stock_index_source)
 
+    # Initialize gold price service if config exists
+    gold_price_service = None
+    gold_price_source = config.get_source(GoldPriceSource)
+    if gold_price_source:
+        gold_price_service = GoldPriceService(gold_price_source)
+
     data_computer = DataComputer()
 
     # Get templates configuration
@@ -336,6 +344,17 @@ async def main():
                 logger.info(f"Fetched {len(stock_indices.get('items', []))} stock indices")
             except Exception as e:
                 logger.warning(f"Failed to fetch stock indices: {type(e).__name__}")
+
+        # 1.5 Fetch gold price data
+        raw_data["gold_price"] = None
+        if gold_price_service:
+            try:
+                gold_price = await gold_price_service.fetch_gold_price()
+                raw_data["gold_price"] = gold_price
+                if gold_price:
+                    logger.info(f"Fetched gold price: {gold_price.get('today_price')}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch gold price: {type(e).__name__}")
 
         # 2. Compute template context
         template_data = data_computer.compute(raw_data)

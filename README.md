@@ -303,21 +303,21 @@ sudo chown -R 1000:1000 cache logs
 
 | 配置项 | 环境变量 | 说明 |
 | ------ | -------- | ---- |
-| `server.host` | `SERVER__HOST` | 监听地址 |
-| `server.port` | `SERVER__PORT` | 服务端口 |
-| `server.base_domain` | `SERVER__BASE_DOMAIN` | 图片 URL 前缀 |
-| `paths.cache_dir` | `PATHS__CACHE_DIR` | 缓存根目录（默认 `cache`） |
-| `scheduler.mode` | `SCHEDULER__MODE` | 调度模式（`daily` 或 `hourly`） |
-| `scheduler.daily_times` | `SCHEDULER__DAILY_TIMES` | 生成时间（逗号分隔） |
-| `scheduler.minute_of_hour` | `SCHEDULER__MINUTE_OF_HOUR` | 每小时模式下的触发分钟（0-59） |
+| `server.host` | `SERVER_HOST` | 监听地址 |
+| `server.port` | `SERVER_PORT` | 服务端口 |
+| `server.base_domain` | `SERVER_BASE_DOMAIN` | 图片 URL 前缀 |
+| `paths.cache_dir` | `PATHS_CACHE_DIR` | 缓存根目录（默认 `cache`） |
+| `scheduler.mode` | `SCHEDULER_MODE` | 调度模式（`daily` 或 `hourly`） |
+| `scheduler.daily_times` | `SCHEDULER_DAILY_TIMES` | 生成时间（JSON 数组，如 `'["06:00","18:00"]'`） |
+| `scheduler.minute_of_hour` | `SCHEDULER_MINUTE_OF_HOUR` | 每小时模式下的触发分钟（0-59） |
 | `templates.config.device_scale_factor` | - | 缩放因子（默认 3） |
 | `templates.config.jpeg_quality` | - | JPEG 质量（1-100，默认 100） |
 | `templates.config.use_china_cdn` | - | 字体 CDN 开关（true: 大陆 CDN, false: 国际 CDN） |
 | `templates.items[].viewport` | - | 各模板视口尺寸（width/height） |
-| `cache.retain_days` | `CACHE__RETAIN_DAYS` | 缓存保留天数（默认 30） |
-| `ops.api_key` | `OPS__API_KEY` | 运维 API Key（留空则禁用 ops 端点） |
-| `logging.level` | `LOGGING__LEVEL` | 日志级别 |
-| `logging.file` | `LOGGING__FILE` | 日志文件路径（空字符串表示只输出到标准输出） |
+| `cache.retain_days` | `CACHE_RETAIN_DAYS` | 缓存保留天数（默认 30） |
+| `ops.api_key` | `OPS_API_KEY` | 运维 API Key（留空则禁用 ops 端点） |
+| `logging.level` | `LOGGING_LEVEL` | 日志级别 |
+| `logging.file` | `LOGGING_FILE` | 日志文件路径（空字符串表示只输出到标准输出） |
 | `timezone.business` | - | 业务时区（节假日/节气/周末判断） |
 | `timezone.display` | - | 显示时区（图片时间戳、API 响应时间；支持 `local`） |
 | `data_sources` | - | 外部数据源配置列表（新闻、趣味内容等） |
@@ -325,15 +325,13 @@ sudo chown -R 1000:1000 cache logs
 | `templates.default` | - | 默认模板名 |
 | `templates.dir` | - | 模板目录（默认 `templates`，自动扫描 HTML 文件） |
 
-> **迁移提示**：v0.8.0 起环境变量使用双下划线 `__` 作为嵌套分隔符（如 `SERVER__HOST`）。如果从旧版本升级，请将原有的单下划线环境变量（如 `SERVER_HOST`）更新为双下划线格式，否则配置将不会生效。
-
 ### 调度配置说明
 
 - `scheduler.mode` 支持 `daily` 与 `hourly`
 - 当 `mode=hourly` 时，任务会在每小时的 `scheduler.minute_of_hour` 分触发
 - 当 `mode=daily` 时，任务会按 `scheduler.daily_times` 中每个 `HH:MM` 时间触发
 - `mode=hourly` 时 `daily_times` 会被忽略，建议保留以便快速回退到 `daily`
-- 环境变量覆盖：`SCHEDULER__MODE`、`SCHEDULER__DAILY_TIMES`、`SCHEDULER__MINUTE_OF_HOUR`
+- 环境变量覆盖：`SCHEDULER_MODE`、`SCHEDULER_DAILY_TIMES`、`SCHEDULER_MINUTE_OF_HOUR`
 
 ### 缓存目录结构
 
