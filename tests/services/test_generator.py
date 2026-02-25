@@ -291,6 +291,7 @@ class TestFetchAllDataParallel:
             fun_content_service=SimpleNamespace(get=AsyncMock(return_value={"title": "摸鱼文案"})),
             kfc_service=SimpleNamespace(get=AsyncMock(return_value={"content": "疯狂星期四"})),
             stock_index_service=SimpleNamespace(fetch_indices=AsyncMock(return_value={"items": [1, 2]})),
+            gold_price_service=SimpleNamespace(get=AsyncMock(return_value={"today_price": "680.00", "sell_price": "670.00", "unit": "元/克"})),
         )
         app = SimpleNamespace(state=SimpleNamespace(services=services))
         logger = MagicMock()
@@ -302,6 +303,7 @@ class TestFetchAllDataParallel:
         assert result["fun_content"] == {"title": "摸鱼文案"}
         assert result["kfc_copy"] == {"content": "疯狂星期四"}
         assert result["stock_indices"] == {"items": [1, 2]}
+        assert result["gold_price"] == {"today_price": "680.00", "sell_price": "670.00", "unit": "元/克"}
 
     @pytest.mark.asyncio
     async def test_handles_missing_optional_services_and_errors(self) -> None:
@@ -317,13 +319,14 @@ class TestFetchAllDataParallel:
                 fun_content_service=SimpleNamespace(get=AsyncMock(side_effect=RuntimeError("down"))),
                 kfc_service=None,
                 stock_index_service=None,
+                gold_price_service=None,
             )
         )
         logger = MagicMock()
 
         result = await _fetch_all_data_parallel(app, logger)
 
-        assert result == {"holidays": [], "fun_content": None, "kfc_copy": None, "stock_indices": None}
+        assert result == {"holidays": [], "fun_content": None, "kfc_copy": None, "stock_indices": None, "gold_price": None}
         warning_messages = [call.args[0] for call in logger.warning.call_args_list]
         assert any("raw_data is not dict" in msg for msg in warning_messages)
 
@@ -340,13 +343,14 @@ class TestFetchAllDataParallel:
             fun_content_service=SimpleNamespace(get=AsyncMock(return_value=None)),
             kfc_service=SimpleNamespace(get=AsyncMock(side_effect=RuntimeError("kfc down"))),
             stock_index_service=SimpleNamespace(fetch_indices=AsyncMock(side_effect=RuntimeError("stock down"))),
+            gold_price_service=SimpleNamespace(get=AsyncMock(side_effect=RuntimeError("gold down"))),
         )
         app = SimpleNamespace(state=SimpleNamespace(services=services))
         logger = MagicMock()
 
         result = await _fetch_all_data_parallel(app, logger)
 
-        assert result == {"holidays": [], "fun_content": None, "kfc_copy": None, "stock_indices": None}
+        assert result == {"holidays": [], "fun_content": None, "kfc_copy": None, "stock_indices": None, "gold_price": None}
 
 
 class TestScheduleCacheCleanup:

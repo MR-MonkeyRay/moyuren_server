@@ -227,8 +227,24 @@ class StockIndexSource(DataSourceBase):
         return value
 
 
+class GoldPriceSource(DataSourceBase):
+    """Gold price data source configuration."""
+
+    type: Literal["gold_price"] = "gold_price"
+    url: str
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        if not value:
+            raise ValueError("url cannot be empty")
+        if not value.startswith(("http://", "https://")):
+            raise ValueError("url must start with http:// or https://")
+        return value
+
+
 DataSource = Annotated[
-    NewsSource | FunContentSource | CrazyThursdaySource | HolidaySource | StockIndexSource,
+    NewsSource | FunContentSource | CrazyThursdaySource | HolidaySource | StockIndexSource | GoldPriceSource,
     Field(discriminator="type"),
 ]
 

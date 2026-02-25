@@ -216,8 +216,8 @@ class TestDomainDataAggregator:
 
         # Week: Monday 00:00 -> next Monday 00:00, elapsed 3.5/7 days = 50.0
         assert result["week_progress"] == 50.0
-        # Month: Jul 1 00:00 -> Aug 1 00:00, elapsed 1.5/31 days ≈ 4.8
-        assert result["month_progress"] == 4.8
+        # Month: Jul 1 00:00 -> Aug 1 00:00, elapsed 1.5/31 days ≈ 4.84
+        assert result["month_progress"] == 4.84
         # Year: Jan 1 00:00 -> Jan 1 next year, elapsed 182.5/365 days = 50.0
         assert result["year_progress"] == 50.0
 

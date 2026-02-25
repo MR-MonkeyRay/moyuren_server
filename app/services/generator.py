@@ -100,19 +100,22 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
     """
     # 优先使用服务容器，兼容旧方式
     services = getattr(app.state, "services", None)
-    data_fetcher = services.data_fetcher if services else app.state.data_fetcher
+    data_fetcher = services.data_fetcher if services else getattr(app.state, "data_fetcher", None)
     holiday_service = services.holiday_service if services else app.state.holiday_service
-    fun_content_service = services.fun_content_service if services else app.state.fun_content_service
+    fun_content_service = services.fun_content_service if services else getattr(app.state, "fun_content_service", None)
     kfc_service = services.kfc_service if services else app.state.kfc_service
     stock_index_service = services.stock_index_service if services else app.state.stock_index_service
+    gold_price_service = services.gold_price_service if services else getattr(app.state, "gold_price_service", None)
 
     # Define fetch tasks
     async def fetch_api_data():
+        if not data_fetcher:
+            return {}
         try:
             data = await data_fetcher.get()
             return data if data is not None else {}
         except Exception as e:
-            logger.warning(f"Failed to fetch API data: {e}")
+            logger.warning(f"Failed to fetch API data: {e}", exc_info=True)
             return {}
 
     async def fetch_holidays():
@@ -120,14 +123,16 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             holidays = await holiday_service.get()
             return holidays if holidays is not None else []
         except Exception as e:
-            logger.warning(f"Failed to fetch holidays: {e}")
+            logger.warning(f"Failed to fetch holidays: {e}", exc_info=True)
             return []
 
     async def fetch_fun_content():
+        if not fun_content_service:
+            return None
         try:
             return await fun_content_service.get()
         except Exception as e:
-            logger.warning(f"Failed to fetch fun content: {e}")
+            logger.warning(f"Failed to fetch fun content: {e}", exc_info=True)
             return None
 
     async def fetch_kfc():
@@ -136,7 +141,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
         try:
             return await kfc_service.get()
         except Exception as e:
-            logger.warning(f"Failed to fetch KFC content: {e}")
+            logger.warning(f"Failed to fetch KFC content: {e}", exc_info=True)
             return None
 
     async def fetch_stock_indices():
@@ -145,41 +150,61 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
         try:
             return await stock_index_service.fetch_indices()
         except Exception as e:
-            logger.warning(f"Failed to fetch stock indices: {e}")
+            logger.warning(f"Failed to fetch stock indices: {e}", exc_info=True)
+            return None
+
+    async def fetch_gold_price():
+        if not gold_price_service:
+            return None
+        try:
+            return await gold_price_service.get()
+        except Exception as e:
+            logger.warning(f"Failed to fetch gold price: {e}", exc_info=True)
             return None
 
     # Execute all fetches in parallel
-    results = await asyncio.gather(
+    (
+        api_data_result,
+        holidays_result,
+        fun_content_result,
+        kfc_result,
+        stock_indices_result,
+        gold_price_result,
+    ) = await asyncio.gather(
         fetch_api_data(),
         fetch_holidays(),
         fetch_fun_content(),
         fetch_kfc(),
         fetch_stock_indices(),
+        fetch_gold_price(),
     )
 
     # Merge results into raw_data with type safety
     # Ensure raw_data is a dict (DailyCache.get() might return non-dict if corrupted)
-    if not isinstance(results[0], dict):
-        logger.warning(f"raw_data is not dict (got {type(results[0]).__name__}), using empty dict")
+    if not isinstance(api_data_result, dict):
+        logger.warning(f"raw_data is not dict (got {type(api_data_result).__name__}), using empty dict")
         raw_data = {}
     else:
-        raw_data = results[0]
-    raw_data["holidays"] = results[1]
-    raw_data["fun_content"] = results[2]
-    raw_data["kfc_copy"] = results[3]
-    raw_data["stock_indices"] = results[4]
+        raw_data = api_data_result
+    raw_data["holidays"] = holidays_result
+    raw_data["fun_content"] = fun_content_result
+    raw_data["kfc_copy"] = kfc_result
+    raw_data["stock_indices"] = stock_indices_result
+    raw_data["gold_price"] = gold_price_result
 
     # Log fetch results (count actual API data keys, excluding merged fields)
-    api_keys = [k for k in raw_data if k not in ("holidays", "fun_content", "kfc_copy", "stock_indices")]
+    api_keys = [k for k in raw_data if k not in ("holidays", "fun_content", "kfc_copy", "stock_indices", "gold_price")]
     logger.info(f"Fetched data: {len(api_keys)} API endpoints, parallel fetch completed")
-    if results[1]:
-        logger.info(f"Fetched {len(results[1])} holidays")
-    if results[2] and isinstance(results[2], dict):
-        logger.info(f"Fetched fun content: {results[2].get('title')}")
-    if results[3]:
+    if holidays_result:
+        logger.info(f"Fetched {len(holidays_result)} holidays")
+    if fun_content_result and isinstance(fun_content_result, dict):
+        logger.info(f"Fetched fun content: {fun_content_result.get('title')}")
+    if kfc_result:
         logger.info("Fetched KFC Crazy Thursday content")
-    if results[4] and isinstance(results[4], dict):
-        logger.info(f"Fetched {len(results[4].get('items', []))} stock indices")
+    if stock_indices_result and isinstance(stock_indices_result, dict):
+        logger.info(f"Fetched {len(stock_indices_result.get('items', []))} stock indices")
+    if gold_price_result and isinstance(gold_price_result, dict):
+        logger.info(f"Fetched gold price: {gold_price_result.get('today_price')}")
 
     return raw_data
 
@@ -456,6 +481,7 @@ async def _update_data_file(
             "kfc_content": kfc_content,
             "kfc_content_full": template_data.get("kfc_content"),
             "stock_indices": raw_data.get("stock_indices"),
+            "gold_price": raw_data.get("gold_price"),
         }
 
         # Atomic write

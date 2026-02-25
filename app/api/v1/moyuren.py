@@ -151,6 +151,7 @@ def _build_detail_response(data: dict, base_domain: str, template: str | None) -
         "holidays": data.get("holidays"),
         "kfc_content_full": data.get("kfc_content_full"),
         "stock_indices": data.get("stock_indices"),
+        "gold_price": data.get("gold_price"),
     }
 
     return {**simple, **detail_fields}
@@ -230,7 +231,7 @@ async def _load_data_for_date(
             return None, JSONResponse(
                 content=error_response(
                     code=ErrorCode.GENERATION_FAILED,
-                    message=f"Image generation failed: {e}",
+                    message="Image generation failed, please try again later",
                 ),
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
@@ -254,7 +255,7 @@ async def _load_data_for_date(
         return None, JSONResponse(
             content=error_response(
                 code=ErrorCode.STORAGE_READ_FAILED,
-                message=f"Failed to read data file: {e}",
+                message="Failed to read data file",
             ),
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
@@ -263,7 +264,7 @@ async def _load_data_for_date(
         return None, JSONResponse(
             content=error_response(
                 code=ErrorCode.STORAGE_READ_FAILED,
-                message=f"Invalid data file: {e}",
+                message="Invalid data file format",
             ),
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
@@ -408,7 +409,7 @@ def _handle_image_response(
         return JSONResponse(
             content=error_response(
                 code=ErrorCode.STORAGE_READ_FAILED,
-                message=f"Invalid file path: {e}",
+                message="Invalid file path",
             ),
             status_code=status.HTTP_400_BAD_REQUEST,
         )

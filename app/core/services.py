@@ -6,6 +6,7 @@ if TYPE_CHECKING:
     from app.services.compute import DataComputer
     from app.services.fetcher import CachedDataFetcher
     from app.services.fun_content import CachedFunContentService
+    from app.services.gold_price import CachedGoldPriceService
     from app.services.holiday import CachedHolidayService
     from app.services.kfc import CachedKfcService
     from app.services.renderer import ImageRenderer
@@ -16,11 +17,12 @@ if TYPE_CHECKING:
 class AppServices:
     """应用服务容器 - 类型安全的服务访问"""
 
-    data_fetcher: "CachedDataFetcher"
+    data_fetcher: "CachedDataFetcher | None"
     holiday_service: "CachedHolidayService"
-    fun_content_service: "CachedFunContentService"
+    fun_content_service: "CachedFunContentService | None"
     kfc_service: "CachedKfcService | None"
     stock_index_service: "StockIndexService | None"
+    gold_price_service: "CachedGoldPriceService | None"
     image_renderer: "ImageRenderer"
     data_computer: "DataComputer"
     cache_cleaner: "CacheCleaner"

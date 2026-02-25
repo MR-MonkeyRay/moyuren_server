@@ -181,6 +181,7 @@ class DomainDataAggregator:
         stock_indices = self._compute_stock_indices(raw_data)
         holidays = self._compute_holidays(now, raw_data)
         history = self._compute_history(raw_data)
+        gold_price = self._compute_gold_price(raw_data)
 
         # 检测降级模式：当多个外部数据源都失败时
         is_fallback_mode = (
@@ -201,6 +202,7 @@ class DomainDataAggregator:
             "holidays": holidays,
             "kfc_content": self._compute_kfc(now, raw_data),
             "stock_indices": stock_indices,
+            "gold_price": gold_price,
             # 降级模式标志
             "is_fallback_mode": is_fallback_mode,
             # 项目元信息
@@ -290,6 +292,35 @@ class DomainDataAggregator:
             "is_stale": data.get("is_stale", False),
             "is_data_missing": False,  # 数据正常获取
         }
+
+    def _compute_gold_price(self, raw_data: dict[str, Any]) -> dict[str, Any] | None:
+        """Compute gold price data for template.
+
+        Args:
+            raw_data: Raw data dictionary.
+
+        Returns:
+            Dictionary with gold price info or None.
+        """
+        data = raw_data.get("gold_price")
+        if not isinstance(data, dict):
+            return None
+        try:
+            today_price = float(data["today_price"])
+            sell_price = float(data["sell_price"])
+            change = today_price - sell_price
+            change_pct = (change / sell_price) * 100 if sell_price != 0 else 0.0
+            trend = "up" if change > 0 else ("down" if change < 0 else "flat")
+            return {
+                "name": "今日金价",
+                "price": f"{today_price:.2f}",
+                "unit": data.get("unit", "元/克"),
+                "spread_pct": f"{change_pct:+.2f}%",  # 买入价与卖出价的价差百分比
+                "trend": trend,
+            }
+        except (KeyError, ValueError, TypeError) as e:
+            logging.getLogger(__name__).debug(f"Gold price compute failed: {e}")
+            return None
 
     def _compute_kfc(self, now: datetime, raw_data: dict[str, Any]) -> dict[str, Any] | None:
         """Compute KFC content if available and it's Thursday.
@@ -393,7 +424,7 @@ class DomainDataAggregator:
             if total <= 0:
                 return 0.0
             elapsed = now_ts - start_ts
-            value = round(elapsed / total * 100, 1)
+            value = round(elapsed / total * 100, 2)
             return min(100.0, max(0.0, value))
 
         return {
@@ -731,7 +762,7 @@ class TemplateAdapter:
                 data[key] = 0.0
                 continue
 
-            normalized = round(normalized, 1)
+            normalized = round(normalized, 2)
             if normalized < 0.0:
                 normalized = 0.0
             elif normalized > 100.0:

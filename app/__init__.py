@@ -1,4 +1,4 @@
 """Moyuren API Application."""
 
-__version__ = "0.12.0"
+__version__ = "0.14.0"
 __github_url__ = "github.com/MR-MonkeyRay/moyuren_server"

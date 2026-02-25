@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 import httpx
 from fastapi import FastAPI, Request
@@ -18,6 +19,7 @@ from app.api.v1.templates import router as templates_router
 from app.core.config import (
     CrazyThursdaySource,
     FunContentSource,
+    GoldPriceSource,
     HolidaySource,
     NewsSource,
     StockIndexSource,
@@ -38,6 +40,7 @@ from app.services.holiday import CachedHolidayService
 from app.services.kfc import CachedKfcService
 from app.services.renderer import ImageRenderer
 from app.services.stock_index import StockIndexService
+from app.services.gold_price import CachedGoldPriceService
 
 
 @asynccontextmanager
@@ -94,12 +97,15 @@ async def lifespan(app: FastAPI):
 
     # 初始化带缓存的数据获取器
     news_source = config.get_source(NewsSource)
-    data_fetcher = CachedDataFetcher(
-        source=news_source,
-        logger=logger,
-        cache_dir=daily_cache_dir,
-        http_client=http_client,
-    )
+    if news_source:
+        data_fetcher = CachedDataFetcher(
+            source=news_source,
+            logger=logger,
+            cache_dir=daily_cache_dir,
+            http_client=http_client,
+        )
+    else:
+        data_fetcher = None
 
     # Initialize data computation components
     domain_aggregator = DomainDataAggregator()
@@ -119,11 +125,14 @@ async def lifespan(app: FastAPI):
 
     # 初始化带缓存的趣味内容服务
     fun_content_source = config.get_source(FunContentSource)
-    fun_content_service = CachedFunContentService(
-        config=fun_content_source,
-        logger=logger,
-        cache_dir=daily_cache_dir,
-    )
+    if fun_content_source:
+        fun_content_service = CachedFunContentService(
+            config=fun_content_source,
+            logger=logger,
+            cache_dir=daily_cache_dir,
+        )
+    else:
+        fun_content_service = None
 
     # 初始化带缓存的 KFC 服务
     kfc_service = None
@@ -140,6 +149,17 @@ async def lifespan(app: FastAPI):
     stock_index_source = config.get_source(StockIndexSource)
     if stock_index_source:
         stock_index_service = StockIndexService(stock_index_source)
+
+    # Initialize gold price service if config exists
+    gold_price_service = None
+    gold_price_source = config.get_source(GoldPriceSource)
+    if gold_price_source:
+        gold_price_service = CachedGoldPriceService(
+            config=gold_price_source,
+            logger=logger,
+            cache_dir=daily_cache_dir,
+            http_client=http_client,
+        )
 
     # Get templates configuration
     templates_config = config.get_templates_config()
@@ -164,6 +184,7 @@ async def lifespan(app: FastAPI):
         fun_content_service=fun_content_service,
         kfc_service=kfc_service,
         stock_index_service=stock_index_service,
+        gold_price_service=gold_price_service,
         image_renderer=image_renderer,
         data_computer=data_computer,
         cache_cleaner=cache_cleaner,
@@ -178,6 +199,7 @@ async def lifespan(app: FastAPI):
     app.state.fun_content_service = fun_content_service
     app.state.kfc_service = kfc_service
     app.state.stock_index_service = stock_index_service
+    app.state.gold_price_service = gold_price_service
     app.state.image_renderer = image_renderer
     app.state.templates_config = templates_config
     app.state.cache_cleaner = cache_cleaner
@@ -187,17 +209,21 @@ async def lifespan(app: FastAPI):
     async def warmup_daily_cache():
         """预热日级缓存"""
         logger.info("Warming up daily cache...")
-        tasks = [
-            data_fetcher.get(),
-            fun_content_service.get(),
-            holiday_service.get(),
-        ]
+        named_tasks: list[tuple[str, Any]] = [("holiday", holiday_service.get())]
+        if data_fetcher:
+            named_tasks.append(("data_fetcher", data_fetcher.get()))
+        if fun_content_service:
+            named_tasks.append(("fun_content", fun_content_service.get()))
         if kfc_service:
-            tasks.append(kfc_service.get())
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for i, result in enumerate(results):
+            named_tasks.append(("kfc", kfc_service.get()))
+        if gold_price_service:
+            named_tasks.append(("gold_price", gold_price_service.get()))
+        names = [name for name, _ in named_tasks]
+        coros = [coro for _, coro in named_tasks]
+        results = await asyncio.gather(*coros, return_exceptions=True)
+        for name, result in zip(names, results):
             if isinstance(result, Exception):
-                logger.warning(f"Cache warmup task {i} failed: {result}")
+                logger.warning(f"Cache warmup [{name}] failed: {result}")
         logger.info("Daily cache warmup completed")
 
     await warmup_daily_cache()

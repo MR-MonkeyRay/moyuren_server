@@ -82,6 +82,10 @@ data_sources:
       US: "America/New_York"
     cache_ttl_sec: 60
 
+  - type: "gold_price"
+    url: "https://60s.viki.moe/v2/gold-price"
+    timeout_sec: 5
+
 logging:
   level: "INFO"
   file: "logs/app.log"

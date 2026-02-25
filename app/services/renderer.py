@@ -82,6 +82,8 @@ def nl2br(value: str | None) -> Markup:
 class ImageRenderer:
     """HTML template renderer and screenshot generator using reusable browser."""
 
+    MAX_VIEWPORT_HEIGHT = 4000  # Maximum viewport height to prevent memory/CPU issues
+
     def __init__(
         self,
         templates_config: TemplatesConfig,
@@ -218,11 +220,30 @@ class ImageRenderer:
             # Set HTML content and wait for network idle
             await page.set_content(html_content, wait_until="networkidle")
 
+            use_full_page = True
+            # Adjust viewport height to match actual content height
+            # This ensures full_page=True captures content without extra blank space
+            content_height = await page.evaluate(
+                "Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
+            )
+            if content_height and content_height != viewport.height:
+                original_height = content_height
+                content_height = min(content_height, self.MAX_VIEWPORT_HEIGHT)
+                if original_height > self.MAX_VIEWPORT_HEIGHT:
+                    self.logger.error(
+                        f"Screenshot truncated: content height {original_height}px exceeds "
+                        f"max {self.MAX_VIEWPORT_HEIGHT}px, output will be clipped"
+                    )
+                    use_full_page = False
+                await page.set_viewport_size(
+                    {"width": viewport.width, "height": content_height}
+                )
+
             # Take screenshot as JPEG
             screenshot_bytes = await page.screenshot(
                 type="jpeg",
                 quality=jpeg_quality,
-                full_page=True,
+                full_page=use_full_page,
             )
 
             return screenshot_bytes
