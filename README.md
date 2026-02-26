@@ -37,6 +37,8 @@ https://api.monkeyray.net/api/v1/moyuren
   - 交易日历：[exchange_calendars](https://github.com/gerrymanoim/exchange_calendars)
 - 实时金价查询（人民币/美元）
   - 数据源：[60s-api](https://60s.viki.moe)
+- 每日英语单词（ECDICT 词典 + 随机 API）
+  - 数据源：[ECDICT](https://github.com/skywind3000/ECDICT)、[60s-api](https://60s.viki.moe)
 - 周/月/年进度百分比计算
 - 多模板渲染：自动发现模板目录中的 HTML 文件，通过 meta 标签自描述渲染参数，错误隔离确保部分失败不影响其他模板
 - Playwright 高质量浏览器渲染
@@ -320,8 +322,9 @@ sudo chown -R 1000:1000 cache logs
 | `logging.file` | `LOGGING_FILE` | 日志文件路径（空字符串表示只输出到标准输出） |
 | `timezone.business` | - | 业务时区（节假日/节气/周末判断） |
 | `timezone.display` | - | 显示时区（图片时间戳、API 响应时间；支持 `local`） |
+| `network.ghproxy_urls` | - | GitHub 代理 URL 列表（用于加速节假日数据和 ECDICT 下载） |
 | `data_sources` | - | 外部数据源配置列表（新闻、趣味内容等） |
-| `data_sources[].type` | - | 数据源类型（news/fun_content/crazy_thursday/holiday/stock_index/gold_price） |
+| `data_sources[].type` | - | 数据源类型（news/fun_content/crazy_thursday/holiday/stock_index/gold_price/daily_english） |
 | `templates.default` | - | 默认模板名 |
 | `templates.dir` | - | 模板目录（默认 `templates`，自动扫描 HTML 文件） |
 
@@ -349,6 +352,7 @@ cache/
 │   ├── news.json
 │   ├── fun_content.json
 │   ├── kfc.json
+│   ├── daily_english.json
 │   └── holidays.json
 ├── holidays/          # 节假日原始年度数据
 │   ├── 2025.json
@@ -411,8 +415,6 @@ data_sources:
 
   - type: "holiday"
     timeout_sec: 10
-    mirror_urls:
-      - "https://ghfast.top/"
 
   - type: "stock_index"
     quote_url: "https://push2delay.eastmoney.com/api/qt/ulist.np/get"

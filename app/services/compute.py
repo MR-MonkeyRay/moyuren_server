@@ -203,6 +203,7 @@ class DomainDataAggregator:
             "kfc_content": self._compute_kfc(now, raw_data),
             "stock_indices": stock_indices,
             "gold_price": gold_price,
+            "daily_english": raw_data.get("daily_english"),
             # 降级模式标志
             "is_fallback_mode": is_fallback_mode,
             # 项目元信息
@@ -750,6 +751,9 @@ class TemplateAdapter:
             data["news_meta"] = {}
         if data.get("holidays") is None:
             data["holidays"] = []
+
+        if data.get("daily_english") is None:
+            data["daily_english"] = None
 
         for key in ("week_progress", "month_progress", "year_progress"):
             value = data.get(key, 0.0)

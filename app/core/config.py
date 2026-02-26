@@ -1,6 +1,7 @@
 """Configuration management module."""
 
 import re
+import logging
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypeVar
 
@@ -97,6 +98,32 @@ class OpsConfig(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class NetworkConfig(BaseModel):
+    """Global network configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ghproxy_urls: list[str] = Field(default_factory=list)
+
+    @field_validator("ghproxy_urls")
+    @classmethod
+    def validate_ghproxy_urls(cls, value: list[str]) -> list[str]:
+        valid_urls: list[str] = []
+        for url in value:
+            if not url.startswith(("http://", "https://")):
+                logging.getLogger(__name__).warning(
+                    f"Invalid ghproxy_url '{url}': must start with http:// or https://, skipping"
+                )
+                continue
+            if "?" in url or "#" in url:
+                logging.getLogger(__name__).warning(
+                    f"Invalid ghproxy_url '{url}': query/fragment not allowed, skipping"
+                )
+                continue
+            valid_urls.append(url)
+        return valid_urls
+
+
 class DataSourceBase(BaseModel):
     """Base model for all data sources."""
 
@@ -186,7 +213,78 @@ class HolidaySource(DataSourceBase):
     """Holiday data source configuration."""
 
     type: Literal["holiday"] = "holiday"
-    mirror_urls: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_mirror_urls(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "mirror_urls" in data:
+            logging.getLogger(__name__).warning(
+                "HolidaySource.mirror_urls is deprecated. "
+                "Use top-level network.ghproxy_urls instead."
+            )
+            data.pop("mirror_urls")
+        return data
+
+
+class SQLiteBackendConfig(BaseModel):
+    """SQLite dictionary backend configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["sqlite"] = "sqlite"
+    db_path: str = "cache/ecdict/stardict.db"
+    download_url: str = (
+        "https://github.com/skywind3000/ECDICT/releases/download/1.0.28/ecdict-sqlite-28.zip"
+    )
+    checksum_sha256: str = ""
+
+
+DictBackendConfig = Annotated[
+    SQLiteBackendConfig,  # Future: | CsvBackendConfig | PostgresBackendConfig
+    Field(discriminator="type"),
+]
+
+
+class DailyEnglishSource(DataSourceBase):
+    """Daily English word data source configuration."""
+
+    type: Literal["daily_english"] = "daily_english"
+    enabled: bool = True
+    word_api_url: str = "https://random-word-api.herokuapp.com/word"
+    difficulty_range: list[int] = Field(default_factory=lambda: [3, 5])
+    max_retries: int = 10
+    api_failure_threshold: int = 3
+    backend: DictBackendConfig = Field(default_factory=SQLiteBackendConfig)
+
+    @field_validator("difficulty_range")
+    @classmethod
+    def validate_difficulty_range(cls, value: list[int]) -> list[int]:
+        if len(value) != 2:
+            raise ValueError("difficulty_range must have exactly 2 elements")
+        if not (1 <= value[0] <= value[1] <= 5):
+            raise ValueError("difficulty_range must satisfy 1 <= min <= max <= 5")
+        return value
+
+    @field_validator("word_api_url")
+    @classmethod
+    def validate_word_api_url(cls, value: str) -> str:
+        if not value.startswith(("http://", "https://")):
+            raise ValueError("word_api_url must start with http:// or https://")
+        return value
+
+    @field_validator("max_retries")
+    @classmethod
+    def validate_max_retries(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("max_retries must be positive")
+        return value
+
+    @field_validator("api_failure_threshold")
+    @classmethod
+    def validate_api_failure_threshold(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("api_failure_threshold must be >= 1")
+        return value
 
 
 class StockIndexSource(DataSourceBase):
@@ -244,7 +342,13 @@ class GoldPriceSource(DataSourceBase):
 
 
 DataSource = Annotated[
-    NewsSource | FunContentSource | CrazyThursdaySource | HolidaySource | StockIndexSource | GoldPriceSource,
+    NewsSource
+    | FunContentSource
+    | CrazyThursdaySource
+    | HolidaySource
+    | StockIndexSource
+    | GoldPriceSource
+    | DailyEnglishSource,
     Field(discriminator="type"),
 ]
 
@@ -306,6 +410,7 @@ class TemplateItemConfig(BaseModel):
     jpeg_quality: int | None = None
     show_kfc: bool = True
     show_stock: bool = True
+    show_daily_english: bool = True
 
     @field_validator("name")
     @classmethod
@@ -446,6 +551,7 @@ class AppConfig(BaseSettings):
     templates: TemplatesConfig
     data_sources: list[DataSource]
     logging: LoggingConfig
+    network: NetworkConfig = Field(default_factory=NetworkConfig)
     timezone: TimezoneConfig = Field(default_factory=TimezoneConfig)
 
     @model_validator(mode="after")

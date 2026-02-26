@@ -30,7 +30,7 @@ class TestHolidayService:
     def service(self, cache_dir: Path, logger: logging.Logger) -> HolidayService:
         """Create a HolidayService instance."""
         return HolidayService(
-            logger=logger, cache_dir=cache_dir, mirror_urls=["https://mirror.example.com/"], timeout_sec=5
+            logger=logger, cache_dir=cache_dir, ghproxy_urls=["https://mirror.example.com/"], timeout_sec=5
         )
 
     @pytest.fixture
@@ -73,7 +73,7 @@ class TestHolidayService:
     def test_build_urls_skips_invalid_mirrors(self, cache_dir: Path, logger: logging.Logger) -> None:
         """Test URL building skips invalid mirror URLs."""
         service = HolidayService(
-            logger=logger, cache_dir=cache_dir, mirror_urls=["invalid-no-protocol", "https://valid.com/"]
+            logger=logger, cache_dir=cache_dir, ghproxy_urls=["invalid-no-protocol", "https://valid.com/"]
         )
         urls = service._build_urls(2026)
 

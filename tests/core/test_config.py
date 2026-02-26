@@ -234,8 +234,8 @@ class TestHolidaySource:
 
     def test_valid_holiday_config(self) -> None:
         """Test valid holiday configuration."""
-        config = HolidaySource(type="holiday", mirror_urls=["https://mirror.example.com/"], timeout_sec=10)
-        assert len(config.mirror_urls) == 1
+        config = HolidaySource(type="holiday", timeout_sec=10)
+        assert config.timeout_sec == 10
 
     def test_zero_timeout_raises_error(self) -> None:
         """Test zero timeout raises error."""

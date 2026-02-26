@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.core.config import (
     CrazyThursdaySource,
+    DailyEnglishSource,
     FunContentSource,
     GoldPriceSource,
     HolidaySource,
@@ -31,6 +32,7 @@ from app.services.holiday import HolidayService
 from app.services.kfc import KfcService
 from app.services.renderer import ImageRenderer
 from app.services.stock_index import StockIndexService
+from app.services.daily_english import DailyEnglishService, build_dict_backend
 
 
 async def main():
@@ -59,7 +61,7 @@ async def main():
     holiday_service = HolidayService(
         logger=logger,
         cache_dir=holiday_cache_dir,
-        mirror_urls=holiday_source.mirror_urls if holiday_source else [],
+        ghproxy_urls=config.network.ghproxy_urls,
         timeout_sec=holiday_source.timeout_sec if holiday_source else 10,
     )
     fun_content_source = config.get_source(FunContentSource)
@@ -82,6 +84,21 @@ async def main():
     gold_price_source = config.get_source(GoldPriceSource)
     if gold_price_source:
         gold_price_service = GoldPriceService(gold_price_source)
+
+    # Initialize daily english service if config exists
+    daily_english_service = None
+    daily_english_source = config.get_source(DailyEnglishSource)
+    if daily_english_source and daily_english_source.enabled:
+        dict_backend = build_dict_backend(
+            cfg=daily_english_source.backend,
+            ghproxy_urls=config.network.ghproxy_urls,
+            logger=logger,
+        )
+        daily_english_service = DailyEnglishService(
+            config=daily_english_source,
+            backend=dict_backend,
+            logger=logger,
+        )
 
     data_computer = DataComputer()
 
@@ -152,6 +169,18 @@ async def main():
                 logger.info(f"Fetched gold price: {gold_price.get('today_price')}")
         except Exception as e:
             logger.warning(f"Failed to fetch gold price: {e}")
+
+    # 1.6 Fetch daily english
+    raw_data["daily_english"] = None
+    if daily_english_service:
+        try:
+            await daily_english_service.ensure_ready()
+            daily_english = await daily_english_service.fetch_daily_word()
+            raw_data["daily_english"] = dict(daily_english) if daily_english else None
+            if daily_english:
+                logger.info(f"Fetched daily english: {daily_english.get('word')}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch daily english: {e}")
 
     # 2. Compute template context
     template_data = data_computer.compute(raw_data)

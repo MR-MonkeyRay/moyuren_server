@@ -24,6 +24,7 @@
 | KFC | `app/services/kfc.py` | 疯狂星期四文案（周四刷新） |
 | 金价 | `app/services/gold_price.py` | 实时金价数据获取与缓存 |
 | 股票指数 | `app/services/stock_index.py` | 大盘指数实时行情（StockIndexService） |
+| 每日英语 | `app/services/daily_english.py` | 每日英语单词服务（ECDICT + 随机 API） |
 | 计算 | `app/services/compute.py` | 原始数据 → 模板上下文 |
 | 渲染 | `app/services/renderer.py` | Jinja2 + Playwright 截图 |
 | 浏览器 | `app/services/browser.py` | Playwright 浏览器生命周期管理 |
@@ -63,7 +64,8 @@ Docker：`docker-compose up -d`
 - `ops.api_key`：Ops API 鉴权密钥（留空则禁用鉴权）
 - `templates.dir`：模板目录路径（默认 `templates`，自动扫描 `*.html`）
 - `logging.*`：日志配置
-- `data_sources`：数据源配置统一在此列表中管理（news/fun_content/crazy_thursday/holiday/stock_index/gold_price）
+- `network.ghproxy_urls`：GitHub 代理 URL 列表（加速节假日数据/ECDICT 下载）
+- `data_sources`：数据源配置统一在此列表中管理（news/fun_content/crazy_thursday/holiday/stock_index/gold_price/daily_english）
 
 ## 开发指引
 
@@ -73,6 +75,7 @@ Docker：`docker-compose up -d`
 - **修改 KFC 功能**：`kfc.py` → `compute.py` → 模板
 - **修改金价功能**：`gold_price.py` → `compute.py` → 模板
 - **修改大盘指数**：`stock_index.py` → `compute.py` → 模板
+- **修改每日英语**：`daily_english.py` → `compute.py` → 模板
 - **修改日历/农历**：`calendar.py` → `compute.py`
 - **添加新模板**：在 `templates/` 目录创建 HTML 文件，在 `<head>` 中添加 `<meta name="moyuren:viewport-width" content="794">` 等 meta 标签，重启后自动发现
 - **添加 API**：在 `app/api/v1/` 创建路由 → `main.py` 注册
@@ -92,6 +95,7 @@ Docker：`docker-compose up -d`
 - **节假日服务**：数据源 [holiday-cn](https://github.com/NateScarlet/holiday-cn)，缓存目录 `cache/holidays/`
 - **金价服务**：数据源外部金价 API，日级缓存自动过期
 - **股票指数服务**：数据源东方财富 API，实时行情数据
+- **每日英语服务**：数据源 [ECDICT](https://github.com/skywind3000/ECDICT) + 随机词 API，日级缓存自动过期
 
 ## 时间戳规范
 

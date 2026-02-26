@@ -44,7 +44,8 @@ RUN set -eux; \
         ca-certificates \
         gosu \
         procps \
-        tzdata; \
+        tzdata \
+        fonts-dejavu-core; \
     ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime; \
     echo "Asia/Shanghai" > /etc/timezone; \
     rm -rf /var/lib/apt/lists/*

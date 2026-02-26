@@ -18,6 +18,7 @@ from app.api.v1.ops import router as ops_router
 from app.api.v1.templates import router as templates_router
 from app.core.config import (
     CrazyThursdaySource,
+    DailyEnglishSource,
     FunContentSource,
     GoldPriceSource,
     HolidaySource,
@@ -33,6 +34,7 @@ from app.services.browser import browser_manager
 from app.services.cache import CacheCleaner
 from app.services.calendar import init_timezones, today_business
 from app.services.compute import DataComputer, DomainDataAggregator, TemplateAdapter
+from app.services.daily_english import CachedDailyEnglishService, build_dict_backend
 from app.services.fetcher import CachedDataFetcher
 from app.services.fun_content import CachedFunContentService
 from app.services.generator import generate_and_save_image
@@ -119,7 +121,7 @@ async def lifespan(app: FastAPI):
         logger=logger,
         cache_dir=daily_cache_dir,
         raw_cache_dir=holiday_raw_cache_dir,
-        mirror_urls=holiday_source.mirror_urls if holiday_source else [],
+        ghproxy_urls=config.network.ghproxy_urls,
         timeout_sec=holiday_source.timeout_sec if holiday_source else 10,
     )
 
@@ -161,6 +163,22 @@ async def lifespan(app: FastAPI):
             http_client=http_client,
         )
 
+    # Initialize daily English service if config exists
+    daily_english_service = None
+    daily_english_source = config.get_source(DailyEnglishSource)
+    if daily_english_source and daily_english_source.enabled:
+        dict_backend = build_dict_backend(
+            cfg=daily_english_source.backend,
+            ghproxy_urls=config.network.ghproxy_urls,
+            logger=logger,
+        )
+        daily_english_service = CachedDailyEnglishService(
+            config=daily_english_source,
+            backend=dict_backend,
+            logger=logger,
+            cache_dir=daily_cache_dir,
+        )
+
     # Get templates configuration
     templates_config = config.get_templates_config()
 
@@ -185,6 +203,7 @@ async def lifespan(app: FastAPI):
         kfc_service=kfc_service,
         stock_index_service=stock_index_service,
         gold_price_service=gold_price_service,
+        daily_english_service=daily_english_service,
         image_renderer=image_renderer,
         data_computer=data_computer,
         cache_cleaner=cache_cleaner,
@@ -200,6 +219,7 @@ async def lifespan(app: FastAPI):
     app.state.kfc_service = kfc_service
     app.state.stock_index_service = stock_index_service
     app.state.gold_price_service = gold_price_service
+    app.state.daily_english_service = daily_english_service
     app.state.image_renderer = image_renderer
     app.state.templates_config = templates_config
     app.state.cache_cleaner = cache_cleaner
@@ -218,6 +238,8 @@ async def lifespan(app: FastAPI):
             named_tasks.append(("kfc", kfc_service.get()))
         if gold_price_service:
             named_tasks.append(("gold_price", gold_price_service.get()))
+        if daily_english_service:
+            named_tasks.append(("daily_english", daily_english_service.get()))
         names = [name for name, _ in named_tasks]
         coros = [coro for _, coro in named_tasks]
         results = await asyncio.gather(*coros, return_exceptions=True)

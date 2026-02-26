@@ -147,6 +147,7 @@ class TemplateDiscovery:
         # show_kfc / show_stock: meta > 默认 true，严格校验
         show_kfc = self._parse_bool(meta.get("show-kfc", "true"), "show-kfc")
         show_stock = self._parse_bool(meta.get("show-stock", "true"), "show-stock")
+        show_daily_english = self._parse_bool(meta.get("show-daily-english", "true"), "show-daily-english")
 
         return TemplateItemConfig(
             name=name,
@@ -156,4 +157,5 @@ class TemplateDiscovery:
             jpeg_quality=jpeg_quality,
             show_kfc=show_kfc,
             show_stock=show_stock,
+            show_daily_english=show_daily_english,
         )

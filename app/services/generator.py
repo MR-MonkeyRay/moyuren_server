@@ -106,6 +106,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
     kfc_service = services.kfc_service if services else app.state.kfc_service
     stock_index_service = services.stock_index_service if services else app.state.stock_index_service
     gold_price_service = services.gold_price_service if services else getattr(app.state, "gold_price_service", None)
+    daily_english_service = services.daily_english_service if services else getattr(app.state, "daily_english_service", None)
 
     # Define fetch tasks
     async def fetch_api_data():
@@ -162,6 +163,15 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             logger.warning(f"Failed to fetch gold price: {e}", exc_info=True)
             return None
 
+    async def fetch_daily_english():
+        if not daily_english_service:
+            return None
+        try:
+            return await daily_english_service.get()
+        except Exception as e:
+            logger.warning(f"Failed to fetch daily english: {e}", exc_info=True)
+            return None
+
     # Execute all fetches in parallel
     (
         api_data_result,
@@ -170,6 +180,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
         kfc_result,
         stock_indices_result,
         gold_price_result,
+        daily_english_result,
     ) = await asyncio.gather(
         fetch_api_data(),
         fetch_holidays(),
@@ -177,6 +188,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
         fetch_kfc(),
         fetch_stock_indices(),
         fetch_gold_price(),
+        fetch_daily_english(),
     )
 
     # Merge results into raw_data with type safety
@@ -191,9 +203,10 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
     raw_data["kfc_copy"] = kfc_result
     raw_data["stock_indices"] = stock_indices_result
     raw_data["gold_price"] = gold_price_result
+    raw_data["daily_english"] = daily_english_result
 
     # Log fetch results (count actual API data keys, excluding merged fields)
-    api_keys = [k for k in raw_data if k not in ("holidays", "fun_content", "kfc_copy", "stock_indices", "gold_price")]
+    api_keys = [k for k in raw_data if k not in ("holidays", "fun_content", "kfc_copy", "stock_indices", "gold_price", "daily_english")]
     logger.info(f"Fetched data: {len(api_keys)} API endpoints, parallel fetch completed")
     if holidays_result:
         logger.info(f"Fetched {len(holidays_result)} holidays")
@@ -205,6 +218,8 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
         logger.info(f"Fetched {len(stock_indices_result.get('items', []))} stock indices")
     if gold_price_result and isinstance(gold_price_result, dict):
         logger.info(f"Fetched gold price: {gold_price_result.get('today_price')}")
+    if daily_english_result and isinstance(daily_english_result, dict):
+        logger.info(f"Fetched daily english: {daily_english_result.get('word')}")
 
     return raw_data
 
@@ -482,6 +497,7 @@ async def _update_data_file(
             "kfc_content_full": template_data.get("kfc_content"),
             "stock_indices": raw_data.get("stock_indices"),
             "gold_price": raw_data.get("gold_price"),
+            "daily_english": raw_data.get("daily_english"),
         }
 
         # Atomic write

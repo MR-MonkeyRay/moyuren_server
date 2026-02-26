@@ -178,6 +178,7 @@ class ImageRenderer:
                 "use_china_cdn": self.render_config.use_china_cdn,
                 "show_kfc": template_item.show_kfc,
                 "show_stock": template_item.show_stock,
+                "show_daily_english": template_item.show_daily_english,
             }
             return template.render(**render_context)
         except TemplateError as e:
