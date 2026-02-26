@@ -1,9 +1,13 @@
 """Tests for app/services/gold_price.py and gold price computation."""
 
 import logging
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
+import respx
+from httpx import Response
 
 from app.services.compute import DomainDataAggregator
 from app.services.gold_price import CachedGoldPriceService, GoldPriceService
@@ -137,3 +141,188 @@ class TestComputeGoldPrice:
         raw_data = {"gold_price": {"today_price": "680.00", "sell_price": "670.00"}}
         result = agg._compute_gold_price(raw_data)
         assert result["unit"] == "元/克"
+
+
+class TestGoldPriceServiceFetch:
+    """Tests for GoldPriceService.fetch_gold_price async method."""
+
+    def _make_config(self):
+        """Create a mock config."""
+        config = MagicMock()
+        config.timeout_sec = 5
+        config.url = "https://example.com/gold"
+        return config
+
+    @respx.mock
+    async def test_fetch_success_with_injected_client(self) -> None:
+        """Test successful fetch with injected HTTP client."""
+        config = self._make_config()
+        respx.get(config.url).mock(
+            return_value=Response(
+                200,
+                json={
+                    "data": {
+                        "metals": [
+                            {"name": "今日金价", "today_price": "680.00", "sell_price": "670.00", "unit": "元/克"}
+                        ]
+                    }
+                },
+            )
+        )
+
+        async with httpx.AsyncClient() as client:
+            service = GoldPriceService(config, http_client=client, logger=logging.getLogger("test"))
+            result = await service.fetch_gold_price()
+
+        assert result is not None
+        assert result["today_price"] == "680.00"
+        assert result["sell_price"] == "670.00"
+        assert result["unit"] == "元/克"
+
+    @respx.mock
+    async def test_fetch_success_without_injected_client(self) -> None:
+        """Test successful fetch without injected client (creates temporary)."""
+        config = self._make_config()
+        respx.get(config.url).mock(
+            return_value=Response(
+                200,
+                json={
+                    "data": {
+                        "metals": [
+                            {"name": "今日金价", "today_price": "690.00", "sell_price": "680.00"}
+                        ]
+                    }
+                },
+            )
+        )
+
+        service = GoldPriceService(config, logger=logging.getLogger("test"))
+        result = await service.fetch_gold_price()
+
+        assert result is not None
+        assert result["today_price"] == "690.00"
+        assert result["sell_price"] == "680.00"
+        assert result["unit"] == "元/克"  # default
+
+    @respx.mock
+    async def test_fetch_timeout_returns_none(self) -> None:
+        """Test TimeoutException returns None."""
+        config = self._make_config()
+        respx.get(config.url).mock(side_effect=httpx.TimeoutException("timeout"))
+
+        service = GoldPriceService(config, logger=logging.getLogger("test"))
+        result = await service.fetch_gold_price()
+
+        assert result is None
+
+    @respx.mock
+    async def test_fetch_http_status_error_returns_none(self) -> None:
+        """Test HTTPStatusError returns None."""
+        config = self._make_config()
+        respx.get(config.url).mock(return_value=Response(500))
+
+        service = GoldPriceService(config, logger=logging.getLogger("test"))
+        result = await service.fetch_gold_price()
+
+        assert result is None
+
+    @respx.mock
+    async def test_fetch_generic_exception_returns_none(self) -> None:
+        """Test generic exception returns None."""
+        config = self._make_config()
+        respx.get(config.url).mock(side_effect=Exception("network error"))
+
+        service = GoldPriceService(config, logger=logging.getLogger("test"))
+        result = await service.fetch_gold_price()
+
+        assert result is None
+
+    @respx.mock
+    async def test_fetch_with_injected_client_uses_same_client(self) -> None:
+        """Test that injected client is reused (not creating new one)."""
+        config = self._make_config()
+        route = respx.get(config.url).mock(
+            return_value=Response(
+                200,
+                json={"data": {"metals": [{"name": "今日金价", "today_price": "700.00", "sell_price": "690.00"}]}},
+            )
+        )
+
+        async with httpx.AsyncClient() as client:
+            service = GoldPriceService(config, http_client=client, logger=logging.getLogger("test"))
+            # Fetch multiple times - should use same client
+            await service.fetch_gold_price()
+            await service.fetch_gold_price()
+
+        assert route.call_count == 2
+
+
+class TestCachedGoldPriceService:
+    """Tests for CachedGoldPriceService."""
+
+    def _make_config(self):
+        """Create a mock config."""
+        config = MagicMock()
+        config.timeout_sec = 5
+        config.url = "https://example.com/gold"
+        return config
+
+    @pytest.fixture
+    def cache_dir(self, tmp_path: Path) -> Path:
+        """Create temporary cache directory."""
+        cache_dir = tmp_path / "daily"
+        cache_dir.mkdir()
+        return cache_dir
+
+    def test_init_creates_service(self, cache_dir: Path) -> None:
+        """Test constructor correctly initializes internal service."""
+        config = self._make_config()
+        logger = logging.getLogger("test")
+
+        service = CachedGoldPriceService(config, logger, cache_dir)
+
+        assert service._service is not None
+        assert isinstance(service._service, GoldPriceService)
+
+    async def test_init_with_http_client(self, cache_dir: Path) -> None:
+        """Test constructor passes HTTP client to internal service."""
+        config = self._make_config()
+        logger = logging.getLogger("test")
+
+        async with httpx.AsyncClient() as client:
+            service = CachedGoldPriceService(config, logger, cache_dir, http_client=client)
+            assert service._service._http_client is client
+
+    @respx.mock
+    async def test_fetch_fresh_delegates_to_service(self, cache_dir: Path) -> None:
+        """Test fetch_fresh delegates to GoldPriceService.fetch_gold_price."""
+        config = self._make_config()
+        respx.get(config.url).mock(
+            return_value=Response(
+                200,
+                json={
+                    "data": {
+                        "metals": [
+                            {"name": "今日金价", "today_price": "680.00", "sell_price": "670.00", "unit": "元/克"}
+                        ]
+                    }
+                },
+            )
+        )
+
+        service = CachedGoldPriceService(config, logging.getLogger("test"), cache_dir)
+        result = await service.fetch_fresh()
+
+        assert result is not None
+        assert result["today_price"] == "680.00"
+
+    @respx.mock
+    async def test_fetch_fresh_returns_none_on_error(self, cache_dir: Path) -> None:
+        """Test fetch_fresh returns None when underlying service fails."""
+        config = self._make_config()
+        respx.get(config.url).mock(side_effect=httpx.TimeoutException("timeout"))
+
+        service = CachedGoldPriceService(config, logging.getLogger("test"), cache_dir)
+        result = await service.fetch_fresh()
+
+        assert result is None
