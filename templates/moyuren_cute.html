@@ -459,21 +459,26 @@
     .english-card {
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      max-height: 400px;
-      overflow: hidden;
+      gap: 6px;
+    }
+    .english-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+      flex-wrap: wrap;
     }
     .english-header {
       display: flex;
       align-items: baseline;
       flex-wrap: wrap;
-      gap: 10px;
+      gap: 8px;
     }
     .english-word {
-      font-size: 38px;
+      font-size: 26px;
       font-weight: 900;
       color: var(--line-coffee);
-      text-shadow: 3px 3px 0 var(--m-lilac);
+      text-shadow: 2px 2px 0 var(--m-lilac);
       line-height: 1.1;
       word-break: break-word;
     }
@@ -488,11 +493,7 @@
       box-shadow: 2px 2px 0 var(--line-coffee);
       font-family: 'DejaVu Sans', 'Noto Sans', var(--font-body);
     }
-    .english-tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
+    .english-tags { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
     .english-tag {
       font-size: 12px;
       font-weight: 700;
@@ -505,22 +506,18 @@
       align-items: center;
       line-height: 1.2;
     }
-    .english-tag.collins { background: var(--m-peach); }
+    .english-tag.collins { background: var(--card-bg); }
     .english-tag.oxford { background: var(--m-mint-light); }
     .english-tag.exam { background: var(--m-lilac); }
     .english-content {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
     }
     .english-translation {
       font-size: 16px;
       font-weight: 700;
       color: var(--line-coffee);
-      display: -webkit-box;
-      -webkit-line-clamp: 3;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
       line-height: 1.5;
       white-space: pre-line;
     }
@@ -532,10 +529,6 @@
       background: color-mix(in srgb, var(--card-bg) 95%, var(--line-coffee) 5%);
       border-left: 4px solid var(--m-mint);
       border-radius: 0 8px 8px 0;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
       line-height: 1.4;
     }
 
@@ -666,29 +659,32 @@
     {% if daily_english and daily_english.word %}
     <section class="english-card card">
       <div class="card-title font-cute">📖 每日英语</div>
-      <div class="english-header">
-        <div class="english-word">{{ daily_english.word }}</div>
-        {% if daily_english.phonetic %}
-        <div class="english-phonetic">{{ daily_english.phonetic }}</div>
-        {% endif %}
-      </div>
-      {% if daily_english.tag or daily_english.collins or daily_english.oxford %}
-      <div class="english-tags">
-        {% if daily_english.collins %}
-        <div class="english-tag collins">
-          {% for _ in range([daily_english.collins, 5]|min) %}⭐{% endfor %}
+      <div class="english-top-row">
+        <div class="english-header">
+          <div class="english-word">{{ daily_english.word }}</div>
+          {% if daily_english.phonetic %}
+          <div class="english-phonetic">{{ daily_english.phonetic }}</div>
+          {% endif %}
+        </div>
+        {% if daily_english.tag or daily_english.collins or daily_english.oxford %}
+        <div class="english-tags">
+          {% if daily_english.collins %}
+          <div class="english-tag collins">
+            {% for _ in range([daily_english.collins, 5]|min) %}⭐{% endfor %}
+          </div>
+          {% endif %}
+          {% if daily_english.oxford %}
+          <div class="english-tag oxford">牛津3000</div>
+          {% endif %}
+          {% if daily_english.tag %}
+          {% set tag_labels = {"zk": "中考", "gk": "高考", "cet4": "CET-4", "cet6": "CET-6", "ky": "考研", "toefl": "托福", "ielts": "雅思", "gre": "GRE"} %}
+          {% for tag in daily_english.tag or [] %}
+          <div class="english-tag exam">{{ tag_labels.get(tag, tag | upper) }}</div>
+          {% endfor %}
+          {% endif %}
         </div>
         {% endif %}
-        {% if daily_english.oxford %}
-        <div class="english-tag oxford">牛津3000</div>
-        {% endif %}
-        {% if daily_english.tag %}
-          {% for tag in daily_english.tag or [] %}
-          <div class="english-tag exam">{{ tag }}</div>
-          {% endfor %}
-        {% endif %}
       </div>
-      {% endif %}
       <div class="english-content">
         {% if daily_english.translation %}
         <div class="english-translation">🇨🇳 {{ daily_english.translation }}</div>
@@ -905,7 +901,7 @@
     {% if show_kfc and kfc_content %}
     <section class="kfc-card card">
       <div class="card-title font-cute">🍗 {{ kfc_content.title }}</div>
-      <div class="kfc-content truncate-3">{{ kfc_content.content }}</div>
+      <div class="kfc-content">{{ kfc_content.content }}</div>
     </section>
     {% endif %}
 
