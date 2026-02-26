@@ -72,5 +72,9 @@ Thumbs.db
 playwright-report/
 test-results/
 
+# ===== uv =====
+uv.lock
+.python-version
+
 # ===== AI =====
 .claude/

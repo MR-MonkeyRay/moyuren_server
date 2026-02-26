@@ -44,11 +44,17 @@ def mock_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def tmp_state_dir(tmp_path: Path) -> Path:
-    """Create temporary state and static directories."""
-    (tmp_path / "state").mkdir()
-    (tmp_path / "static").mkdir()
+def tmp_cache_dir(tmp_path: Path) -> Path:
+    """Create temporary cache and static directories."""
+    (tmp_path / "cache").mkdir(exist_ok=True)
+    (tmp_path / "static").mkdir(exist_ok=True)
     return tmp_path
+
+
+@pytest.fixture
+def tmp_state_dir(tmp_cache_dir: Path) -> Path:
+    """Deprecated: Use tmp_cache_dir instead. Kept for backward compatibility."""
+    return tmp_cache_dir
 
 
 # --- Logger ---

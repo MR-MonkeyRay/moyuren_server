@@ -44,7 +44,7 @@ Thumbs.db
 
 # Project specific
 logs/
-state/
+cache/
 static/
 .playwright/
 

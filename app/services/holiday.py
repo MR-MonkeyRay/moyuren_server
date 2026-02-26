@@ -26,14 +26,14 @@ class HolidayService:
     def __init__(
         self,
         logger: logging.Logger,
-        cache_dir: str | Path = "state/holidays",
-        mirror_urls: list[str] | None = None,
+        cache_dir: str | Path = "cache/holidays",
+        ghproxy_urls: list[str] | None = None,
         timeout_sec: int = 10,
     ) -> None:
         self._logger = logger
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
-        self._mirror_urls = mirror_urls or []
+        self._ghproxy_urls = ghproxy_urls or []
         self._timeout_sec = timeout_sec
 
     def _build_urls(self, year: int) -> list[str]:
@@ -41,13 +41,13 @@ class HolidayService:
         urls = []
         # 镜像源：前缀 + raw.githubusercontent.com/...
         raw_path = f"raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json"
-        for mirror in self._mirror_urls:
+        for proxy_prefix in self._ghproxy_urls:
             # 校验镜像前缀必须包含协议
-            if not mirror.startswith(("http://", "https://")):
-                self._logger.warning(f"跳过无效镜像前缀（缺少协议）: {mirror}")
+            if not proxy_prefix.startswith(("http://", "https://")):
+                self._logger.warning(f"跳过无效代理前缀（缺少协议）: {proxy_prefix}")
                 continue
-            # 确保镜像地址以 / 结尾
-            prefix = mirror.rstrip("/") + "/"
+            # 确保代理地址以 / 结尾
+            prefix = proxy_prefix.rstrip("/") + "/"
             urls.append(f"{prefix}{raw_path}")
         # GitHub 原始源兜底
         urls.append(GITHUB_RAW_URL.format(year=year))
@@ -313,8 +313,8 @@ class HolidayService:
 class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
     """带日级缓存的节假日服务。
 
-    原始年度数据仍保留在 state/holidays/ 目录，
-    聚合后的节假日列表缓存在 state/cache/holidays.json。
+    原始年度数据仍保留在 cache/holidays/ 目录，
+    聚合后的节假日列表缓存在 cache/holidays.json。
 
     继承 DailyCache，为 HolidayService 提供日级缓存能力。
     缓存在每日零点自动过期，网络获取失败时返回过期缓存。
@@ -325,23 +325,23 @@ class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
         logger: logging.Logger,
         cache_dir: Path,
         raw_cache_dir: Path,
-        mirror_urls: list[str] | None = None,
+        ghproxy_urls: list[str] | None = None,
         timeout_sec: int = 10,
     ) -> None:
         """初始化带缓存的节假日服务。
 
         Args:
             logger: 日志记录器
-            cache_dir: 日级缓存目录（如 state/cache/）
-            raw_cache_dir: 原始年度数据目录（如 state/holidays/）
-            mirror_urls: 镜像源 URL 列表
+            cache_dir: 日级缓存目录（如 cache/）
+            raw_cache_dir: 原始年度数据目录（如 cache/holidays/）
+            ghproxy_urls: 代理源 URL 列表
             timeout_sec: 请求超时时间（秒）
         """
         super().__init__("holidays", cache_dir, logger)
         self._service = HolidayService(
             logger=logger,
             cache_dir=raw_cache_dir,
-            mirror_urls=mirror_urls,
+            ghproxy_urls=ghproxy_urls,
             timeout_sec=timeout_sec,
         )
 
@@ -354,5 +354,5 @@ class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
         try:
             return await self._service.fetch_holidays()
         except Exception as e:
-            self.logger.error(f"Failed to fetch holidays: {e}")
+            self.logger.error(f"Failed to fetch holidays: {e}", exc_info=True)
             return None

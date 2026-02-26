@@ -1,6 +1,7 @@
 """Business computation service module."""
 
 import logging
+import math
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -180,6 +181,7 @@ class DomainDataAggregator:
         stock_indices = self._compute_stock_indices(raw_data)
         holidays = self._compute_holidays(now, raw_data)
         history = self._compute_history(raw_data)
+        gold_price = self._compute_gold_price(raw_data)
 
         # 检测降级模式：当多个外部数据源都失败时
         is_fallback_mode = (
@@ -191,6 +193,7 @@ class DomainDataAggregator:
         return {
             "date": self._compute_date(now),
             "weekend": self._compute_weekend(now),
+            **self._compute_progress(now),
             "solar_term": self._compute_solar_term(now),
             "guide": self._compute_guide(now),
             "history": history,
@@ -199,6 +202,8 @@ class DomainDataAggregator:
             "holidays": holidays,
             "kfc_content": self._compute_kfc(now, raw_data),
             "stock_indices": stock_indices,
+            "gold_price": gold_price,
+            "daily_english": raw_data.get("daily_english"),
             # 降级模式标志
             "is_fallback_mode": is_fallback_mode,
             # 项目元信息
@@ -289,6 +294,35 @@ class DomainDataAggregator:
             "is_data_missing": False,  # 数据正常获取
         }
 
+    def _compute_gold_price(self, raw_data: dict[str, Any]) -> dict[str, Any] | None:
+        """Compute gold price data for template.
+
+        Args:
+            raw_data: Raw data dictionary.
+
+        Returns:
+            Dictionary with gold price info or None.
+        """
+        data = raw_data.get("gold_price")
+        if not isinstance(data, dict):
+            return None
+        try:
+            today_price = float(data["today_price"])
+            sell_price = float(data["sell_price"])
+            change = today_price - sell_price
+            change_pct = (change / sell_price) * 100 if sell_price != 0 else 0.0
+            trend = "up" if change > 0 else ("down" if change < 0 else "flat")
+            return {
+                "name": "今日金价",
+                "price": f"{today_price:.2f}",
+                "unit": data.get("unit", "元/克"),
+                "spread_pct": f"{change_pct:+.2f}%",  # 买入价与卖出价的价差百分比
+                "trend": trend,
+            }
+        except (KeyError, ValueError, TypeError) as e:
+            logging.getLogger(__name__).debug(f"Gold price compute failed: {e}")
+            return None
+
     def _compute_kfc(self, now: datetime, raw_data: dict[str, Any]) -> dict[str, Any] | None:
         """Compute KFC content if available and it's Thursday.
 
@@ -358,6 +392,47 @@ class DomainDataAggregator:
         else:
             days_left = 5 - weekday
         return {"days_left": days_left, "is_weekend": is_weekend}
+
+    def _compute_progress(self, now: datetime) -> dict[str, float]:
+        """Compute week/month/year progress percentages.
+
+        Args:
+            now: Current datetime in business timezone.
+
+        Returns:
+            Dictionary with week_progress, month_progress, year_progress in [0.0, 100.0].
+        """
+        now_ts = now.timestamp()
+
+        week_start = (now - timedelta(days=now.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        week_end = week_start + timedelta(days=7)
+
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if now.month == 12:
+            month_end = month_start.replace(year=now.year + 1, month=1)
+        else:
+            month_end = month_start.replace(month=now.month + 1)
+
+        year_start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        year_end = year_start.replace(year=now.year + 1)
+
+        def _calc_progress(start: datetime, end: datetime) -> float:
+            start_ts = start.timestamp()
+            end_ts = end.timestamp()
+            total = end_ts - start_ts
+            if total <= 0:
+                return 0.0
+            elapsed = now_ts - start_ts
+            value = round(elapsed / total * 100, 2)
+            return min(100.0, max(0.0, value))
+
+        return {
+            "week_progress": _calc_progress(week_start, week_end),
+            "month_progress": _calc_progress(month_start, month_end),
+            "year_progress": _calc_progress(year_start, year_end),
+        }
 
     def _compute_solar_term(self, now: datetime) -> dict[str, Any]:
         """Compute next solar term using CalendarService.
@@ -676,6 +751,28 @@ class TemplateAdapter:
             data["news_meta"] = {}
         if data.get("holidays") is None:
             data["holidays"] = []
+
+        if data.get("daily_english") is None:
+            data["daily_english"] = None
+
+        for key in ("week_progress", "month_progress", "year_progress"):
+            value = data.get(key, 0.0)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                data[key] = 0.0
+                continue
+
+            normalized = float(value)
+            if not math.isfinite(normalized):
+                data[key] = 0.0
+                continue
+
+            normalized = round(normalized, 2)
+            if normalized < 0.0:
+                normalized = 0.0
+            elif normalized > 100.0:
+                normalized = 100.0
+            data[key] = normalized
+
         if "is_fallback_mode" not in data:
             news_list = data.get("news_list") or []
             history = data.get("history") or {}

@@ -180,6 +180,8 @@ class TestImageRenderer:
         mock_page.set_content = AsyncMock()
         mock_page.screenshot = AsyncMock(return_value=b"fake image bytes")
         mock_page.close = AsyncMock()
+        mock_page.evaluate = AsyncMock(return_value=1123)
+        mock_page.set_viewport_size = AsyncMock()
 
         with patch.object(renderer, "_get_jinja_env") as mock_env:
             mock_template = MagicMock()
@@ -205,6 +207,8 @@ class TestImageRenderer:
         mock_page.set_content = AsyncMock()
         mock_page.screenshot = AsyncMock(return_value=b"fake")
         mock_page.close = AsyncMock()
+        mock_page.evaluate = AsyncMock(return_value=1123)
+        mock_page.set_viewport_size = AsyncMock()
 
         with patch.object(renderer, "_get_jinja_env") as mock_env:
             mock_template = MagicMock()

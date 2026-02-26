@@ -12,7 +12,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.core.config import (
+    DailyEnglishSource,
     FunContentSource,
+    GoldPriceSource,
     HolidaySource,
     NewsSource,
     StockIndexSource,
@@ -23,9 +25,11 @@ from app.services.calendar import init_timezones
 from app.services.compute import DataComputer
 from app.services.fetcher import DataFetcher
 from app.services.fun_content import FunContentService
+from app.services.gold_price import GoldPriceService
 from app.services.holiday import HolidayService
 from app.services.renderer import ImageRenderer
 from app.services.stock_index import StockIndexService
+from app.services.daily_english import DailyEnglishService, build_dict_backend
 
 # 占位符，运行时替换为实际日期
 _TODAY_PLACEHOLDER = "__TODAY__"
@@ -287,6 +291,8 @@ async def get_base_template_data(
     holiday_service: HolidayService,
     fun_content_service: FunContentService,
     stock_index_service: StockIndexService | None,
+    gold_price_service: GoldPriceService | None,
+    daily_english_service: DailyEnglishService | None,
     data_computer: DataComputer,
     logger,
 ) -> dict:
@@ -319,6 +325,29 @@ async def get_base_template_data(
             logger.info(f"获取到 {len(stock_indices.get('items', []))} 条股票指数数据")
         except Exception as e:
             logger.warning(f"获取股票指数失败: {e}")
+
+    # 获取金价数据
+    raw_data["gold_price"] = None
+    if gold_price_service:
+        try:
+            gold_price = await gold_price_service.fetch_gold_price()
+            raw_data["gold_price"] = gold_price
+            if gold_price:
+                logger.info(f"获取到金价数据: {gold_price.get('today_price')}")
+        except Exception as e:
+            logger.warning(f"获取金价数据失败: {e}")
+
+    # 获取每日英语数据
+    raw_data["daily_english"] = None
+    if daily_english_service:
+        try:
+            await daily_english_service.ensure_ready()
+            daily_english = await daily_english_service.fetch_daily_word()
+            raw_data["daily_english"] = dict(daily_english) if daily_english else None
+            if daily_english:
+                logger.info(f"获取到每日英语数据: {daily_english.get('word')}")
+        except Exception as e:
+            logger.warning(f"获取每日英语数据失败: {e}")
 
     return data_computer.compute(raw_data)
 
@@ -383,7 +412,7 @@ async def main():
     holiday_service = HolidayService(
         logger=logger,
         cache_dir=holiday_cache_dir,
-        mirror_urls=holiday_source.mirror_urls if holiday_source else [],
+        ghproxy_urls=config.network.ghproxy_urls,
         timeout_sec=holiday_source.timeout_sec if holiday_source else 10,
     )
     fun_content_source = config.get_source(FunContentSource)
@@ -395,6 +424,27 @@ async def main():
     stock_index_source = config.get_source(StockIndexSource)
     if stock_index_source:
         stock_index_service = StockIndexService(stock_index_source)
+
+    # Initialize gold price service
+    gold_price_service = None
+    gold_price_source = config.get_source(GoldPriceSource)
+    if gold_price_source:
+        gold_price_service = GoldPriceService(gold_price_source)
+
+    # Initialize daily english service if config exists
+    daily_english_service = None
+    daily_english_source = config.get_source(DailyEnglishSource)
+    if daily_english_source and daily_english_source.enabled:
+        dict_backend = build_dict_backend(
+            cfg=daily_english_source.backend,
+            ghproxy_urls=config.network.ghproxy_urls,
+            logger=logger,
+        )
+        daily_english_service = DailyEnglishService(
+            config=daily_english_source,
+            backend=dict_backend,
+            logger=logger,
+        )
 
     # Get templates configuration
     templates_config = config.get_templates_config()
@@ -416,6 +466,8 @@ async def main():
         holiday_service=holiday_service,
         fun_content_service=fun_content_service,
         stock_index_service=stock_index_service,
+        gold_price_service=gold_price_service,
+        daily_english_service=daily_english_service,
         data_computer=data_computer,
         logger=logger,
     )

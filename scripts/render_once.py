@@ -14,7 +14,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.core.config import (
     CrazyThursdaySource,
+    DailyEnglishSource,
     FunContentSource,
+    GoldPriceSource,
     HolidaySource,
     NewsSource,
     StockIndexSource,
@@ -25,10 +27,12 @@ from app.services.calendar import get_display_timezone, init_timezones
 from app.services.compute import DataComputer
 from app.services.fetcher import DataFetcher
 from app.services.fun_content import FunContentService
+from app.services.gold_price import GoldPriceService
 from app.services.holiday import HolidayService
 from app.services.kfc import KfcService
 from app.services.renderer import ImageRenderer
 from app.services.stock_index import StockIndexService
+from app.services.daily_english import DailyEnglishService, build_dict_backend
 
 
 async def main():
@@ -57,7 +61,7 @@ async def main():
     holiday_service = HolidayService(
         logger=logger,
         cache_dir=holiday_cache_dir,
-        mirror_urls=holiday_source.mirror_urls if holiday_source else [],
+        ghproxy_urls=config.network.ghproxy_urls,
         timeout_sec=holiday_source.timeout_sec if holiday_source else 10,
     )
     fun_content_source = config.get_source(FunContentSource)
@@ -74,6 +78,27 @@ async def main():
     stock_index_source = config.get_source(StockIndexSource)
     if stock_index_source:
         stock_index_service = StockIndexService(stock_index_source)
+
+    # Initialize gold price service if config exists
+    gold_price_service = None
+    gold_price_source = config.get_source(GoldPriceSource)
+    if gold_price_source:
+        gold_price_service = GoldPriceService(gold_price_source)
+
+    # Initialize daily english service if config exists
+    daily_english_service = None
+    daily_english_source = config.get_source(DailyEnglishSource)
+    if daily_english_source and daily_english_source.enabled:
+        dict_backend = build_dict_backend(
+            cfg=daily_english_source.backend,
+            ghproxy_urls=config.network.ghproxy_urls,
+            logger=logger,
+        )
+        daily_english_service = DailyEnglishService(
+            config=daily_english_source,
+            backend=dict_backend,
+            logger=logger,
+        )
 
     data_computer = DataComputer()
 
@@ -134,13 +159,40 @@ async def main():
         except Exception as e:
             logger.warning(f"Failed to fetch stock indices: {e}")
 
+    # 1.5 Fetch gold price data
+    raw_data["gold_price"] = None
+    if gold_price_service:
+        try:
+            gold_price = await gold_price_service.fetch_gold_price()
+            raw_data["gold_price"] = gold_price
+            if gold_price:
+                logger.info(f"Fetched gold price: {gold_price.get('today_price')}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch gold price: {e}")
+
+    # 1.6 Fetch daily english
+    raw_data["daily_english"] = None
+    if daily_english_service:
+        try:
+            await daily_english_service.ensure_ready()
+            daily_english = await daily_english_service.fetch_daily_word()
+            raw_data["daily_english"] = dict(daily_english) if daily_english else None
+            if daily_english:
+                logger.info(f"Fetched daily english: {daily_english.get('word')}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch daily english: {e}")
+
     # 2. Compute template context
     template_data = data_computer.compute(raw_data)
     logger.info("Template data computed")
 
-    # 3. Render image
-    filename = await image_renderer.render(template_data)
-    logger.info(f"Image rendered: {filename}")
+    # 3. Render all templates
+    all_filenames: dict[str, str] = {}
+    for template_item in templates_config.items:
+        tname = template_item.name
+        filename = await image_renderer.render(template_data, template_name=tname)
+        all_filenames[tname] = filename
+        logger.info(f"Image rendered for '{tname}': {filename}")
 
     # 4. Update data file
     data_dir = cache_dir / "data"
@@ -179,7 +231,7 @@ async def main():
         "date": now.strftime("%Y-%m-%d"),
         "updated": now.strftime("%Y/%m/%d %H:%M:%S"),
         "updated_at": int(now.timestamp() * 1000),
-        "images": {"moyuren": filename},
+        "images": all_filenames,
         # New content fields
         "weekday": date_info.get("week_cn", ""),
         "lunar_date": date_info.get("lunar_date", ""),
@@ -215,10 +267,14 @@ async def main():
     os.replace(tmp_path, data_file)
     logger.info(f"Data file updated: {data_file}")
 
-    # Print result
-    image_path = cache_dir / "images" / filename
-    print(f"\n✅ Image generated: {image_path}")
-    print(f"   Size: {image_path.stat().st_size / 1024:.1f} KB")
+    # Print results
+    print(f"\n{'='*50}")
+    print(f"Generated {len(all_filenames)} template(s):")
+    for tname, fname in all_filenames.items():
+        image_path = cache_dir / "images" / fname
+        size_kb = image_path.stat().st_size / 1024 if image_path.exists() else 0
+        print(f"  [{tname}] {image_path} ({size_kb:.1f} KB)")
+    print(f"{'='*50}")
 
 
 if __name__ == "__main__":

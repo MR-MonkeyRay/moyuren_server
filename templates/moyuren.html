@@ -2,6 +2,10 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="moyuren:viewport-width" content="794">
+    <meta name="moyuren:viewport-height" content="1123">
+    <meta name="moyuren:show-kfc" content="true">
+    <meta name="moyuren:show-stock" content="true">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>摸鱼日历 {{ date.year_month }} - 杂志风格版</title>
     <!-- Google Fonts: 思源黑体(正文) + 霞鹜文楷(标题) + Poppins(数字/英文) -->
@@ -975,6 +979,7 @@
             <!-- 右侧列：大盘指数 + 假期盼头 -->
             <div class="col-right">
                 <!-- 大盘指数 -->
+                {% if show_stock %}
                 <div class="box market-card">
                     <h2><span role="img" aria-label="股票">📈</span> 大盘指数</h2>
                     {% if stock_indices and stock_indices.indices %}
@@ -1010,6 +1015,7 @@
                     </div>
                     {% endif %}
                 </div>
+                {% endif %}
 
                 <!-- 假期盼头 -->
                 <div class="box holiday-card">
@@ -1055,7 +1061,7 @@
         </div>
 
         <!-- 第四排：疯狂星期四 (仅周四显示) -->
-        {% if kfc_content %}
+        {% if show_kfc and kfc_content %}
         <div class="row-special kfc-card">
             <div class="kfc-header">
                 <div class="kfc-icon">🍗</div>

@@ -35,6 +35,12 @@ https://api.monkeyray.net/api/v1/moyuren
 - 大盘指数实时行情（上证、深证、创业板、恒生、道琼斯）
   - 数据源：[东方财富](https://www.eastmoney.com)
   - 交易日历：[exchange_calendars](https://github.com/gerrymanoim/exchange_calendars)
+- 实时金价查询（人民币/美元）
+  - 数据源：[60s-api](https://60s.viki.moe)
+- 每日英语单词（ECDICT 词典 + 随机 API）
+  - 数据源：[ECDICT](https://github.com/skywind3000/ECDICT)、[60s-api](https://60s.viki.moe)
+- 周/月/年进度百分比计算
+- 多模板渲染：自动发现模板目录中的 HTML 文件，通过 meta 标签自描述渲染参数，错误隔离确保部分失败不影响其他模板
 - Playwright 高质量浏览器渲染
 - 自动清理过期缓存
 - RESTful API + 静态文件服务
@@ -42,6 +48,10 @@ https://api.monkeyray.net/api/v1/moyuren
 - YAML 配置 + 环境变量覆盖
 
 ## 快速开始
+
+### 环境要求
+
+- Python >= 3.12（项目使用了 3.12+ 的类型注解语法如 `type | None`）
 
 ### 本地运行
 
@@ -200,6 +210,11 @@ sudo chown -R 1000:1000 cache logs
       "name": "moyuren",
       "description": "摸鱼日历moyuren模板",
       "image": "https://api.monkeyray.net/static/moyuren_20260210_072232.jpg"
+    },
+    {
+      "name": "moyuren_cute",
+      "description": "摸鱼日历moyuren_cute模板",
+      "image": "https://api.monkeyray.net/static/moyuren_cute_20260210_072232.jpg"
     }
   ]
 }
@@ -215,6 +230,24 @@ sudo chown -R 1000:1000 cache logs
 所有 Ops 端点需要 `Authorization: Bearer <api_key>` 请求头。
 
 **GET /api/v1/ops/generate** - 手动触发图片生成
+
+成功响应包含所有模板的生成结果：
+```json
+{
+  "data": {
+    "date": "2026-02-10",
+    "results": {
+      "moyuren": "moyuren_20260210_072232.jpg",
+      "moyuren_cute": "moyuren_cute_20260210_072232.jpg"
+    },
+    "total_templates": 2,
+    "images": {
+      "moyuren": "moyuren_20260210_072232.jpg",
+      "moyuren_cute": "moyuren_cute_20260210_072232.jpg"
+    }
+  }
+}
+```
 
 **GET /api/v1/ops/cache/clean** - 清理过期缓存
 - 可选参数：`keep_days`（保留最近 N 天）
@@ -277,34 +310,23 @@ sudo chown -R 1000:1000 cache logs
 | `server.base_domain` | `SERVER_BASE_DOMAIN` | 图片 URL 前缀 |
 | `paths.cache_dir` | `PATHS_CACHE_DIR` | 缓存根目录（默认 `cache`） |
 | `scheduler.mode` | `SCHEDULER_MODE` | 调度模式（`daily` 或 `hourly`） |
-| `scheduler.daily_times` | `SCHEDULER_DAILY_TIMES` | 生成时间（逗号分隔） |
+| `scheduler.daily_times` | `SCHEDULER_DAILY_TIMES` | 生成时间（JSON 数组，如 `'["06:00","18:00"]'`） |
 | `scheduler.minute_of_hour` | `SCHEDULER_MINUTE_OF_HOUR` | 每小时模式下的触发分钟（0-59） |
-| `render.viewport_width` | `RENDER_VIEWPORT_WIDTH` | 视口宽度 |
-| `render.viewport_height` | `RENDER_VIEWPORT_HEIGHT` | 视口最小高度 |
-| `render.device_scale_factor` | `RENDER_DEVICE_SCALE_FACTOR` | 缩放因子 |
-| `render.jpeg_quality` | `RENDER_JPEG_QUALITY` | JPEG 质量（1-100） |
-| `render.use_china_cdn` | `RENDER_USE_CHINA_CDN` | 字体 CDN 开关（true: 大陆 CDN fonts.googleapis.cn, false: 国际 CDN fonts.googleapis.com） |
+| `templates.config.device_scale_factor` | - | 缩放因子（默认 3） |
+| `templates.config.jpeg_quality` | - | JPEG 质量（1-100，默认 100） |
+| `templates.config.use_china_cdn` | - | 字体 CDN 开关（true: 大陆 CDN, false: 国际 CDN） |
+| `templates.items[].viewport` | - | 各模板视口尺寸（width/height） |
 | `cache.retain_days` | `CACHE_RETAIN_DAYS` | 缓存保留天数（默认 30） |
 | `ops.api_key` | `OPS_API_KEY` | 运维 API Key（留空则禁用 ops 端点） |
-| `logging.level` | `LOG_LEVEL` | 日志级别 |
-| `logging.file` | `LOG_FILE` | 日志文件路径（空字符串表示只输出到标准输出） |
+| `logging.level` | `LOGGING_LEVEL` | 日志级别 |
+| `logging.file` | `LOGGING_FILE` | 日志文件路径（空字符串表示只输出到标准输出） |
 | `timezone.business` | - | 业务时区（节假日/节气/周末判断） |
 | `timezone.display` | - | 显示时区（图片时间戳、API 响应时间；支持 `local`） |
-| `fetch.api_endpoints` | - | 外部数据源端点配置（如新闻） |
-| `holiday.mirror_urls` | `HOLIDAY_MIRROR_URLS` | GitHub 代理镜像站（逗号分隔） |
-| `holiday.timeout_sec` | `HOLIDAY_TIMEOUT_SEC` | 节假日数据请求超时 |
-| `fun_content.timeout_sec` | - | 趣味内容 API 超时 |
-| `fun_content.endpoints` | - | 趣味内容 API 端点列表（仅 YAML） |
-| `crazy_thursday.enabled` | - | 是否启用疯狂星期四功能 |
-| `crazy_thursday.url` | - | KFC 文案 API 地址 |
-| `crazy_thursday.timeout_sec` | - | KFC API 超时时间 |
-| `templates.default` | - | 默认模板名（多模板模式） |
-| `templates.items` | - | 模板列表（多模板模式，支持 viewport/theme/jpeg_quality 覆盖） |
-| `stock_index.quote_url` | - | 大盘指数行情接口地址 |
-| `stock_index.secids` | - | 指数列表（东方财富 secid） |
-| `stock_index.timeout_sec` | - | 行情请求超时（秒） |
-| `stock_index.market_timezones` | - | 各市场时区配置（A/HK/US） |
-| `stock_index.cache_ttl_sec` | - | 行情缓存 TTL（秒） |
+| `network.ghproxy_urls` | - | GitHub 代理 URL 列表（用于加速节假日数据和 ECDICT 下载） |
+| `data_sources` | - | 外部数据源配置列表（新闻、趣味内容等） |
+| `data_sources[].type` | - | 数据源类型（news/fun_content/crazy_thursday/holiday/stock_index/gold_price/daily_english） |
+| `templates.default` | - | 默认模板名 |
+| `templates.dir` | - | 模板目录（默认 `templates`，自动扫描 HTML 文件） |
 
 ### 调度配置说明
 
@@ -323,11 +345,14 @@ cache/
 │   └── 2026-02-10.json
 ├── images/            # 生成的图片文件
 │   ├── moyuren_20260209_072232.jpg
-│   └── moyuren_20260210_183000.jpg
+│   ├── moyuren_20260210_183000.jpg
+│   ├── moyuren_cute_20260209_072232.jpg
+│   └── moyuren_cute_20260210_183000.jpg
 ├── daily/             # 日级缓存（数据源）
 │   ├── news.json
 │   ├── fun_content.json
 │   ├── kfc.json
+│   ├── daily_english.json
 │   └── holidays.json
 ├── holidays/          # 节假日原始年度数据
 │   ├── 2025.json
@@ -364,42 +389,59 @@ scheduler:
 #     - "06:00"   # hourly 模式下会被忽略，仅用于回退 daily 时复用
 #   minute_of_hour: 0
 
-fetch:
-  api_endpoints:
-    - name: "news"
-      url: "https://60s.viki.moe/v2/60s"
-      timeout_sec: 10
-      params:
-        "force-update": "false"
+data_sources:
+  - type: "news"
+    url: "https://60s.viki.moe/v2/60s"
+    timeout_sec: 10
+    params:
+      "force-update": "false"
 
-render:
-  viewport_width: 794
-  viewport_height: 1123
-  device_scale_factor: 3
-  jpeg_quality: 100
-  # 字体 CDN 配置
-  # true: 使用大陆 CDN (fonts.googleapis.cn)
-  # false: 使用国际 CDN (fonts.googleapis.com)
-  use_china_cdn: false
+  - type: "fun_content"
+    timeout_sec: 5
+    endpoints:
+      - name: "dad_joke"
+        url: "https://60s.viki.moe/v2/dad-joke"
+        data_path: "data.content"
+        display_title: "🤣 冷笑话"
+      - name: "hitokoto"
+        url: "https://60s.viki.moe/v2/hitokoto"
+        data_path: "data.hitokoto"
+        display_title: "💬 一言"
 
-holiday:
-  # GitHub 代理镜像站
-  # 留空则直接使用 GitHub 原始源
-  mirror_urls:
-    - "https://ghfast.top/"
-  timeout_sec: 10
+  - type: "crazy_thursday"
+    enabled: true
+    url: "https://60s.viki.moe/v2/kfc"
+    timeout_sec: 5
 
-fun_content:
-  timeout_sec: 5
-  endpoints:
-    - name: "dad_joke"
-      url: "https://60s.viki.moe/v2/dad-joke"
-      data_path: "data.content"
-      display_title: "🤣 冷笑话"
-    - name: "hitokoto"
-      url: "https://60s.viki.moe/v2/hitokoto"
-      data_path: "data.hitokoto"
-      display_title: "💬 一言"
+  - type: "holiday"
+    timeout_sec: 10
+
+  - type: "stock_index"
+    quote_url: "https://push2delay.eastmoney.com/api/qt/ulist.np/get"
+    timeout_sec: 5
+    secids:
+      - "1.000001"   # 上证指数
+      - "0.399001"   # 深证成指
+      - "0.399006"   # 创业板指
+      - "100.HSI"    # 恒生指数
+      - "100.DJIA"   # 道琼斯
+    market_timezones:
+      A: "Asia/Shanghai"
+      HK: "Asia/Hong_Kong"
+      US: "America/New_York"
+    cache_ttl_sec: 60
+
+  - type: "gold_price"
+    url: "https://60s.viki.moe/v2/gold-price"
+    timeout_sec: 5
+
+templates:
+  default: "moyuren"
+  dir: "templates"
+  config:
+    device_scale_factor: 3
+    jpeg_quality: 100
+    use_china_cdn: true
 
 cache:
   retain_days: 30
@@ -430,8 +472,8 @@ moyuren_server/
 │   │   ├── calendar.py   # 日历计算
 │   │   ├── compute.py    # 数据计算
 │   │   ├── stock_index.py # 大盘指数服务
+│   │   ├── gold_price.py # 金价服务
 │   │   ├── browser.py    # Playwright 浏览器管理
-│   │   ├── state.py      # 状态文件读写
 │   │   ├── renderer.py   # 图片渲染
 │   │   ├── generator.py  # 图片生成流水线
 │   │   └── cache.py      # 缓存清理

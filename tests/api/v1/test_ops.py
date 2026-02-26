@@ -24,6 +24,12 @@ def ops_app(tmp_path: Path) -> FastAPI:
     config.ops.api_key = "test-secret-key"
     config.paths.cache_dir = str(tmp_path / "cache")
 
+    # Mock templates config for ops_generate
+    from types import SimpleNamespace
+    templates_config = MagicMock()
+    templates_config.items = [SimpleNamespace(name="moyuren")]
+    config.get_templates_config.return_value = templates_config
+
     # Create cache directories
     (tmp_path / "cache" / "data").mkdir(parents=True)
     (tmp_path / "cache" / "images").mkdir(parents=True)
@@ -86,7 +92,7 @@ class TestOpsGenerate:
             patch(
                 "app.api.v1.ops.generate_and_save_image",
                 new_callable=AsyncMock,
-                return_value="moyuren_20260210_072232.jpg",
+                return_value={"moyuren": "moyuren_20260210_072232.jpg"},
             ),
             patch("app.api.v1.ops.today_business", return_value=date(2026, 2, 10)),
         ):
@@ -95,7 +101,8 @@ class TestOpsGenerate:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["data"]["filename"] == "moyuren_20260210_072232.jpg"
+        assert data["data"]["results"] == {"moyuren": "moyuren_20260210_072232.jpg"}
+        assert data["data"]["total_templates"] == 1
         assert response.headers.get("cache-control") == "no-store"
 
     @pytest.mark.anyio

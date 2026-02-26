@@ -10,7 +10,7 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, TemplateError
 from markupsafe import Markup, escape
 
-from app.core.config import TemplateRenderConfig, TemplatesConfig, ViewportConfig
+from app.core.config import TemplateItemConfig, TemplateRenderConfig, TemplatesConfig, ViewportConfig
 from app.core.errors import RenderError
 from app.services.browser import browser_manager
 
@@ -82,6 +82,8 @@ def nl2br(value: str | None) -> Markup:
 class ImageRenderer:
     """HTML template renderer and screenshot generator using reusable browser."""
 
+    MAX_VIEWPORT_HEIGHT = 4000  # Maximum viewport height to prevent memory/CPU issues
+
     def __init__(
         self,
         templates_config: TemplatesConfig,
@@ -139,7 +141,7 @@ class ImageRenderer:
         template_item = self.templates_config.get_template(template_name)
 
         # Step 1: Render HTML with Jinja2
-        html_content = self._render_template(data, template_item.path)
+        html_content = self._render_template(data, template_item)
 
         # Step 2: Generate screenshot with Playwright
         viewport = template_item.viewport
@@ -154,12 +156,12 @@ class ImageRenderer:
         self.logger.info(f"Successfully rendered image: {filename}")
         return filename
 
-    def _render_template(self, data: dict[str, Any], template_path: str) -> str:
+    def _render_template(self, data: dict[str, Any], template_item: TemplateItemConfig) -> str:
         """Render Jinja2 template with provided data.
 
         Args:
             data: Template context data.
-            template_path: Template file path.
+            template_item: Template item configuration.
 
         Returns:
             Rendered HTML content.
@@ -168,12 +170,15 @@ class ImageRenderer:
             RenderError: If template rendering fails.
         """
         try:
-            env = self._get_jinja_env(template_path)
-            template_name = Path(template_path).name
+            env = self._get_jinja_env(template_item.path)
+            template_name = Path(template_item.path).name
             template = env.get_template(template_name)
             render_context = {
                 **data,
                 "use_china_cdn": self.render_config.use_china_cdn,
+                "show_kfc": template_item.show_kfc,
+                "show_stock": template_item.show_stock,
+                "show_daily_english": template_item.show_daily_english,
             }
             return template.render(**render_context)
         except TemplateError as e:
@@ -216,11 +221,30 @@ class ImageRenderer:
             # Set HTML content and wait for network idle
             await page.set_content(html_content, wait_until="networkidle")
 
+            use_full_page = True
+            # Adjust viewport height to match actual content height
+            # This ensures full_page=True captures content without extra blank space
+            content_height = await page.evaluate(
+                "Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
+            )
+            if content_height and content_height != viewport.height:
+                original_height = content_height
+                content_height = min(content_height, self.MAX_VIEWPORT_HEIGHT)
+                if original_height > self.MAX_VIEWPORT_HEIGHT:
+                    self.logger.error(
+                        f"Screenshot truncated: content height {original_height}px exceeds "
+                        f"max {self.MAX_VIEWPORT_HEIGHT}px, output will be clipped"
+                    )
+                    use_full_page = False
+                await page.set_viewport_size(
+                    {"width": viewport.width, "height": content_height}
+                )
+
             # Take screenshot as JPEG
             screenshot_bytes = await page.screenshot(
                 type="jpeg",
                 quality=jpeg_quality,
-                full_page=True,
+                full_page=use_full_page,
             )
 
             return screenshot_bytes

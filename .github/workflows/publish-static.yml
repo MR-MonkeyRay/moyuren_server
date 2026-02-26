@@ -79,8 +79,8 @@ jobs:
           mkdir -p output && chmod 0755 output
           docker run --rm \
             --user "$(id -u):$(id -g)" \
-            -e PATHS__CACHE_DIR=/tmp/cache \
-            -e LOGGING__FILE= \
+            -e PATHS_CACHE_DIR=/tmp/cache \
+            -e LOGGING_FILE= \
             -v "${GITHUB_WORKSPACE}/output:/output" \
             -v "${GITHUB_WORKSPACE}/scripts:/app/scripts:ro" \
             "${IMAGE}" \

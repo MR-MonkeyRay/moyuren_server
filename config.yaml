@@ -22,20 +22,17 @@ cache:
 ops:
   api_key: ""
 
+network:
+  ghproxy_urls:
+    - "https://ghfast.top/"
+
 templates:
   default: "moyuren"
+  dir: "templates"
   config:
     device_scale_factor: 3
     jpeg_quality: 100
     use_china_cdn: true
-  items:
-    - name: "moyuren"
-      path: "templates/moyuren.html"
-      viewport:
-        width: 794
-        height: 1123
-      show_kfc: true
-      show_stock: true
 
 data_sources:
   - type: "news"
@@ -71,8 +68,6 @@ data_sources:
 
   - type: "holiday"
     timeout_sec: 10
-    mirror_urls:
-      - "https://ghfast.top/"
 
   - type: "stock_index"
     quote_url: "https://push2delay.eastmoney.com/api/qt/ulist.np/get"
@@ -88,6 +83,20 @@ data_sources:
       HK: "Asia/Hong_Kong"
       US: "America/New_York"
     cache_ttl_sec: 60
+
+  - type: "gold_price"
+    url: "https://60s.viki.moe/v2/gold-price"
+    timeout_sec: 5
+
+  - type: "daily_english"
+    enabled: true
+    word_api_url: "https://random-word-api.herokuapp.com/word"
+    max_retries: 10
+    difficulty_range: [3, 5]
+    backend:
+      type: "sqlite"
+      db_path: "cache/ecdict/stardict.db"
+      download_url: "https://github.com/skywind3000/ECDICT/releases/download/1.0.28/ecdict-sqlite-28.zip"
 
 logging:
   level: "INFO"

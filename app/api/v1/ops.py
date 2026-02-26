@@ -61,7 +61,9 @@ async def ops_generate(request: Request) -> JSONResponse:
         return _auth_error_response(e.message)
 
     try:
-        filename = await generate_and_save_image(request.app)
+        results = await generate_and_save_image(request.app)
+        templates_config = request.app.state.config.get_templates_config()
+        total_templates = len(templates_config.items)
         data_dir = Path(request.app.state.config.paths.cache_dir) / "data"
         today_str = today_business().isoformat()
         data_file = data_dir / f"{today_str}.json"
@@ -75,7 +77,14 @@ async def ops_generate(request: Request) -> JSONResponse:
                 pass
 
         return JSONResponse(
-            content={"data": {"date": today_str, "filename": filename, "images": images}},
+            content={
+                "data": {
+                    "date": today_str,
+                    "results": results,
+                    "total_templates": total_templates,
+                    "images": images,
+                }
+            },
             headers={"Cache-Control": "no-store"},
         )
     except GenerationBusyError:

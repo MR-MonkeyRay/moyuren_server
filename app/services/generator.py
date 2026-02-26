@@ -100,19 +100,23 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
     """
     # 优先使用服务容器，兼容旧方式
     services = getattr(app.state, "services", None)
-    data_fetcher = services.data_fetcher if services else app.state.data_fetcher
+    data_fetcher = services.data_fetcher if services else getattr(app.state, "data_fetcher", None)
     holiday_service = services.holiday_service if services else app.state.holiday_service
-    fun_content_service = services.fun_content_service if services else app.state.fun_content_service
+    fun_content_service = services.fun_content_service if services else getattr(app.state, "fun_content_service", None)
     kfc_service = services.kfc_service if services else app.state.kfc_service
     stock_index_service = services.stock_index_service if services else app.state.stock_index_service
+    gold_price_service = services.gold_price_service if services else getattr(app.state, "gold_price_service", None)
+    daily_english_service = services.daily_english_service if services else getattr(app.state, "daily_english_service", None)
 
     # Define fetch tasks
     async def fetch_api_data():
+        if not data_fetcher:
+            return {}
         try:
             data = await data_fetcher.get()
             return data if data is not None else {}
         except Exception as e:
-            logger.warning(f"Failed to fetch API data: {e}")
+            logger.warning(f"Failed to fetch API data: {e}", exc_info=True)
             return {}
 
     async def fetch_holidays():
@@ -120,14 +124,16 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             holidays = await holiday_service.get()
             return holidays if holidays is not None else []
         except Exception as e:
-            logger.warning(f"Failed to fetch holidays: {e}")
+            logger.warning(f"Failed to fetch holidays: {e}", exc_info=True)
             return []
 
     async def fetch_fun_content():
+        if not fun_content_service:
+            return None
         try:
             return await fun_content_service.get()
         except Exception as e:
-            logger.warning(f"Failed to fetch fun content: {e}")
+            logger.warning(f"Failed to fetch fun content: {e}", exc_info=True)
             return None
 
     async def fetch_kfc():
@@ -136,7 +142,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
         try:
             return await kfc_service.get()
         except Exception as e:
-            logger.warning(f"Failed to fetch KFC content: {e}")
+            logger.warning(f"Failed to fetch KFC content: {e}", exc_info=True)
             return None
 
     async def fetch_stock_indices():
@@ -145,41 +151,75 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
         try:
             return await stock_index_service.fetch_indices()
         except Exception as e:
-            logger.warning(f"Failed to fetch stock indices: {e}")
+            logger.warning(f"Failed to fetch stock indices: {e}", exc_info=True)
+            return None
+
+    async def fetch_gold_price():
+        if not gold_price_service:
+            return None
+        try:
+            return await gold_price_service.get()
+        except Exception as e:
+            logger.warning(f"Failed to fetch gold price: {e}", exc_info=True)
+            return None
+
+    async def fetch_daily_english():
+        if not daily_english_service:
+            return None
+        try:
+            return await daily_english_service.get()
+        except Exception as e:
+            logger.warning(f"Failed to fetch daily english: {e}", exc_info=True)
             return None
 
     # Execute all fetches in parallel
-    results = await asyncio.gather(
+    (
+        api_data_result,
+        holidays_result,
+        fun_content_result,
+        kfc_result,
+        stock_indices_result,
+        gold_price_result,
+        daily_english_result,
+    ) = await asyncio.gather(
         fetch_api_data(),
         fetch_holidays(),
         fetch_fun_content(),
         fetch_kfc(),
         fetch_stock_indices(),
+        fetch_gold_price(),
+        fetch_daily_english(),
     )
 
     # Merge results into raw_data with type safety
     # Ensure raw_data is a dict (DailyCache.get() might return non-dict if corrupted)
-    if not isinstance(results[0], dict):
-        logger.warning(f"raw_data is not dict (got {type(results[0]).__name__}), using empty dict")
+    if not isinstance(api_data_result, dict):
+        logger.warning(f"raw_data is not dict (got {type(api_data_result).__name__}), using empty dict")
         raw_data = {}
     else:
-        raw_data = results[0]
-    raw_data["holidays"] = results[1]
-    raw_data["fun_content"] = results[2]
-    raw_data["kfc_copy"] = results[3]
-    raw_data["stock_indices"] = results[4]
+        raw_data = api_data_result
+    raw_data["holidays"] = holidays_result
+    raw_data["fun_content"] = fun_content_result
+    raw_data["kfc_copy"] = kfc_result
+    raw_data["stock_indices"] = stock_indices_result
+    raw_data["gold_price"] = gold_price_result
+    raw_data["daily_english"] = daily_english_result
 
     # Log fetch results (count actual API data keys, excluding merged fields)
-    api_keys = [k for k in raw_data if k not in ("holidays", "fun_content", "kfc_copy", "stock_indices")]
+    api_keys = [k for k in raw_data if k not in ("holidays", "fun_content", "kfc_copy", "stock_indices", "gold_price", "daily_english")]
     logger.info(f"Fetched data: {len(api_keys)} API endpoints, parallel fetch completed")
-    if results[1]:
-        logger.info(f"Fetched {len(results[1])} holidays")
-    if results[2] and isinstance(results[2], dict):
-        logger.info(f"Fetched fun content: {results[2].get('title')}")
-    if results[3]:
+    if holidays_result:
+        logger.info(f"Fetched {len(holidays_result)} holidays")
+    if fun_content_result and isinstance(fun_content_result, dict):
+        logger.info(f"Fetched fun content: {fun_content_result.get('title')}")
+    if kfc_result:
         logger.info("Fetched KFC Crazy Thursday content")
-    if results[4] and isinstance(results[4], dict):
-        logger.info(f"Fetched {len(results[4].get('items', []))} stock indices")
+    if stock_indices_result and isinstance(stock_indices_result, dict):
+        logger.info(f"Fetched {len(stock_indices_result.get('items', []))} stock indices")
+    if gold_price_result and isinstance(gold_price_result, dict):
+        logger.info(f"Fetched gold price: {gold_price_result.get('today_price')}")
+    if daily_english_result and isinstance(daily_english_result, dict):
+        logger.info(f"Fetched daily english: {daily_english_result.get('word')}")
 
     return raw_data
 
@@ -210,25 +250,30 @@ def _schedule_cache_cleanup(cache_cleaner, logger) -> None:
     asyncio.create_task(_cleanup_task())
 
 
-async def generate_and_save_image(app: FastAPI, template_name: str | None = None) -> str:
-    """Generate image and update data file.
+async def generate_and_save_image(
+    app: FastAPI, template_name: str | None = None
+) -> dict[str, str]:
+    """Generate images and update data file.
 
     This function performs the complete image generation pipeline:
     1. Fetch data from API endpoints
     2. Compute template context
-    3. Render HTML to image
+    3. Render HTML to image for each template
     4. Update cache/data/{date}.json atomically
+
+    When template_name is None, all configured templates are rendered.
+    When template_name is specified, only that template is rendered.
 
     Args:
         app: FastAPI application instance with services in app.state.
-        template_name: Optional template name to use for rendering.
+        template_name: Optional template name. None renders all templates.
 
     Returns:
-        Generated image filename.
+        Dict mapping template names to generated image filenames.
+        Templates that failed to render will be omitted from the dict.
 
     Raises:
-        RenderError: If image rendering fails.
-        StorageError: If state file update fails.
+        StorageError: If no templates are configured or all templates fail to render.
         GenerationBusyError: If generation is locked by another process.
     """
     logger = app.state.logger
@@ -236,10 +281,15 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
     cache_dir = Path(config.paths.cache_dir)
     data_dir = cache_dir / "data"
 
-    # Resolve template name
+    # Determine which templates to render
     templates_config = config.get_templates_config()
-    template_item = templates_config.get_template(template_name)
-    resolved_template_name = template_item.name
+    if template_name:
+        templates_to_render = [templates_config.get_template(template_name)]
+    else:
+        templates_to_render = list(templates_config.items)
+
+    if not templates_to_render:
+        raise StorageError("No templates configured for rendering")
 
     # 获取进程内锁
     async_lock = _get_async_lock()
@@ -259,53 +309,85 @@ async def generate_and_save_image(app: FastAPI, template_name: str | None = None
     try:
         try:
             async with async_file_lock(lock_file, timeout=5.0):
+                pre_cached: dict[str, str] = {}
                 # 二次检查：获取锁后检查是否已有新生成的文件
                 today_str = today_business().isoformat()
                 data_file = data_dir / f"{today_str}.json"
                 if data_file.exists():
                     data = _read_data_file(data_file)
                     if data and _is_recently_updated(data, threshold_sec=10):
-                        filename = _read_latest_filename(
-                            data_file,
-                            resolved_template_name,
-                        )
-                        if filename:
+                        cached_results: dict[str, str] = {}
+                        missing_templates = []
+                        for t in templates_to_render:
+                            fn = _read_latest_filename(data_file, t.name)
+                            if fn:
+                                cached_results[t.name] = fn
+                            else:
+                                missing_templates.append(t)
+                        if not missing_templates:
                             logger.info(
-                                f"Data file recently updated for template '{resolved_template_name}', skipping generation"
+                                f"All {len(templates_to_render)} template(s) recently updated, skipping generation"
                             )
-                            return filename
-                        logger.warning("Data file exists but unreadable, proceeding with generation")
+                            return cached_results
+                        # Only render missing templates, carry over cached results
+                        templates_to_render = missing_templates
+                        pre_cached = cached_results
+                        logger.info(
+                            f"Found {len(cached_results)} cached, {len(missing_templates)} to render"
+                        )
 
-                logger.info("Starting image generation...")
+                logger.info(
+                    f"Starting image generation for {len(templates_to_render)} template(s)..."
+                )
 
                 # 1. Fetch all data sources in parallel (使用缓存服务)
                 raw_data = await _fetch_all_data_parallel(app, logger)
 
-                # 2. Compute template context
+                # 2. Compute template context (once for all templates)
                 template_data = app.state.data_computer.compute(raw_data)
                 logger.info("Template data computed")
 
-                # 3. Render image
-                filename = await app.state.image_renderer.render(
-                    template_data,
-                    template_name=resolved_template_name,
-                )
-                logger.info(f"Image rendered: {filename}")
+                # 3. Render each template and update data file
+                # TODO: Consider using asyncio.gather for parallel rendering when template count grows
+                results: dict[str, str] = dict(pre_cached)
+                failed_templates: list[str] = []
+                for template_item in templates_to_render:
+                    tname = template_item.name
+                    try:
+                        t_start = time.monotonic()
+                        filename = await app.state.image_renderer.render(
+                            template_data,
+                            template_name=tname,
+                        )
+                        t_elapsed = time.monotonic() - t_start
+                        logger.info(f"Image rendered for '{tname}': {filename} ({t_elapsed:.1f}s)")
 
-                # 4. Update cache/data/{date}.json atomically
-                await _update_data_file(
-                    data_dir=str(data_dir),
-                    filename=filename,
-                    template_data=template_data,
-                    raw_data=raw_data,
-                    config=config,
-                    template_name=resolved_template_name,
-                )
+                        await _update_data_file(
+                            data_dir=str(data_dir),
+                            filename=filename,
+                            template_data=template_data,
+                            raw_data=raw_data,
+                            config=config,
+                            template_name=tname,
+                        )
+                        results[tname] = filename
+                    except Exception:
+                        logger.exception(f"Failed to render template '{tname}'")
+                        failed_templates.append(tname)
 
-                # 5. Clean up old cache (fire-and-forget, non-blocking)
+                if not results:
+                    raise StorageError("All templates failed to render")
+
+                if failed_templates:
+                    logger.warning(
+                        f"Partial render failure: {len(failed_templates)} template(s) failed: "
+                        f"{', '.join(failed_templates)}"
+                    )
+
+                # 4. Clean up old cache (fire-and-forget, non-blocking)
                 _schedule_cache_cleanup(app.state.cache_cleaner, logger)
 
-                return filename
+                return results
         except FileLockTimeout as exc:
             logger.warning("Image generation skipped: another process is generating")
             raise GenerationBusyError("Image generation locked by another process") from exc
@@ -414,6 +496,8 @@ async def _update_data_file(
             "kfc_content": kfc_content,
             "kfc_content_full": template_data.get("kfc_content"),
             "stock_indices": raw_data.get("stock_indices"),
+            "gold_price": raw_data.get("gold_price"),
+            "daily_english": raw_data.get("daily_english"),
         }
 
         # Atomic write
