@@ -1,5 +1,6 @@
 """Tests for app/services/renderer.py - image rendering service."""
 
+import hashlib
 import json
 import time
 from datetime import datetime
@@ -11,6 +12,10 @@ from markupsafe import Markup
 
 from app.core.config import TemplateItemConfig, TemplateRenderConfig, TemplatesConfig, ViewportConfig
 from app.services.renderer import ImageRenderer, format_datetime, nl2br
+
+
+def _resource_cache_key(url: str) -> str:
+    return hashlib.sha256(url.encode("utf-8")).hexdigest()
 
 
 class TestFormatDatetime:
@@ -238,7 +243,7 @@ class TestImageRenderer:
     async def test_get_remote_resource_uses_fresh_cache(self, renderer: ImageRenderer) -> None:
         """Test fresh cached render resources are served without refetching."""
         url = "https://fonts.googleapis.cn/css2?family=Test"
-        cache_key = "7e3df0445e243c4c6cfa318eebe0815deabdf5e25049a2785186773c2bf800f8"
+        cache_key = _resource_cache_key(url)
         body_path = renderer.resource_cache_dir / f"{cache_key}.body"
         meta_path = renderer.resource_cache_dir / f"{cache_key}.meta"
         body_path.write_bytes(b"body { font-family: Test; }")
@@ -257,7 +262,7 @@ class TestImageRenderer:
     async def test_get_remote_resource_uses_stale_cache_on_fetch_failure(self, renderer: ImageRenderer) -> None:
         """Test stale render resources are used when refresh fails."""
         url = "https://fonts.gstatic.cn/s/font.woff2"
-        cache_key = "db3775d3f0bff52c504640bd51da7de8fdfcfcc19266e6f5812d796376d8f665"
+        cache_key = _resource_cache_key(url)
         body_path = renderer.resource_cache_dir / f"{cache_key}.body"
         meta_path = renderer.resource_cache_dir / f"{cache_key}.meta"
         body_path.write_bytes(b"font-bytes")
@@ -406,7 +411,7 @@ class TestImageRenderer:
         fetched_at = time.time()
         content_type = "text/css; charset=utf-8"
 
-        cache_key = "7e3df0445e243c4c6cfa318eebe0815deabdf5e25049a2785186773c2bf800f8"
+        cache_key = _resource_cache_key(url)
         body_path = renderer.resource_cache_dir / f"{cache_key}.body"
         meta_path = renderer.resource_cache_dir / f"{cache_key}.meta"
 
