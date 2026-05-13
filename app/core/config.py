@@ -382,6 +382,10 @@ class TemplateRenderConfig(BaseModel):
     device_scale_factor: int = 3
     jpeg_quality: int = 100
     use_china_cdn: bool = True
+    remote_resource_cache_enabled: bool = True
+    remote_resource_cache_ttl_sec: int = 7 * 24 * 60 * 60
+    remote_resource_timeout_sec: float = 5.0
+    remote_resource_max_size_kb: int = 5120
 
     @field_validator("device_scale_factor")
     @classmethod
@@ -395,6 +399,31 @@ class TemplateRenderConfig(BaseModel):
     def validate_jpeg_quality(cls, value: int) -> int:
         if value <= 0 or value > 100:
             raise ValueError("jpeg_quality must be between 1 and 100")
+        return value
+
+    @field_validator("remote_resource_cache_ttl_sec")
+    @classmethod
+    def validate_remote_resource_cache_ttl(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("remote_resource_cache_ttl_sec must be positive")
+        if value > 365 * 24 * 60 * 60:
+            raise ValueError("remote_resource_cache_ttl_sec must not exceed 1 year (31536000 seconds)")
+        return value
+
+    @field_validator("remote_resource_timeout_sec")
+    @classmethod
+    def validate_remote_resource_timeout(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("remote_resource_timeout_sec must be positive")
+        if value > 60.0:
+            raise ValueError("remote_resource_timeout_sec must not exceed 60.0 seconds")
+        return value
+
+    @field_validator("remote_resource_max_size_kb")
+    @classmethod
+    def validate_remote_resource_max_size(cls, value: int) -> int:
+        if value <= 0 or value > 51200:
+            raise ValueError("remote_resource_max_size_kb must be between 1 and 51200 (50MB)")
         return value
 
 

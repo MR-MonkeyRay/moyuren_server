@@ -283,9 +283,17 @@ class TestTemplateRenderConfig:
 
     def test_valid_config(self) -> None:
         """Test valid template render configuration."""
-        config = TemplateRenderConfig(device_scale_factor=2, jpeg_quality=90, use_china_cdn=True)
+        config = TemplateRenderConfig(
+            device_scale_factor=2,
+            jpeg_quality=90,
+            use_china_cdn=True,
+            remote_resource_cache_ttl_sec=3600,
+            remote_resource_timeout_sec=2.5,
+        )
         assert config.device_scale_factor == 2
         assert config.jpeg_quality == 90
+        assert config.remote_resource_cache_ttl_sec == 3600
+        assert config.remote_resource_timeout_sec == 2.5
 
     def test_zero_scale_raises_error(self) -> None:
         """Test zero device scale factor raises error."""
@@ -298,6 +306,47 @@ class TestTemplateRenderConfig:
         with pytest.raises(ValidationError) as exc_info:
             TemplateRenderConfig(jpeg_quality=101)
         assert "must be between 1 and 100" in str(exc_info.value)
+
+    def test_invalid_remote_resource_cache_ttl_raises_error(self) -> None:
+        """Test invalid remote resource cache TTL raises error."""
+        with pytest.raises(ValidationError) as exc_info:
+            TemplateRenderConfig(remote_resource_cache_ttl_sec=0)
+        assert "remote_resource_cache_ttl_sec must be positive" in str(exc_info.value)
+
+    def test_invalid_remote_resource_timeout_raises_error(self) -> None:
+        """Test invalid remote resource timeout raises error."""
+        with pytest.raises(ValidationError) as exc_info:
+            TemplateRenderConfig(remote_resource_timeout_sec=0)
+        assert "remote_resource_timeout_sec must be positive" in str(exc_info.value)
+
+    def test_max_size_kb_valid(self) -> None:
+        """Test valid remote resource max size."""
+        config = TemplateRenderConfig(remote_resource_max_size_kb=5120)
+        assert config.remote_resource_max_size_kb == 5120
+
+    def test_max_size_kb_zero_raises_error(self) -> None:
+        """Test zero max size raises error."""
+        with pytest.raises(ValidationError) as exc_info:
+            TemplateRenderConfig(remote_resource_max_size_kb=0)
+        assert "must be between 1 and 51200" in str(exc_info.value)
+
+    def test_max_size_kb_too_large_raises_error(self) -> None:
+        """Test max size exceeding 51200 raises error."""
+        with pytest.raises(ValidationError) as exc_info:
+            TemplateRenderConfig(remote_resource_max_size_kb=51201)
+        assert "must be between 1 and 51200" in str(exc_info.value)
+
+    def test_ttl_exceeds_one_year_raises_error(self) -> None:
+        """Test TTL exceeding one year raises error."""
+        with pytest.raises(ValidationError) as exc_info:
+            TemplateRenderConfig(remote_resource_cache_ttl_sec=365 * 24 * 60 * 60 + 1)
+        assert "must not exceed 1 year" in str(exc_info.value)
+
+    def test_timeout_exceeds_60_raises_error(self) -> None:
+        """Test timeout exceeding 60 seconds raises error."""
+        with pytest.raises(ValidationError) as exc_info:
+            TemplateRenderConfig(remote_resource_timeout_sec=61.0)
+        assert "must not exceed 60.0" in str(exc_info.value)
 
 
 class TestNewsSource:
