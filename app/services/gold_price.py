@@ -20,6 +20,13 @@ class GoldPriceService:
         http_client: httpx.AsyncClient | None = None,
         logger: logging.Logger | None = None,
     ):
+        """初始化金价服务。
+
+        Args:
+            config: 金价接口配置，包含 URL 和超时时间。
+            http_client: 可选外部 HTTP 客户端；提供时由调用方负责生命周期。
+            logger: 可选日志记录器；未提供时使用当前模块 logger。
+        """
         self.config = config
         self._http_client = http_client
         self._logger = logger if logger else logging.getLogger(__name__)
@@ -90,8 +97,24 @@ class CachedGoldPriceService(DailyCache[dict]):
         cache_dir: Path,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
+        """初始化带日级缓存的金价服务。
+
+        Args:
+            config: 金价接口配置。
+            logger: 日志记录器。
+            cache_dir: 日级缓存目录。
+            http_client: 可选外部 HTTP 客户端。
+
+        Side Effects:
+            初始化 gold_price 缓存命名空间并创建内部 GoldPriceService。
+        """
         super().__init__("gold_price", cache_dir, logger)
         self._service = GoldPriceService(config, http_client, logger)
 
     async def fetch_fresh(self) -> dict[str, Any] | None:
+        """从金价接口获取新鲜数据。
+
+        Returns:
+            解析后的金价字典；接口失败、响应结构异常或解析失败时返回 None。
+        """
         return await self._service.fetch_gold_price()

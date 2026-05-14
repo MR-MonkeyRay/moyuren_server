@@ -419,6 +419,15 @@ class DomainDataAggregator:
         year_end = year_start.replace(year=now.year + 1)
 
         def _calc_progress(start: datetime, end: datetime) -> float:
+            """计算当前时间在指定时间段内的进度百分比。
+
+            Args:
+                start: 时间段起点。
+                end: 时间段终点。
+
+            Returns:
+                0.0 到 100.0 之间、保留两位小数的进度值；无效时间段返回 0.0。
+            """
             start_ts = start.timestamp()
             end_ts = end.timestamp()
             total = end_ts - start_ts

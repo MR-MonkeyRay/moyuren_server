@@ -20,6 +20,11 @@ class _UnauthorizedError(Exception):
     """Internal exception for auth failures."""
 
     def __init__(self, message: str) -> None:
+        """初始化鉴权失败异常.
+
+        Args:
+            message: 返回给调用方的鉴权失败说明.
+        """
         self.message = message
         super().__init__(message)
 

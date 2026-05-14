@@ -30,6 +30,17 @@ class HolidayService:
         ghproxy_urls: list[str] | None = None,
         timeout_sec: int = 10,
     ) -> None:
+        """初始化节假日数据服务。
+
+        Args:
+            logger: 日志记录器。
+            cache_dir: 年度节假日原始数据缓存目录。
+            ghproxy_urls: GitHub raw 镜像代理前缀列表，按顺序优先尝试。
+            timeout_sec: 请求超时时间，单位秒。
+
+        Side Effects:
+            创建缓存目录（如果不存在）。
+        """
         self._logger = logger
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)

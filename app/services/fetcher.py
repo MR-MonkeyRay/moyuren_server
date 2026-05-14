@@ -21,6 +21,13 @@ class DataFetcher:
         logger: logging.Logger,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
+        """初始化新闻数据获取器。
+
+        Args:
+            source: 新闻源配置，包含请求地址、参数和超时时间。
+            logger: 日志记录器。
+            http_client: 可选外部 HTTP 客户端；提供时复用该客户端发送请求。
+        """
         self.source = source
         self.logger = logger
         self._client = http_client
@@ -93,6 +100,18 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
         http_client: httpx.AsyncClient | None = None,
         date_provider: Any = None,
     ) -> None:
+        """初始化带日级缓存的新闻数据获取器。
+
+        Args:
+            source: 新闻源配置。
+            logger: 日志记录器。
+            cache_dir: 日级缓存目录。
+            http_client: 可选外部 HTTP 客户端。
+            date_provider: 可选日期提供器，用于测试或替换业务日期来源。
+
+        Side Effects:
+            初始化 DailyCache 命名空间并创建内部 DataFetcher。
+        """
         super().__init__("news", cache_dir, logger, date_provider=date_provider)
         self._fetcher = DataFetcher(source, logger, http_client=http_client)
 

@@ -53,6 +53,12 @@ class AppError(Exception):
     """Base application error."""
 
     def __init__(self, message: str, code: ErrorCode) -> None:
+        """初始化应用基础异常.
+
+        Args:
+            message: 面向调用方或日志的人类可读错误信息.
+            code: 应用内部标准错误码.
+        """
         self.message = message
         self.code = code
         super().__init__(message)
@@ -66,6 +72,12 @@ class ConfigError(AppError):
         message: str = "Configuration error",
         code: ErrorCode = ErrorCode.CONFIG_LOAD_FAILED,
     ) -> None:
+        """初始化配置相关异常.
+
+        Args:
+            message: 配置错误说明.
+            code: 配置错误码.
+        """
         super().__init__(message, code)
 
 
@@ -75,6 +87,12 @@ class FetchError(AppError):
     def __init__(
         self, message: str = "Fetch error", code: ErrorCode = ErrorCode.FETCH_REQUEST_FAILED
     ) -> None:
+        """初始化数据获取相关异常.
+
+        Args:
+            message: 数据获取错误说明.
+            code: 数据获取错误码.
+        """
         super().__init__(message, code)
 
 
@@ -86,6 +104,12 @@ class RenderError(AppError):
         message: str = "Render error",
         code: ErrorCode = ErrorCode.RENDER_PLAYWRIGHT_ERROR,
     ) -> None:
+        """初始化渲染相关异常.
+
+        Args:
+            message: 渲染错误说明.
+            code: 渲染错误码.
+        """
         super().__init__(message, code)
 
 
@@ -97,6 +121,12 @@ class StorageError(AppError):
         message: str = "Storage error",
         code: ErrorCode = ErrorCode.STORAGE_WRITE_FAILED,
     ) -> None:
+        """初始化存储相关异常.
+
+        Args:
+            message: 存储错误说明.
+            code: 存储错误码.
+        """
         super().__init__(message, code)
 
 
