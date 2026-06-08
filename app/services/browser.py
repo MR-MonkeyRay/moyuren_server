@@ -17,6 +17,14 @@ class BrowserManager:
     """Singleton browser manager with lazy initialization and graceful shutdown."""
 
     def __init__(self, logger_instance: logging.Logger | None = None) -> None:
+        """初始化浏览器管理器。
+
+        Args:
+            logger_instance: 可选日志记录器；未提供时使用当前模块 logger。
+
+        Side Effects:
+            创建异步锁和运行时状态计数器，但不会立即启动 Playwright 或浏览器。
+        """
         self._logger = logger_instance or logger
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None

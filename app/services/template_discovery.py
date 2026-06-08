@@ -19,11 +19,25 @@ class _MetaParser(HTMLParser):
     """解析 HTML <head> 段中的 moyuren:* meta 标签。"""
 
     def __init__(self):
+        """初始化 meta 标签解析器。
+
+        Side Effects:
+            初始化解析结果容器和 head 区域状态标记。
+        """
         super().__init__()
         self.meta_data: dict[str, str] = {}
         self.in_head = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """处理 HTML 起始标签并记录 moyuren meta 数据。
+
+        Args:
+            tag: 起始标签名。
+            attrs: 标签属性列表。
+
+        Side Effects:
+            进入 head 标签时更新解析状态；遇到 moyuren:* meta 标签时写入 meta_data。
+        """
         if tag.lower() == "head":
             self.in_head = True
         elif tag.lower() == "meta" and self.in_head:
@@ -35,6 +49,14 @@ class _MetaParser(HTMLParser):
                 self.meta_data[key] = content
 
     def handle_endtag(self, tag: str) -> None:
+        """处理 HTML 结束标签。
+
+        Args:
+            tag: 结束标签名。
+
+        Side Effects:
+            离开 head 标签时更新解析状态。
+        """
         if tag.lower() == "head":
             self.in_head = False
 

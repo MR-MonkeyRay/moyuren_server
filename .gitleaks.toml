@@ -1,0 +1,15 @@
+title = "moyuren-server gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Ignore historical renderer cache-key hash test fixtures"
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''tests/services/test_renderer\.py''',
+]
+regexes = [
+  '''cache_key\s*=\s*"[0-9a-f]{64}"''',
+]

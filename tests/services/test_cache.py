@@ -1,7 +1,8 @@
 """Tests for app/services/cache.py - cache cleanup service."""
 
+import json
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -245,3 +246,109 @@ class TestCacheCleaner:
         assert result["deleted_files"] == 1
         assert boundary_file.exists()
         assert not expired_file.exists()
+
+    def test_cleanup_expired_render_resources(
+        self, cache_dir: Path, logger: logging.Logger, mock_today
+    ) -> None:
+        """Test cleanup removes expired render resource cache pairs."""
+        cleaner = CacheCleaner(cache_dir=str(cache_dir), retain_days=30, logger=logger)
+        rr_dir = cache_dir / "render_resources"
+
+        # Create expired resource pair (fetched_at = 2025-12-01, clearly before cutoff)
+        expired_ts = datetime(2025, 12, 1, tzinfo=timezone.utc).timestamp()
+        (rr_dir / "expired_key.body").write_bytes(b"expired-font-data")
+        (rr_dir / "expired_key.meta").write_text(
+            json.dumps({"url": "https://fonts.googleapis.cn/test", "content_type": "font/woff2", "fetched_at": expired_ts, "stored_at": "2025-12-01T00:00:00Z", "size": 18}),
+            encoding="utf-8",
+        )
+
+        # Create recent resource pair (fetched_at = 2026-02-09, clearly after cutoff)
+        recent_ts = datetime(2026, 2, 9, tzinfo=timezone.utc).timestamp()
+        (rr_dir / "recent_key.body").write_bytes(b"recent-font-data")
+        (rr_dir / "recent_key.meta").write_text(
+            json.dumps({"url": "https://fonts.googleapis.cn/test2", "content_type": "font/woff2", "fetched_at": recent_ts, "stored_at": "2026-02-09T00:00:00Z", "size": 18}),
+            encoding="utf-8",
+        )
+
+        result = cleaner.cleanup()
+
+        assert not (rr_dir / "expired_key.body").exists()
+        assert not (rr_dir / "expired_key.meta").exists()
+        assert (rr_dir / "recent_key.body").exists()
+        assert (rr_dir / "recent_key.meta").exists()
+        assert result["deleted_files"] >= 1
+
+    def test_cleanup_orphan_render_resource_body(
+        self, cache_dir: Path, logger: logging.Logger, mock_today
+    ) -> None:
+        """Test cleanup removes orphan body files without matching meta."""
+        cleaner = CacheCleaner(cache_dir=str(cache_dir), retain_days=30, logger=logger)
+        rr_dir = cache_dir / "render_resources"
+
+        # Create orphan body file (no meta)
+        (rr_dir / "orphan_key.body").write_bytes(b"orphan-data")
+
+        result = cleaner.cleanup()
+
+        assert not (rr_dir / "orphan_key.body").exists()
+        assert result["deleted_files"] >= 1
+
+    def test_cleanup_corrupted_render_resource_meta(
+        self, cache_dir: Path, logger: logging.Logger, mock_today
+    ) -> None:
+        """Test cleanup removes corrupted meta files and their body pairs."""
+        cleaner = CacheCleaner(cache_dir=str(cache_dir), retain_days=30, logger=logger)
+        rr_dir = cache_dir / "render_resources"
+
+        # Create corrupted meta (invalid JSON) + body pair
+        (rr_dir / "corrupt_key.body").write_bytes(b"corrupt-data")
+        (rr_dir / "corrupt_key.meta").write_text("not valid json\n", encoding="utf-8")
+
+        result = cleaner.cleanup()
+
+        assert not (rr_dir / "corrupt_key.body").exists()
+        assert not (rr_dir / "corrupt_key.meta").exists()
+        assert result["deleted_files"] >= 1
+
+    def test_cleanup_unreadable_render_resource_meta_stat_failure(
+        self, cache_dir: Path, logger: logging.Logger, mock_today
+    ) -> None:
+        """Test cleanup tolerates stat failures while removing bad metadata."""
+        cleaner = CacheCleaner(cache_dir=str(cache_dir), retain_days=30, logger=logger)
+        rr_dir = cache_dir / "render_resources"
+        meta_path = rr_dir / "race_key.meta"
+        body_path = rr_dir / "race_key.body"
+        meta_path.write_text("not valid json\n", encoding="utf-8")
+        body_path.write_bytes(b"body")
+
+        original_stat = Path.stat
+
+        def fail_meta_stat(path: Path, *args, **kwargs):
+            if path == meta_path:
+                raise OSError("removed concurrently")
+            return original_stat(path, *args, **kwargs)
+
+        with patch.object(Path, "stat", fail_meta_stat):
+            result = cleaner.cleanup()
+
+        assert result["deleted_files"] >= 1
+        assert result["freed_bytes"] == len(b"body")
+        assert not meta_path.exists()
+        assert not body_path.exists()
+
+    def test_cleanup_stale_temp_files(
+        self, cache_dir: Path, logger: logging.Logger, mock_today
+    ) -> None:
+        """Test cleanup removes stale .tmp files from interrupted writes."""
+        cleaner = CacheCleaner(cache_dir=str(cache_dir), retain_days=30, logger=logger)
+        rr_dir = cache_dir / "render_resources"
+
+        # Create stale temp files
+        (rr_dir / "abc123.body.tmp").write_bytes(b"partial-data")
+        (rr_dir / "abc123.meta.tmp").write_text("partial-meta", encoding="utf-8")
+
+        result = cleaner.cleanup()
+
+        assert not (rr_dir / "abc123.body.tmp").exists()
+        assert not (rr_dir / "abc123.meta.tmp").exists()
+        assert result["deleted_files"] >= 2

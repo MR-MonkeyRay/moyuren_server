@@ -478,6 +478,11 @@ app.add_exception_handler(AppError, app_error_handler)
 
 @app.api_route("/healthz", methods=["GET", "HEAD"])
 async def healthz():
+    """返回基础存活状态.
+
+    Returns:
+        包含 ok 状态的健康检查响应.
+    """
     return {"status": "ok"}
 
 

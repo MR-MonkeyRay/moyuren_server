@@ -258,6 +258,11 @@ MIXED_OVERRIDES = {
 
 
 def parse_args() -> argparse.Namespace:
+    """解析渲染测试场景脚本的命令行参数。
+
+    Returns:
+        解析后的命令行命名空间。
+    """
     parser = argparse.ArgumentParser(description="渲染测试场景图片")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--scenario", choices=list(SCENARIOS.keys()), help="渲染指定场景")
@@ -267,15 +272,34 @@ def parse_args() -> argparse.Namespace:
 
 
 def print_scenario_list() -> None:
+    """将所有可用渲染测试场景打印到标准输出。"""
     print("可用场景：")
     for name, data in SCENARIOS.items():
         print(f"  - {name}: {data['description']}")
 
 
 def apply_scenario_overrides(base_data: dict, overrides: dict) -> dict:
+    """将指定场景覆盖项合并到基础模板数据中。
+
+    Args:
+        base_data: 从真实服务计算得到的基础模板数据。
+        overrides: 场景定义中的覆盖字段，支持嵌套字典递归合并。
+
+    Returns:
+        合并场景覆盖后的新模板数据，不会修改传入的基础数据。
+    """
     data = copy.deepcopy(base_data)
 
     def merge_dict(target: dict, patch: dict) -> dict:
+        """递归合并场景补丁到目标字典。
+
+        Args:
+            target: 当前要写入覆盖值的目标字典。
+            patch: 当前层级的覆盖字段。
+
+        Returns:
+            合并后的目标字典。
+        """
         for key, value in patch.items():
             if isinstance(value, dict) and isinstance(target.get(key), dict):
                 target[key] = merge_dict(target[key], value)
@@ -296,6 +320,21 @@ async def get_base_template_data(
     data_computer: DataComputer,
     logger,
 ) -> dict:
+    """获取并计算一份可用于测试场景覆盖的基础模板数据。
+
+    Args:
+        data_fetcher: 聚合新闻等基础接口数据的数据获取器。
+        holiday_service: 节假日服务。
+        fun_content_service: 趣味内容服务。
+        stock_index_service: 股票指数服务；为 ``None`` 时跳过股票数据。
+        gold_price_service: 金价服务；为 ``None`` 时跳过金价数据。
+        daily_english_service: 每日英语服务；为 ``None`` 时跳过英语数据。
+        data_computer: 将原始数据转换为模板上下文的数据计算器。
+        logger: 用于记录非关键数据获取失败的日志对象。
+
+    Returns:
+        已经经过 ``DataComputer`` 计算的模板上下文字典。
+    """
     raw_data = await data_fetcher.fetch_all()
 
     try:
@@ -353,6 +392,15 @@ async def get_base_template_data(
 
 
 def build_output_filename(scenario_name: str | None, timestamp: str) -> str:
+    """根据场景名和时间戳构造测试图片文件名。
+
+    Args:
+        scenario_name: 场景名；为 ``None`` 时生成通用测试文件名。
+        timestamp: 已格式化的时间戳字符串。
+
+    Returns:
+        测试图片输出文件名。
+    """
     if scenario_name:
         return f"moyuren_test_{scenario_name}_{timestamp}.jpg"
     return f"moyuren_test_{timestamp}.jpg"
@@ -365,6 +413,18 @@ async def render_scenario(
     images_dir: str,
     logger,
 ) -> Path:
+    """渲染单个测试场景并重命名输出文件。
+
+    Args:
+        scenario_name: 当前场景名；为 ``None`` 时使用默认测试文件名。
+        template_data: 传给模板渲染器的上下文数据。
+        image_renderer: 图片渲染服务实例。
+        images_dir: 渲染输出目录。
+        logger: 用于记录输出路径或缺失文件警告的日志对象。
+
+    Returns:
+        最终测试图片的路径。
+    """
     filename = await image_renderer.render(template_data)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_name = build_output_filename(scenario_name, timestamp)

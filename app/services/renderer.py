@@ -1,18 +1,58 @@
 """Image rendering service module."""
 
+import hashlib
+import inspect
+import json
 import logging
 import os
+import re
 import tempfile
-from datetime import datetime
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
+import httpx
 from jinja2 import Environment, FileSystemLoader, TemplateError
 from markupsafe import Markup, escape
 
 from app.core.config import TemplateItemConfig, TemplateRenderConfig, TemplatesConfig, ViewportConfig
 from app.core.errors import RenderError
 from app.services.browser import browser_manager
+
+_CACHEABLE_RESOURCE_TYPES = {"stylesheet", "font"}
+_CACHEABLE_HOST_SUFFIXES = (
+    "fonts.googleapis.com",
+    "fonts.googleapis.cn",
+    "fonts.gstatic.com",
+    "fonts.gstatic.cn",
+)
+
+
+@dataclass
+class _CachedResource:
+    """远程渲染资源的缓存读取结果。
+
+    Attributes:
+        body: 资源响应体字节内容。
+        content_type: 响应的 MIME 类型。
+        cache_state: 缓存命中状态，用于调试和响应头标记。
+    """
+
+    body: bytes
+    content_type: str
+    cache_state: str
+
+
+@dataclass
+class _TrackedResource:
+    """Playwright request currently active while rendering a template."""
+
+    url: str
+    resource_type: str
+    started_at: float
 
 
 def format_datetime(value: str | datetime | int | float | None) -> str:
@@ -104,9 +144,12 @@ class ImageRenderer:
         self.render_config = render_config
         self.logger = logger
         self._env_cache: dict[str, Environment] = {}
+        self.resource_cache_dir = self.images_dir.parent / "render_resources"
+        self._render_degraded: bool = False
 
         # Ensure images directory exists
         self.images_dir.mkdir(parents=True, exist_ok=True)
+        self.resource_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_jinja_env(self, template_path: str) -> Environment:
         """Get or create Jinja2 environment for template directory."""
@@ -138,22 +181,40 @@ class ImageRenderer:
         Raises:
             RenderError: If template rendering or screenshot generation fails.
         """
+        self._render_degraded = False
         template_item = self.templates_config.get_template(template_name)
+        render_start = time.monotonic()
+        self.logger.info(
+            f"Rendering template '{template_item.name}' from {template_item.path} "
+            f"(viewport={template_item.viewport.width}x{template_item.viewport.height})"
+        )
 
         # Step 1: Render HTML with Jinja2
         html_content = self._render_template(data, template_item)
+        self.logger.info(f"Rendered HTML for '{template_item.name}' ({len(html_content)} bytes)")
 
         # Step 2: Generate screenshot with Playwright
         viewport = template_item.viewport
         jpeg_quality = template_item.jpeg_quality or self.render_config.jpeg_quality
         device_scale_factor = template_item.device_scale_factor or self.render_config.device_scale_factor
-        image_bytes = await self._generate_screenshot(html_content, viewport, jpeg_quality, device_scale_factor)
+        image_bytes = await self._generate_screenshot(
+            html_content,
+            viewport,
+            jpeg_quality,
+            device_scale_factor,
+            template_item.name,
+        )
 
         # Step 3: Atomically write to file
         filename = self._generate_filename(template_item.name)
         self._write_file_atomic(filename, image_bytes)
 
-        self.logger.info(f"Successfully rendered image: {filename}")
+        self.logger.info(
+            f"Successfully rendered image: {filename} "
+            f"({len(image_bytes)} bytes, {time.monotonic() - render_start:.1f}s)"
+        )
+        if self._render_degraded:
+            self.logger.warning("Render completed with degraded stylesheet(s)")
         return filename
 
     def _render_template(self, data: dict[str, Any], template_item: TemplateItemConfig) -> str:
@@ -193,6 +254,7 @@ class ImageRenderer:
         viewport: ViewportConfig,
         jpeg_quality: int,
         device_scale_factor: int,
+        template_name: str,
     ) -> bytes:
         """Generate screenshot from HTML using Playwright.
 
@@ -209,7 +271,12 @@ class ImageRenderer:
             RenderError: If screenshot generation fails.
         """
         page = None
+        tracked_resources: dict[int, _TrackedResource] = {}
         try:
+            self.logger.info(
+                f"Creating screenshot page for '{template_name}' "
+                f"(scale={device_scale_factor}, quality={jpeg_quality})"
+            )
             page = await browser_manager.create_page(
                 {
                     "width": viewport.width,
@@ -217,9 +284,24 @@ class ImageRenderer:
                     "device_scale_factor": device_scale_factor,
                 }
             )
+            tracked_resources = self._track_page_requests(page)
+            await self._install_resource_cache_routes(page)
 
-            # Set HTML content and wait for network idle
-            await page.set_content(html_content, wait_until="networkidle")
+            # Set HTML content without waiting for network idle. Remote font/CDN requests
+            # can keep the network busy long enough to fail otherwise valid renders.
+            set_content_start = time.monotonic()
+            self.logger.info(f"Loading HTML into browser for '{template_name}'")
+            page_load_timeout_ms = self._timeout_ms(self.render_config.page_load_timeout_sec)
+            await page.set_content(
+                html_content,
+                wait_until="domcontentloaded",
+                timeout=page_load_timeout_ms,
+            )
+            await self._wait_for_render_ready(page, template_name, tracked_resources)
+            self.logger.info(
+                f"Browser content loaded for '{template_name}' "
+                f"({time.monotonic() - set_content_start:.1f}s)"
+            )
 
             use_full_page = True
             # Adjust viewport height to match actual content height
@@ -236,20 +318,31 @@ class ImageRenderer:
                         f"max {self.MAX_VIEWPORT_HEIGHT}px, output will be clipped"
                     )
                     use_full_page = False
+                self.logger.info(
+                    f"Adjusting viewport for '{template_name}' "
+                    f"from {viewport.height}px to {content_height}px"
+                )
                 await page.set_viewport_size(
                     {"width": viewport.width, "height": content_height}
                 )
 
             # Take screenshot as JPEG
+            screenshot_start = time.monotonic()
+            self.logger.info(f"Capturing screenshot for '{template_name}'")
             screenshot_bytes = await page.screenshot(
                 type="jpeg",
                 quality=jpeg_quality,
                 full_page=use_full_page,
             )
+            self.logger.info(
+                f"Screenshot captured for '{template_name}' "
+                f"({len(screenshot_bytes)} bytes, {time.monotonic() - screenshot_start:.1f}s)"
+            )
 
             return screenshot_bytes
 
         except Exception as e:
+            self._log_pending_render_resources(template_name, tracked_resources)
             self.logger.error(f"Screenshot generation failed: {e}")
             raise RenderError(
                 message=f"Failed to generate screenshot: {e}",
@@ -257,6 +350,498 @@ class ImageRenderer:
         finally:
             if page is not None:
                 await browser_manager.release_page(page)
+
+    def _timeout_ms(self, timeout_sec: float) -> int:
+        """Convert seconds to Playwright timeout milliseconds."""
+        return max(1, int(timeout_sec * 1000))
+
+    def _track_page_requests(self, page: Any) -> dict[int, _TrackedResource]:
+        """Track in-flight page requests so timeout logs can name the resource."""
+        tracked_resources: dict[int, _TrackedResource] = {}
+        on = getattr(page, "on", None)
+        if not callable(on) or inspect.iscoroutinefunction(on):
+            return tracked_resources
+
+        def remember_request(request: Any) -> None:
+            tracked_resources[id(request)] = _TrackedResource(
+                url=str(getattr(request, "url", "")),
+                resource_type=str(getattr(request, "resource_type", "unknown")),
+                started_at=time.monotonic(),
+            )
+
+        def forget_request(request: Any) -> None:
+            tracked_resources.pop(id(request), None)
+
+        def log_failed_request(request: Any) -> None:
+            tracked = tracked_resources.pop(id(request), None)
+            url = tracked.url if tracked else str(getattr(request, "url", ""))
+            resource_type = tracked.resource_type if tracked else str(
+                getattr(request, "resource_type", "unknown")
+            )
+            self.logger.warning(
+                f"Render resource request failed: {resource_type} "
+                f"{self._resource_url_for_log(url)}"
+            )
+
+        try:
+            on("request", remember_request)
+            on("requestfinished", forget_request)
+            on("requestfailed", log_failed_request)
+        except Exception as e:
+            self.logger.debug(f"Render resource request tracking disabled: {e}")
+            tracked_resources.clear()
+        return tracked_resources
+
+    def _log_pending_render_resources(
+        self,
+        template_name: str,
+        tracked_resources: dict[int, _TrackedResource],
+        limit: int = 8,
+    ) -> None:
+        """Log resource requests still pending during a render timeout/failure."""
+        if not tracked_resources:
+            return
+
+        now = time.monotonic()
+        pending = sorted(
+            tracked_resources.values(),
+            key=lambda item: item.started_at,
+        )
+        summary = "; ".join(
+            f"{item.resource_type} {self._resource_url_for_log(item.url)} "
+            f"({now - item.started_at:.1f}s)"
+            for item in pending[:limit]
+        )
+        remaining = len(pending) - limit
+        suffix = f"; +{remaining} more" if remaining > 0 else ""
+        self.logger.warning(
+            f"Pending render resources for {template_name} at timeout/failure: "
+            f"{summary}{suffix}"
+        )
+
+    async def _wait_for_render_ready(
+        self,
+        page: Any,
+        template_name: str,
+        tracked_resources: dict[int, _TrackedResource] | None = None,
+    ) -> None:
+        """Wait briefly for fonts and layout callbacks without blocking rendering."""
+        timeout_ms = self._timeout_ms(self.render_config.font_ready_timeout_sec)
+        try:
+            result = await page.evaluate(
+                """async (timeoutMs) => {
+                    const settleFrame = () => new Promise(resolve => {
+                        requestAnimationFrame(() => requestAnimationFrame(resolve));
+                    });
+                    if (!document.fonts || !document.fonts.ready) {
+                        await settleFrame();
+                        return "unsupported";
+                    }
+                    const timeout = new Promise(resolve => {
+                        setTimeout(() => resolve("timeout"), timeoutMs);
+                    });
+                    const status = await Promise.race([
+                        document.fonts.ready.then(() => "ready").catch(() => "error"),
+                        timeout,
+                    ]);
+                    await settleFrame();
+                    return status;
+                }""",
+                timeout_ms,
+            )
+        except Exception as e:
+            self.logger.warning(f"Render readiness wait skipped for {template_name}: {e}")
+            if tracked_resources is not None:
+                self._log_pending_render_resources(template_name, tracked_resources)
+            return
+
+        if result == "timeout":
+            self.logger.warning(
+                f"Font readiness wait timed out for {template_name} after "
+                f"{self.render_config.font_ready_timeout_sec:.1f}s; continuing with fallback fonts"
+            )
+            if tracked_resources is not None:
+                self._log_pending_render_resources(template_name, tracked_resources)
+        elif result == "error":
+            self.logger.warning(f"Font readiness wait failed for {template_name}; continuing")
+
+    async def _install_resource_cache_routes(self, page: Any) -> None:
+        """Intercept remote font resources and serve them from a TTL cache."""
+        if not self.render_config.remote_resource_cache_enabled:
+            self.logger.info("Remote render resource cache disabled")
+            return
+
+        ttl = self.render_config.remote_resource_cache_ttl_sec
+        timeout = self.render_config.remote_resource_timeout_sec
+        self.logger.info(
+            f"Remote render resource cache enabled "
+            f"(dir={self.resource_cache_dir}, ttl={ttl}s, timeout={timeout}s)"
+        )
+
+        async def handle_route(route: Any) -> None:
+            """处理 Playwright 路由并优先使用远程资源缓存。
+
+            Args:
+                route: Playwright 路由对象，包含请求信息和响应控制方法。
+
+            Side Effects:
+                可能继续原请求、用缓存内容响应请求、返回空样式降级响应或中止请求；
+                样式降级时会标记当前渲染为 degraded 并写入日志。
+            """
+            request = route.request
+            url = request.url
+            resource_type = getattr(request, "resource_type", "")
+            if not self._should_cache_resource(url, resource_type):
+                await route.continue_()
+                return
+
+            try:
+                cached = await self._get_remote_resource(url, ttl=ttl, timeout=timeout)
+            except ValueError:
+                # Size limit exceeded - treat as unavailable
+                self.logger.warning(f"Render resource rejected (size limit exceeded): {self._sanitize_url_for_log(url)}")
+                cached = None
+            if cached is not None:
+                self.logger.info(f"Render resource {cached.cache_state}: {self._sanitize_url_for_log(url)}")
+                await route.fulfill(
+                    status=200,
+                    content_type=cached.content_type,
+                    headers=self._cached_resource_headers(ttl, resource_type, cached.content_type),
+                    body=cached.body,
+                )
+                return
+
+            if resource_type == "stylesheet":
+                self.logger.warning(f"Using empty stylesheet fallback for render resource: {self._sanitize_url_for_log(url)}")
+                self._render_degraded = True
+                await route.fulfill(
+                    status=200,
+                    content_type="text/css; charset=utf-8",
+                    headers={"Cache-Control": "no-store"},
+                    body=b"",
+                )
+                return
+
+            self.logger.warning(f"Aborting uncached render resource after fetch failure: {self._sanitize_url_for_log(url)}")
+            await route.abort()
+
+        await page.route("**/*", handle_route)
+
+    def _should_cache_resource(self, url: str, resource_type: str) -> bool:
+        """判断远程资源是否应进入渲染资源缓存。
+
+        Args:
+            url: 资源请求 URL。
+            resource_type: Playwright 识别的资源类型。
+
+        Returns:
+            当资源类型和主机名都在缓存白名单内时返回 True，否则返回 False。
+        """
+        if resource_type not in _CACHEABLE_RESOURCE_TYPES:
+            return False
+        parsed = urlparse(url)
+        hostname = (parsed.hostname or "").lower()
+        return any(hostname == suffix or hostname.endswith(f".{suffix}") for suffix in _CACHEABLE_HOST_SUFFIXES)
+
+    async def _get_remote_resource(self, url: str, ttl: int, timeout: float) -> _CachedResource | None:
+        """读取或刷新远程渲染资源缓存。
+
+        Args:
+            url: 远程资源 URL。
+            ttl: 缓存有效期，单位为秒。
+            timeout: 远程请求超时时间，单位为秒。
+
+        Returns:
+            可用于响应浏览器请求的缓存资源；无缓存且刷新失败时返回 None。
+
+        Raises:
+            ValueError: 当远程资源大小超过配置限制时抛出。
+
+        Side Effects:
+            可能发起网络请求、写入缓存文件，并在刷新失败时写入警告日志。
+        """
+        cache_key = hashlib.sha256(url.encode("utf-8")).hexdigest()
+        body_path = self.resource_cache_dir / f"{cache_key}.body"
+        meta_path = self.resource_cache_dir / f"{cache_key}.meta"
+        now = time.time()
+
+        cached_body = self._read_cached_resource_body(body_path)
+        cached_meta = self._read_cached_resource_meta(meta_path)
+        age = now - cached_meta["fetched_at"] if cached_meta else None
+        if cached_body is not None and cached_meta and age is not None and age <= ttl:
+            return _CachedResource(
+                body=self._rewrite_css_urls(cached_body, url, cached_meta["content_type"]),
+                content_type=cached_meta["content_type"],
+                cache_state="cache hit",
+            )
+
+        try:
+            content_type, body = await self._fetch_remote_resource_async(
+                url,
+                timeout,
+            )
+        except (httpx.HTTPError, OSError) as e:
+            if cached_body is not None and cached_meta:
+                self.logger.warning(
+                    f"Render resource refresh failed, using stale cache: {self._sanitize_url_for_log(url)} ({type(e).__name__}: {e})"
+                )
+                return _CachedResource(
+                    body=self._rewrite_css_urls(cached_body, url, cached_meta["content_type"]),
+                    content_type=cached_meta["content_type"],
+                    cache_state="stale cache",
+                )
+            self.logger.warning(f"Render resource fetch failed: {self._sanitize_url_for_log(url)} ({type(e).__name__}: {e})")
+            return None
+
+        self._write_cached_resource(body_path, meta_path, url, content_type, body, now)
+        return _CachedResource(
+            body=self._rewrite_css_urls(body, url, content_type),
+            content_type=content_type,
+            cache_state="cache refresh",
+        )
+
+    async def _fetch_remote_resource_async(self, url: str, timeout: float) -> tuple[str, bytes]:
+        """按流式下载远程资源，并在下载过程中限制资源大小。
+
+        Args:
+            url: 远程资源 URL。
+            timeout: HTTP 请求超时时间，单位为秒。
+
+        Returns:
+            二元组，包含响应 Content-Type 和资源字节内容。
+
+        Raises:
+            ValueError: 当 Content-Length 或累计下载大小超过配置限制时抛出。
+            httpx.HTTPError: 当远程请求或 HTTP 状态异常时抛出。
+            OSError: 当底层网络读写失败时抛出。
+        """
+        max_size = self.render_config.remote_resource_max_size_kb * 1024
+        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout), follow_redirects=True) as client:
+            # Check content-length header before downloading
+            async with client.stream("GET", url) as response:
+                response.raise_for_status()
+                content_type = response.headers.get("content-type") or self._guess_content_type(url)
+
+                content_length = response.headers.get("content-length")
+                if content_length is not None:
+                    try:
+                        length = int(content_length)
+                    except ValueError:
+                        pass  # Non-numeric content-length, enforce during streaming
+                    else:
+                        if length > max_size:
+                            raise ValueError(
+                                f"Remote resource too large: content-length {content_length} exceeds limit {max_size} bytes"
+                            )
+
+                # Stream body with progressive size enforcement
+                chunks: list[bytes] = []
+                total_size = 0
+                async for chunk in response.aiter_bytes():
+                    total_size += len(chunk)
+                    if total_size > max_size:
+                        raise ValueError(
+                            f"Remote resource too large: exceeds limit {max_size} bytes"
+                        )
+                    chunks.append(chunk)
+                body = b"".join(chunks)
+
+            return content_type, body
+
+    def _cached_resource_headers(self, ttl: int, resource_type: str, content_type: str) -> dict[str, str]:
+        """构造缓存资源响应头。
+
+        Args:
+            ttl: 浏览器端缓存有效期，单位为秒。
+            resource_type: Playwright 识别的资源类型。
+            content_type: 资源 Content-Type。
+
+        Returns:
+            响应头字典；字体资源会额外允许跨域访问。
+        """
+        headers = {"Cache-Control": f"public, max-age={ttl}"}
+        content_type_lower = content_type.lower()
+        if resource_type == "font" or content_type_lower.startswith("font/"):
+            headers["Access-Control-Allow-Origin"] = "*"
+        return headers
+
+    def _read_cached_resource_body(self, body_path: Path) -> bytes | None:
+        """读取缓存资源正文。
+
+        Args:
+            body_path: 缓存正文文件路径。
+
+        Returns:
+            文件字节内容；读取失败时返回 None。
+        """
+        try:
+            return body_path.read_bytes()
+        except OSError:
+            return None
+
+    def _read_cached_resource_meta(self, meta_path: Path) -> dict[str, Any] | None:
+        """读取并校验缓存资源元数据。
+
+        Args:
+            meta_path: 缓存元数据文件路径。
+
+        Returns:
+            规范化后的元数据字典；文件缺失、格式非法或字段不完整时返回 None。
+        """
+        try:
+            data = json.loads(meta_path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict) or "url" not in data or "content_type" not in data or "fetched_at" not in data:
+                return None
+            data["fetched_at"] = float(data["fetched_at"])
+            return data
+        except (OSError, ValueError, json.JSONDecodeError):
+            return None
+
+    def _write_cached_resource(
+        self,
+        body_path: Path,
+        meta_path: Path,
+        url: str,
+        content_type: str,
+        body: bytes,
+        fetched_at: float,
+    ) -> None:
+        """原子写入远程资源缓存正文和元数据。
+
+        Args:
+            body_path: 缓存正文目标路径。
+            meta_path: 缓存元数据目标路径。
+            url: 远程资源 URL。
+            content_type: 资源 Content-Type。
+            body: 资源字节内容。
+            fetched_at: 资源获取时间戳。
+
+        Side Effects:
+            在资源缓存目录创建临时文件并替换目标缓存文件；写入失败时记录警告日志。
+        """
+        try:
+            # Atomically write body file
+            body_tmp = tempfile.NamedTemporaryFile(
+                dir=self.resource_cache_dir, suffix=".body.tmp", delete=False
+            )
+            try:
+                body_tmp.write(body)
+                body_tmp.flush()
+                os.fsync(body_tmp.fileno())
+                body_tmp.close()
+                os.replace(body_tmp.name, str(body_path))
+            except BaseException:
+                body_tmp.close()
+                os.unlink(body_tmp.name)
+                raise
+
+            # Atomically write meta file (JSON format)
+            meta_data = {
+                "url": url,
+                "content_type": content_type,
+                "fetched_at": fetched_at,
+                "stored_at": datetime.now(timezone.utc).isoformat(),
+                "size": len(body),
+            }
+            meta_tmp = tempfile.NamedTemporaryFile(
+                dir=self.resource_cache_dir, suffix=".meta.tmp", delete=False, mode="w",
+                encoding="utf-8",
+            )
+            try:
+                meta_tmp.write(json.dumps(meta_data, ensure_ascii=False))
+                meta_tmp.flush()
+                os.fsync(meta_tmp.fileno())
+                meta_tmp.close()
+                os.replace(meta_tmp.name, str(meta_path))
+            except BaseException:
+                meta_tmp.close()
+                os.unlink(meta_tmp.name)
+                raise
+        except OSError as e:
+            self.logger.warning(f"Failed to write render resource cache for {self._sanitize_url_for_log(url)}: {e}")
+
+    def _rewrite_css_urls(self, body: bytes, base_url: str, content_type: str) -> bytes:
+        """将 CSS 中的相对 url() 地址改写为绝对地址。
+
+        Args:
+            body: 资源字节内容。
+            base_url: 用于解析相对路径的原始 CSS URL。
+            content_type: 资源 Content-Type。
+
+        Returns:
+            改写后的 CSS 字节内容；非 CSS 或无法按 UTF-8 解码时返回原始内容。
+        """
+        if "css" not in content_type.lower():
+            return body
+        try:
+            css = body.decode("utf-8")
+        except UnicodeDecodeError:
+            return body
+
+        def rewrite_match(match: Any) -> str:
+            """改写单个 CSS url() 匹配项。
+
+            Args:
+                match: 正则匹配对象，包含 url() 的前缀、原始地址和后缀。
+
+            Returns:
+                原始匹配文本或包含绝对地址的新 url() 文本。
+            """
+            prefix = match.group(1)
+            raw_url = match.group(2).strip()
+            suffix = match.group(3)
+            if raw_url.startswith(("data:", "http://", "https://")):
+                return match.group(0)
+            return f"{prefix}{urljoin(base_url, raw_url)}{suffix}"
+
+        rewritten = re.sub(r"(url\(\s*['\"]?)([^)'\"\s]+?)(['\"]?\s*\))", rewrite_match, css)
+        return rewritten.encode("utf-8")
+
+    def _guess_content_type(self, url: str) -> str:
+        """根据 URL 路径推断远程资源 Content-Type。
+
+        Args:
+            url: 远程资源 URL。
+
+        Returns:
+            推断出的 Content-Type；无法识别时返回 application/octet-stream。
+        """
+        path = urlparse(url).path.lower()
+        if path.endswith(".css") or "fonts.googleapis" in url:
+            return "text/css; charset=utf-8"
+        if path.endswith(".woff2"):
+            return "font/woff2"
+        if path.endswith(".woff"):
+            return "font/woff"
+        if path.endswith(".ttf"):
+            return "font/ttf"
+        return "application/octet-stream"
+
+    def _sanitize_url_for_log(self, url: str) -> str:
+        """生成适合日志输出的 URL 摘要。
+
+        Args:
+            url: 原始 URL。
+
+        Returns:
+            仅包含主机名和路径的字符串，避免记录查询参数。
+        """
+        parsed = urlparse(url)
+        hostname = parsed.hostname or "unknown"
+        path = parsed.path or "/"
+        return f"{hostname}{path}"
+
+    def _resource_url_for_log(self, url: str) -> str:
+        """Format render resource URLs; preserve font CSS query strings for diagnosis."""
+        parsed = urlparse(url)
+        sanitized = self._sanitize_url_for_log(url)
+        hostname = (parsed.hostname or "").lower()
+        if parsed.query and any(
+            hostname == suffix or hostname.endswith(f".{suffix}")
+            for suffix in _CACHEABLE_HOST_SUFFIXES
+        ):
+            return f"{sanitized}?{parsed.query[:240]}"
+        return sanitized
 
     def _generate_filename(self, template_name: str) -> str:
         """Generate unique filename for the output image.

@@ -315,6 +315,8 @@ sudo chown -R 1000:1000 cache logs
 | `templates.config.device_scale_factor` | - | 缩放因子（默认 3） |
 | `templates.config.jpeg_quality` | - | JPEG 质量（1-100，默认 100） |
 | `templates.config.use_china_cdn` | - | 字体 CDN 开关（true: 大陆 CDN, false: 国际 CDN） |
+| `templates.config.page_load_timeout_sec` | - | 浏览器 DOM 加载超时（秒，默认 10） |
+| `templates.config.font_ready_timeout_sec` | - | 字体 readiness 等待上限（秒，默认 2） |
 | `templates.items[].viewport` | - | 各模板视口尺寸（width/height） |
 | `cache.retain_days` | `CACHE_RETAIN_DAYS` | 缓存保留天数（默认 30） |
 | `ops.api_key` | `OPS_API_KEY` | 运维 API Key（留空则禁用 ops 端点） |

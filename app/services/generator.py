@@ -110,6 +110,14 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
 
     # Define fetch tasks
     async def fetch_api_data():
+        """获取基础 API 数据。
+
+        Returns:
+            API 原始数据字典；服务不存在、返回空值或请求失败时返回空字典。
+
+        Side Effects:
+            捕获异常并写入警告日志。
+        """
         if not data_fetcher:
             return {}
         try:
@@ -120,6 +128,14 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             return {}
 
     async def fetch_holidays():
+        """获取节假日数据。
+
+        Returns:
+            节假日列表；获取失败或返回空值时返回空列表。
+
+        Side Effects:
+            捕获异常并写入警告日志。
+        """
         try:
             holidays = await holiday_service.get()
             return holidays if holidays is not None else []
@@ -128,6 +144,14 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             return []
 
     async def fetch_fun_content():
+        """获取趣味内容。
+
+        Returns:
+            趣味内容数据；服务不存在或获取失败时返回 None。
+
+        Side Effects:
+            捕获异常并写入警告日志。
+        """
         if not fun_content_service:
             return None
         try:
@@ -137,6 +161,14 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             return None
 
     async def fetch_kfc():
+        """获取疯狂星期四文案。
+
+        Returns:
+            KFC 文案数据；服务不存在或获取失败时返回 None。
+
+        Side Effects:
+            捕获异常并写入警告日志。
+        """
         if not kfc_service:
             return None
         try:
@@ -146,6 +178,14 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             return None
 
     async def fetch_stock_indices():
+        """获取股票指数数据。
+
+        Returns:
+            股票指数数据；服务不存在或获取失败时返回 None。
+
+        Side Effects:
+            捕获异常并写入警告日志。
+        """
         if not stock_index_service:
             return None
         try:
@@ -155,6 +195,14 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             return None
 
     async def fetch_gold_price():
+        """获取金价数据。
+
+        Returns:
+            金价数据；服务不存在或获取失败时返回 None。
+
+        Side Effects:
+            捕获异常并写入警告日志。
+        """
         if not gold_price_service:
             return None
         try:
@@ -164,6 +212,14 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             return None
 
     async def fetch_daily_english():
+        """获取每日英语内容。
+
+        Returns:
+            每日英语数据；服务不存在或获取失败时返回 None。
+
+        Side Effects:
+            捕获异常并写入警告日志。
+        """
         if not daily_english_service:
             return None
         try:
@@ -237,6 +293,11 @@ def _schedule_cache_cleanup(cache_cleaner, logger) -> None:
     """
 
     async def _cleanup_task():
+        """在线程中执行缓存清理并记录结果。
+
+        Side Effects:
+            删除过期缓存文件，并在删除成功或失败时写入日志。
+        """
         try:
             result = await asyncio.to_thread(cache_cleaner.cleanup)
             if result.get("deleted_files", 0) > 0:
@@ -420,6 +481,14 @@ async def _update_data_file(
     """
 
     def _write_data():
+        """同步构建并原子写入业务日期的数据文件。
+
+        Raises:
+            StorageError: 当临时文件写入或替换目标数据文件失败时抛出。
+
+        Side Effects:
+            创建数据目录、合并已有图片映射，并替换当天 JSON 数据文件。
+        """
         dir_path = Path(data_dir)
         dir_path.mkdir(parents=True, exist_ok=True)
 
