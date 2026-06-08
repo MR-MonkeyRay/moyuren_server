@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import time
 from datetime import datetime
 from pathlib import Path
@@ -187,6 +188,7 @@ class TestImageRenderer:
         mock_page.set_content = AsyncMock()
         mock_page.screenshot = AsyncMock(return_value=b"fake image bytes")
         mock_page.close = AsyncMock()
+        mock_page.on = MagicMock()
         mock_page.evaluate = AsyncMock(return_value=1123)
         mock_page.set_viewport_size = AsyncMock()
 
@@ -205,7 +207,11 @@ class TestImageRenderer:
         # Template name is "test", so filename starts with "test_"
         assert "test_" in filename
         mock_page.route.assert_awaited_once()
-        mock_page.set_content.assert_awaited_once_with("<html>rendered</html>", wait_until="networkidle")
+        mock_page.set_content.assert_awaited_once_with(
+            "<html>rendered</html>",
+            wait_until="domcontentloaded",
+            timeout=10000,
+        )
 
     @pytest.mark.asyncio
     async def test_render_with_template_name(self, renderer: ImageRenderer) -> None:
@@ -216,6 +222,7 @@ class TestImageRenderer:
         mock_page.set_content = AsyncMock()
         mock_page.screenshot = AsyncMock(return_value=b"fake")
         mock_page.close = AsyncMock()
+        mock_page.on = MagicMock()
         mock_page.evaluate = AsyncMock(return_value=1123)
         mock_page.set_viewport_size = AsyncMock()
 
@@ -231,6 +238,52 @@ class TestImageRenderer:
                 filename = await renderer.render(template_data, template_name="test")
 
         assert filename is not None
+
+    @pytest.mark.asyncio
+    async def test_wait_for_render_ready_timeout_continues(self, renderer: ImageRenderer) -> None:
+        """Test render readiness timeout is degraded instead of failing the render."""
+        page = AsyncMock()
+        page.evaluate = AsyncMock(side_effect=TimeoutError("font wait"))
+
+        await renderer._wait_for_render_ready(page, "test")
+
+        page.evaluate.assert_awaited_once()
+
+    def test_log_pending_render_resources_includes_resource_url(self, renderer: ImageRenderer, caplog) -> None:
+        """Test pending render resource logs include enough URL detail to diagnose timeouts."""
+        page = MagicMock()
+        callbacks = {}
+        page.on.side_effect = lambda event, callback: callbacks.__setitem__(event, callback)
+        tracked = renderer._track_page_requests(page)
+
+        request = MagicMock()
+        request.url = "https://fonts.googleapis.cn/css2?family=Test&display=swap"
+        request.resource_type = "stylesheet"
+        callbacks["request"](request)
+
+        with caplog.at_level(logging.WARNING):
+            renderer._log_pending_render_resources("test", tracked)
+
+        assert "Pending render resources for test" in caplog.text
+        assert "stylesheet fonts.googleapis.cn/css2?family=Test&display=swap" in caplog.text
+
+    def test_track_page_requests_logs_failed_resource(self, renderer: ImageRenderer, caplog) -> None:
+        """Test failed Playwright resource requests are logged with the resource URL."""
+        page = MagicMock()
+        callbacks = {}
+        page.on.side_effect = lambda event, callback: callbacks.__setitem__(event, callback)
+        tracked = renderer._track_page_requests(page)
+
+        request = MagicMock()
+        request.url = "https://fonts.gstatic.cn/s/font.woff2"
+        request.resource_type = "font"
+        callbacks["request"](request)
+
+        with caplog.at_level(logging.WARNING):
+            callbacks["requestfailed"](request)
+
+        assert not tracked
+        assert "Render resource request failed: font fonts.gstatic.cn/s/font.woff2" in caplog.text
 
     def test_should_cache_google_font_resources(self, renderer: ImageRenderer) -> None:
         """Test remote font resources are selected for caching."""

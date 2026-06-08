@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, TypeVar
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 # Pattern for valid template names: alphanumeric, underscore, hyphen only
@@ -624,6 +624,8 @@ class TemplateRenderConfig(BaseModel):
     remote_resource_cache_enabled: bool = True
     remote_resource_cache_ttl_sec: int = 7 * 24 * 60 * 60
     remote_resource_timeout_sec: float = 5.0
+    page_load_timeout_sec: float = 10.0
+    font_ready_timeout_sec: float = 2.0
     remote_resource_max_size_kb: int = 5120
 
     @field_validator("device_scale_factor")
@@ -700,6 +702,17 @@ class TemplateRenderConfig(BaseModel):
             raise ValueError("remote_resource_timeout_sec must be positive")
         if value > 60.0:
             raise ValueError("remote_resource_timeout_sec must not exceed 60.0 seconds")
+        return value
+
+    @field_validator("page_load_timeout_sec", "font_ready_timeout_sec")
+    @classmethod
+    def validate_render_timeout(cls, value: float, info: ValidationInfo) -> float:
+        """校验浏览器渲染等待超时时间."""
+        field_name = info.field_name
+        if value <= 0:
+            raise ValueError(f"{field_name} must be positive")
+        if value > 60.0:
+            raise ValueError(f"{field_name} must not exceed 60.0 seconds")
         return value
 
     @field_validator("remote_resource_max_size_kb")
@@ -887,7 +900,7 @@ class TimezoneConfig(BaseModel):
 
     @field_validator("business", "display")
     @classmethod
-    def validate_timezone(cls, value: str, info) -> str:
+    def validate_timezone(cls, value: str, info: ValidationInfo) -> str:
         """校验业务时区和展示时区配置.
 
         Args:

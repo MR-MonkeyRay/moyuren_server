@@ -36,6 +36,8 @@ templates:
     remote_resource_cache_enabled: true
     remote_resource_cache_ttl_sec: 604800
     remote_resource_timeout_sec: 5.0
+    page_load_timeout_sec: 10.0
+    font_ready_timeout_sec: 2.0
     remote_resource_max_size_kb: 5120
 
 data_sources:

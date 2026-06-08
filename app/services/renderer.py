@@ -1,6 +1,7 @@
 """Image rendering service module."""
 
 import hashlib
+import inspect
 import json
 import logging
 import os
@@ -43,6 +44,15 @@ class _CachedResource:
     body: bytes
     content_type: str
     cache_state: str
+
+
+@dataclass
+class _TrackedResource:
+    """Playwright request currently active while rendering a template."""
+
+    url: str
+    resource_type: str
+    started_at: float
 
 
 def format_datetime(value: str | datetime | int | float | None) -> str:
@@ -261,6 +271,7 @@ class ImageRenderer:
             RenderError: If screenshot generation fails.
         """
         page = None
+        tracked_resources: dict[int, _TrackedResource] = {}
         try:
             self.logger.info(
                 f"Creating screenshot page for '{template_name}' "
@@ -273,12 +284,20 @@ class ImageRenderer:
                     "device_scale_factor": device_scale_factor,
                 }
             )
+            tracked_resources = self._track_page_requests(page)
             await self._install_resource_cache_routes(page)
 
-            # Set HTML content and wait for network idle
+            # Set HTML content without waiting for network idle. Remote font/CDN requests
+            # can keep the network busy long enough to fail otherwise valid renders.
             set_content_start = time.monotonic()
             self.logger.info(f"Loading HTML into browser for '{template_name}'")
-            await page.set_content(html_content, wait_until="networkidle")
+            page_load_timeout_ms = self._timeout_ms(self.render_config.page_load_timeout_sec)
+            await page.set_content(
+                html_content,
+                wait_until="domcontentloaded",
+                timeout=page_load_timeout_ms,
+            )
+            await self._wait_for_render_ready(page, template_name, tracked_resources)
             self.logger.info(
                 f"Browser content loaded for '{template_name}' "
                 f"({time.monotonic() - set_content_start:.1f}s)"
@@ -323,6 +342,7 @@ class ImageRenderer:
             return screenshot_bytes
 
         except Exception as e:
+            self._log_pending_render_resources(template_name, tracked_resources)
             self.logger.error(f"Screenshot generation failed: {e}")
             raise RenderError(
                 message=f"Failed to generate screenshot: {e}",
@@ -330,6 +350,120 @@ class ImageRenderer:
         finally:
             if page is not None:
                 await browser_manager.release_page(page)
+
+    def _timeout_ms(self, timeout_sec: float) -> int:
+        """Convert seconds to Playwright timeout milliseconds."""
+        return max(1, int(timeout_sec * 1000))
+
+    def _track_page_requests(self, page: Any) -> dict[int, _TrackedResource]:
+        """Track in-flight page requests so timeout logs can name the resource."""
+        tracked_resources: dict[int, _TrackedResource] = {}
+        on = getattr(page, "on", None)
+        if not callable(on) or inspect.iscoroutinefunction(on):
+            return tracked_resources
+
+        def remember_request(request: Any) -> None:
+            tracked_resources[id(request)] = _TrackedResource(
+                url=str(getattr(request, "url", "")),
+                resource_type=str(getattr(request, "resource_type", "unknown")),
+                started_at=time.monotonic(),
+            )
+
+        def forget_request(request: Any) -> None:
+            tracked_resources.pop(id(request), None)
+
+        def log_failed_request(request: Any) -> None:
+            tracked = tracked_resources.pop(id(request), None)
+            url = tracked.url if tracked else str(getattr(request, "url", ""))
+            resource_type = tracked.resource_type if tracked else str(
+                getattr(request, "resource_type", "unknown")
+            )
+            self.logger.warning(
+                f"Render resource request failed: {resource_type} "
+                f"{self._resource_url_for_log(url)}"
+            )
+
+        try:
+            on("request", remember_request)
+            on("requestfinished", forget_request)
+            on("requestfailed", log_failed_request)
+        except Exception as e:
+            self.logger.debug(f"Render resource request tracking disabled: {e}")
+            tracked_resources.clear()
+        return tracked_resources
+
+    def _log_pending_render_resources(
+        self,
+        template_name: str,
+        tracked_resources: dict[int, _TrackedResource],
+        limit: int = 8,
+    ) -> None:
+        """Log resource requests still pending during a render timeout/failure."""
+        if not tracked_resources:
+            return
+
+        now = time.monotonic()
+        pending = sorted(
+            tracked_resources.values(),
+            key=lambda item: item.started_at,
+        )
+        summary = "; ".join(
+            f"{item.resource_type} {self._resource_url_for_log(item.url)} "
+            f"({now - item.started_at:.1f}s)"
+            for item in pending[:limit]
+        )
+        remaining = len(pending) - limit
+        suffix = f"; +{remaining} more" if remaining > 0 else ""
+        self.logger.warning(
+            f"Pending render resources for {template_name} at timeout/failure: "
+            f"{summary}{suffix}"
+        )
+
+    async def _wait_for_render_ready(
+        self,
+        page: Any,
+        template_name: str,
+        tracked_resources: dict[int, _TrackedResource] | None = None,
+    ) -> None:
+        """Wait briefly for fonts and layout callbacks without blocking rendering."""
+        timeout_ms = self._timeout_ms(self.render_config.font_ready_timeout_sec)
+        try:
+            result = await page.evaluate(
+                """async (timeoutMs) => {
+                    const settleFrame = () => new Promise(resolve => {
+                        requestAnimationFrame(() => requestAnimationFrame(resolve));
+                    });
+                    if (!document.fonts || !document.fonts.ready) {
+                        await settleFrame();
+                        return "unsupported";
+                    }
+                    const timeout = new Promise(resolve => {
+                        setTimeout(() => resolve("timeout"), timeoutMs);
+                    });
+                    const status = await Promise.race([
+                        document.fonts.ready.then(() => "ready").catch(() => "error"),
+                        timeout,
+                    ]);
+                    await settleFrame();
+                    return status;
+                }""",
+                timeout_ms,
+            )
+        except Exception as e:
+            self.logger.warning(f"Render readiness wait skipped for {template_name}: {e}")
+            if tracked_resources is not None:
+                self._log_pending_render_resources(template_name, tracked_resources)
+            return
+
+        if result == "timeout":
+            self.logger.warning(
+                f"Font readiness wait timed out for {template_name} after "
+                f"{self.render_config.font_ready_timeout_sec:.1f}s; continuing with fallback fonts"
+            )
+            if tracked_resources is not None:
+                self._log_pending_render_resources(template_name, tracked_resources)
+        elif result == "error":
+            self.logger.warning(f"Font readiness wait failed for {template_name}; continuing")
 
     async def _install_resource_cache_routes(self, page: Any) -> None:
         """Intercept remote font resources and serve them from a TTL cache."""
@@ -696,6 +830,18 @@ class ImageRenderer:
         hostname = parsed.hostname or "unknown"
         path = parsed.path or "/"
         return f"{hostname}{path}"
+
+    def _resource_url_for_log(self, url: str) -> str:
+        """Format render resource URLs; preserve font CSS query strings for diagnosis."""
+        parsed = urlparse(url)
+        sanitized = self._sanitize_url_for_log(url)
+        hostname = (parsed.hostname or "").lower()
+        if parsed.query and any(
+            hostname == suffix or hostname.endswith(f".{suffix}")
+            for suffix in _CACHEABLE_HOST_SUFFIXES
+        ):
+            return f"{sanitized}?{parsed.query[:240]}"
+        return sanitized
 
     def _generate_filename(self, template_name: str) -> str:
         """Generate unique filename for the output image.

@@ -289,11 +289,15 @@ class TestTemplateRenderConfig:
             use_china_cdn=True,
             remote_resource_cache_ttl_sec=3600,
             remote_resource_timeout_sec=2.5,
+            page_load_timeout_sec=8.0,
+            font_ready_timeout_sec=1.5,
         )
         assert config.device_scale_factor == 2
         assert config.jpeg_quality == 90
         assert config.remote_resource_cache_ttl_sec == 3600
         assert config.remote_resource_timeout_sec == 2.5
+        assert config.page_load_timeout_sec == 8.0
+        assert config.font_ready_timeout_sec == 1.5
 
     def test_zero_scale_raises_error(self) -> None:
         """Test zero device scale factor raises error."""
@@ -318,6 +322,18 @@ class TestTemplateRenderConfig:
         with pytest.raises(ValidationError) as exc_info:
             TemplateRenderConfig(remote_resource_timeout_sec=0)
         assert "remote_resource_timeout_sec must be positive" in str(exc_info.value)
+
+    def test_invalid_page_load_timeout_raises_error(self) -> None:
+        """Test invalid page load timeout raises error."""
+        with pytest.raises(ValidationError) as exc_info:
+            TemplateRenderConfig(page_load_timeout_sec=0)
+        assert "page_load_timeout_sec must be positive" in str(exc_info.value)
+
+    def test_font_ready_timeout_exceeds_60_raises_error(self) -> None:
+        """Test font readiness timeout exceeding 60 seconds raises error."""
+        with pytest.raises(ValidationError) as exc_info:
+            TemplateRenderConfig(font_ready_timeout_sec=61.0)
+        assert "font_ready_timeout_sec must not exceed 60.0" in str(exc_info.value)
 
     def test_max_size_kb_valid(self) -> None:
         """Test valid remote resource max size."""
