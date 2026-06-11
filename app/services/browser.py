@@ -6,6 +6,8 @@ from typing import Any
 
 from playwright.async_api import Browser, Page, Playwright, async_playwright
 
+from app.core.network import playwright_proxy_config, redact_url, safe_exception_for_log
+
 logger = logging.getLogger(__name__)
 
 # Shutdown timeout in seconds
@@ -31,10 +33,14 @@ class BrowserManager:
         self._lock = asyncio.Lock()
         self._active_pages: int = 0
         self._shutting_down: bool = False
+        self._proxy_url: str | None = None
 
-    def configure(self, logger_instance: logging.Logger) -> None:
-        """Configure the browser manager with a logger instance."""
+    def configure(self, logger_instance: logging.Logger, proxy_url: str | None = None) -> None:
+        """Configure the browser manager with logger and optional proxy settings."""
+        if self._browser is not None and proxy_url != self._proxy_url:
+            raise RuntimeError("Cannot change browser proxy after browser launch")
         self._logger = logger_instance
+        self._proxy_url = proxy_url
 
     async def warmup(self) -> None:
         """Pre-initialize the browser to avoid cold start latency.
@@ -66,9 +72,16 @@ class BrowserManager:
             pw: Playwright | None = None
             try:
                 pw = await async_playwright().start()
-                self._browser = await pw.chromium.launch(headless=True)
+                proxy = playwright_proxy_config(self._proxy_url)
+                launch_kwargs: dict[str, Any] = {"headless": True}
+                if proxy:
+                    launch_kwargs["proxy"] = proxy
+                self._browser = await pw.chromium.launch(**launch_kwargs)
                 self._playwright = pw
-                self._logger.info("Chromium browser launched")
+                if self._proxy_url:
+                    self._logger.info("Chromium browser launched with proxy %s", redact_url(self._proxy_url))
+                else:
+                    self._logger.info("Chromium browser launched")
             except asyncio.CancelledError:
                 # Handle cancellation during browser initialization
                 self._logger.info("Browser initialization cancelled")
@@ -76,7 +89,7 @@ class BrowserManager:
                     try:
                         await pw.stop()
                     except Exception as stop_err:
-                        self._logger.warning(f"Failed to stop Playwright after cancellation: {stop_err}")
+                        self._logger.warning(f"Failed to stop Playwright after cancellation: {safe_exception_for_log(stop_err)}")
                 self._playwright = None
                 self._browser = None
                 raise
@@ -86,7 +99,7 @@ class BrowserManager:
                     try:
                         await pw.stop()
                     except Exception as stop_err:
-                        self._logger.warning(f"Failed to stop Playwright after launch failure: {stop_err}")
+                        self._logger.warning(f"Failed to stop Playwright after launch failure: {safe_exception_for_log(stop_err)}")
                 self._playwright = None
                 self._browser = None
                 raise
@@ -141,7 +154,7 @@ class BrowserManager:
         try:
             await page.close()
         except Exception as e:
-            self._logger.warning(f"Failed to close page: {e}")
+            self._logger.warning(f"Failed to close page: {safe_exception_for_log(e)}")
         finally:
             async with self._lock:
                 self._active_pages = max(0, self._active_pages - 1)
@@ -171,15 +184,16 @@ class BrowserManager:
                 try:
                     await self._browser.close()
                 except Exception as e:
-                    self._logger.warning(f"Failed to close browser: {e}")
+                    self._logger.warning(f"Failed to close browser: {safe_exception_for_log(e)}")
             if self._playwright is not None:
                 try:
                     await self._playwright.stop()
                 except Exception as e:
-                    self._logger.warning(f"Failed to stop Playwright: {e}")
+                    self._logger.warning(f"Failed to stop Playwright: {safe_exception_for_log(e)}")
             self._browser = None
             self._playwright = None
             self._active_pages = 0
+            self._shutting_down = False
             self._logger.info("Browser manager shutdown complete")
 
 

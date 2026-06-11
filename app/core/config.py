@@ -6,8 +6,20 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, TypeVar
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, ValidationInfo, field_validator, model_validator
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 # Pattern for valid template names: alphanumeric, underscore, hyphen only
 _TEMPLATE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -145,6 +157,7 @@ class NetworkConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ghproxy_urls: list[str] = Field(default_factory=list)
+    proxy_url: str | None = None
 
     @field_validator("ghproxy_urls")
     @classmethod
@@ -160,20 +173,30 @@ class NetworkConfig(BaseModel):
         Side Effects:
             对被跳过的非法 URL 写入 warning 日志.
         """
+        from app.core.network import redact_url
+
         valid_urls: list[str] = []
         for url in value:
             if not url.startswith(("http://", "https://")):
                 logging.getLogger(__name__).warning(
-                    f"Invalid ghproxy_url '{url}': must start with http:// or https://, skipping"
+                    f"Invalid ghproxy_url '{redact_url(url)}': must start with http:// or https://, skipping"
                 )
                 continue
             if "?" in url or "#" in url:
                 logging.getLogger(__name__).warning(
-                    f"Invalid ghproxy_url '{url}': query/fragment not allowed, skipping"
+                    f"Invalid ghproxy_url '{redact_url(url)}': query/fragment not allowed, skipping"
                 )
                 continue
             valid_urls.append(url)
         return valid_urls
+
+    @field_validator("proxy_url")
+    @classmethod
+    def validate_proxy_url(cls, value: str | None) -> str | None:
+        """Validate optional outbound proxy URL."""
+        from app.core.network import normalize_proxy_url
+
+        return normalize_proxy_url(value)
 
 
 class DataSourceBase(BaseModel):
@@ -285,7 +308,9 @@ class FunContentSource(DataSourceBase):
 
     @field_validator("endpoints")
     @classmethod
-    def validate_endpoints(cls, value: list[FunContentEndpoint]) -> list[FunContentEndpoint]:
+    def validate_endpoints(
+        cls, value: list[FunContentEndpoint]
+    ) -> list[FunContentEndpoint]:
         """校验趣味内容端点列表非空.
 
         Args:
@@ -362,9 +387,7 @@ class SQLiteBackendConfig(BaseModel):
 
     type: Literal["sqlite"] = "sqlite"
     db_path: str = "cache/ecdict/stardict.db"
-    download_url: str = (
-        "https://github.com/skywind3000/ECDICT/releases/download/1.0.28/ecdict-sqlite-28.zip"
-    )
+    download_url: str = "https://github.com/skywind3000/ECDICT/releases/download/1.0.28/ecdict-sqlite-28.zip"
     checksum_sha256: str = ""
 
 
@@ -681,7 +704,9 @@ class TemplateRenderConfig(BaseModel):
         if value <= 0:
             raise ValueError("remote_resource_cache_ttl_sec must be positive")
         if value > 365 * 24 * 60 * 60:
-            raise ValueError("remote_resource_cache_ttl_sec must not exceed 1 year (31536000 seconds)")
+            raise ValueError(
+                "remote_resource_cache_ttl_sec must not exceed 1 year (31536000 seconds)"
+            )
         return value
 
     @field_validator("remote_resource_timeout_sec")
@@ -730,7 +755,9 @@ class TemplateRenderConfig(BaseModel):
             ValueError: 体积不在 1 到 51200 KB 范围内时抛出.
         """
         if value <= 0 or value > 51200:
-            raise ValueError("remote_resource_max_size_kb must be between 1 and 51200 (50MB)")
+            raise ValueError(
+                "remote_resource_max_size_kb must be between 1 and 51200 (50MB)"
+            )
         return value
 
 
@@ -765,7 +792,9 @@ class TemplateItemConfig(BaseModel):
         if not value:
             raise ValueError("name cannot be empty")
         if not _TEMPLATE_NAME_PATTERN.match(value):
-            raise ValueError("name must contain only alphanumeric characters, underscores, and hyphens")
+            raise ValueError(
+                "name must contain only alphanumeric characters, underscores, and hyphens"
+            )
         return value
 
     @field_validator("path")
@@ -819,7 +848,9 @@ class TemplatesConfig(BaseModel):
 
     @field_validator("items")
     @classmethod
-    def validate_items(cls, value: list[TemplateItemConfig]) -> list[TemplateItemConfig]:
+    def validate_items(
+        cls, value: list[TemplateItemConfig]
+    ) -> list[TemplateItemConfig]:
         """校验模板配置项名称唯一.
 
         Args:
@@ -933,7 +964,9 @@ class TimezoneConfig(BaseModel):
             hours = int(match.group(2))
             minutes = int(match.group(3) or 0)
             if hours > 14 or minutes > 59 or (hours == 14 and minutes > 0):
-                raise ValueError(f"Invalid timezone offset: {value} (hours must be 0-14, minutes 0-59)")
+                raise ValueError(
+                    f"Invalid timezone offset: {value} (hours must be 0-14, minutes 0-59)"
+                )
             return value
 
         raise ValueError(f"Invalid timezone: {value}")
@@ -1034,6 +1067,7 @@ class AppConfig(BaseSettings):
         """
         if not self.templates.items:
             from app.services.template_discovery import TemplateDiscovery
+
             discovery = TemplateDiscovery()
             items = discovery.discover(self.templates.dir, self.templates.config)
             self.templates.items = items
@@ -1041,7 +1075,9 @@ class AppConfig(BaseSettings):
         if self.templates.default:
             names = [item.name for item in self.templates.items]
             if self.templates.default not in names:
-                raise ValueError(f"default template '{self.templates.default}' not found: {names}")
+                raise ValueError(
+                    f"default template '{self.templates.default}' not found: {names}"
+                )
         return self.templates
 
     @classmethod

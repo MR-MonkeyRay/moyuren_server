@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from app.core.config import NewsSource
+from app.core.network import create_async_client, safe_exception_for_log
 from app.services.daily_cache import DailyCache
 
 
@@ -20,6 +21,7 @@ class DataFetcher:
         source: NewsSource,
         logger: logging.Logger,
         http_client: httpx.AsyncClient | None = None,
+        proxy_url: str | None = None,
     ) -> None:
         """初始化新闻数据获取器。
 
@@ -27,10 +29,12 @@ class DataFetcher:
             source: 新闻源配置，包含请求地址、参数和超时时间。
             logger: 日志记录器。
             http_client: 可选外部 HTTP 客户端；提供时复用该客户端发送请求。
+            proxy_url: 可选全局代理 URL；仅在未注入 HTTP 客户端时生效。
         """
         self.source = source
         self.logger = logger
         self._client = http_client
+        self._proxy_url = proxy_url
 
     async def _fetch_with_client(
         self,
@@ -58,20 +62,26 @@ class DataFetcher:
 
             if self._client is not None:
                 return await self._fetch_with_client(self._client)
-            async with httpx.AsyncClient() as client:
+            async with create_async_client(proxy_url=self._proxy_url) as client:
                 return await self._fetch_with_client(client)
 
         except httpx.TimeoutException:
             self.logger.warning(f"Timeout fetching from {self.source.type}")
             return None
         except httpx.HTTPStatusError as e:
-            self.logger.warning(f"HTTP error fetching from {self.source.type}: {e.response.status_code}")
+            self.logger.warning(
+                f"HTTP error fetching from {self.source.type}: {e.response.status_code}"
+            )
             return None
         except httpx.RequestError as e:
-            self.logger.warning(f"Request error fetching from {self.source.type}: {e}")
+            self.logger.warning(
+                f"Request error fetching from {self.source.type}: {safe_exception_for_log(e, str(self.source.url), self._proxy_url)}"
+            )
             return None
         except Exception as e:
-            self.logger.error(f"Unexpected error fetching from {self.source.type}: {e}")
+            self.logger.error(
+                f"Unexpected error fetching from {self.source.type}: {safe_exception_for_log(e, str(self.source.url), self._proxy_url)}"
+            )
             return None
 
     async def fetch_all(self) -> dict[str, dict[str, Any] | None]:
@@ -98,6 +108,7 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
         logger: logging.Logger,
         cache_dir: Path,
         http_client: httpx.AsyncClient | None = None,
+        proxy_url: str | None = None,
         date_provider: Any = None,
     ) -> None:
         """初始化带日级缓存的新闻数据获取器。
@@ -107,13 +118,16 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
             logger: 日志记录器。
             cache_dir: 日级缓存目录。
             http_client: 可选外部 HTTP 客户端。
+            proxy_url: 可选全局代理 URL；仅在未注入 HTTP 客户端时生效。
             date_provider: 可选日期提供器，用于测试或替换业务日期来源。
 
         Side Effects:
             初始化 DailyCache 命名空间并创建内部 DataFetcher。
         """
         super().__init__("news", cache_dir, logger, date_provider=date_provider)
-        self._fetcher = DataFetcher(source, logger, http_client=http_client)
+        self._fetcher = DataFetcher(
+            source, logger, http_client=http_client, proxy_url=proxy_url
+        )
 
     def _extract_news_date(self, data: dict[str, Any] | None) -> date | None:
         """从数据中提取新闻日期。

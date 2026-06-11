@@ -6,6 +6,7 @@ from pathlib import Path
 import httpx
 
 from app.core.config import CrazyThursdaySource
+from app.core.network import create_async_client, safe_exception_for_log
 from app.services.calendar import today_business
 from app.services.daily_cache import DailyCache
 
@@ -15,13 +16,15 @@ logger = logging.getLogger(__name__)
 class KfcService:
     """Service for fetching KFC Crazy Thursday content."""
 
-    def __init__(self, config: CrazyThursdaySource):
+    def __init__(self, config: CrazyThursdaySource, proxy_url: str | None = None):
         """Initialize the service with configuration.
 
         Args:
             config: Crazy Thursday configuration.
+            proxy_url: Optional outbound proxy URL.
         """
         self.config = config
+        self._proxy_url = proxy_url
 
     async def fetch_kfc_copy(self) -> str | None:
         """Fetch KFC crazy thursday copy.
@@ -32,7 +35,9 @@ class KfcService:
         if not self.config.enabled:
             return None
 
-        async with httpx.AsyncClient(timeout=self.config.timeout_sec) as client:
+        async with create_async_client(
+            timeout=self.config.timeout_sec, proxy_url=self._proxy_url
+        ) as client:
             try:
                 resp = await client.get(self.config.url)
                 resp.raise_for_status()
@@ -65,7 +70,9 @@ class KfcService:
             except httpx.HTTPStatusError as e:
                 logger.warning(f"HTTP {e.response.status_code} from KFC endpoint")
             except Exception as e:
-                logger.warning(f"Failed to fetch KFC content: {e}")
+                logger.warning(
+                    f"Failed to fetch KFC content: {safe_exception_for_log(e, self.config.url, self._proxy_url)}"
+                )
 
         return None
 
@@ -82,6 +89,7 @@ class CachedKfcService(DailyCache[str]):
         config: CrazyThursdaySource,
         logger: logging.Logger,
         cache_dir: Path,
+        proxy_url: str | None = None,
     ) -> None:
         """初始化带缓存的 KFC 服务。
 
@@ -89,9 +97,12 @@ class CachedKfcService(DailyCache[str]):
             config: 疯狂星期四配置
             logger: 日志记录器
             cache_dir: 缓存目录路径
+            proxy_url: 可选全局代理 URL
         """
         super().__init__("kfc", cache_dir, logger)
-        self._service = KfcService(config)
+        self.config = config
+        self._proxy_url = proxy_url
+        self._service = KfcService(config, proxy_url=proxy_url)
 
     async def fetch_fresh(self) -> str | None:
         """从网络获取新鲜数据（仅周四获取）。
@@ -105,7 +116,9 @@ class CachedKfcService(DailyCache[str]):
         try:
             return await self._service.fetch_kfc_copy()
         except Exception as e:
-            self.logger.error(f"Failed to fetch KFC content: {e}")
+            self.logger.error(
+                f"Failed to fetch KFC content: {safe_exception_for_log(e, self.config.url, self._proxy_url)}"
+            )
             return None
 
     async def get(self, force_refresh: bool = False) -> str | None:

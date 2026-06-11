@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from app.core.network import httpx_client_kwargs, safe_exception_for_log
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -65,11 +66,13 @@ async def lifespan(app: FastAPI):
     logger.info("Logging initialized")
 
     # 2.1 Configure browser manager
-    browser_manager.configure(logger)
+    browser_manager.configure(logger, proxy_url=config.network.proxy_url)
     app.state.browser_manager = browser_manager
 
     # 2.2 Initialize timezones
-    init_timezones(business_tz=config.timezone.business, display_tz=config.timezone.display)
+    init_timezones(
+        business_tz=config.timezone.business, display_tz=config.timezone.display
+    )
 
     # 3. Ensure required directories exist
     cache_dir = Path(config.paths.cache_dir)
@@ -82,9 +85,15 @@ async def lifespan(app: FastAPI):
     app.router.routes[:] = [
         r
         for r in app.router.routes
-        if not (isinstance(r, Mount) and r.path == "/static" and getattr(r, "name", None) == "static")
+        if not (
+            isinstance(r, Mount)
+            and r.path == "/static"
+            and getattr(r, "name", None) == "static"
+        )
     ]
-    app.mount("/static", StaticFiles(directory=str(cache_dir / "images")), name="static")
+    app.mount(
+        "/static", StaticFiles(directory=str(cache_dir / "images")), name="static"
+    )
 
     # 4. Initialize services
     # 创建日级缓存目录
@@ -92,8 +101,11 @@ async def lifespan(app: FastAPI):
 
     # 创建共享 HTTP 客户端（连接池复用）
     http_client = httpx.AsyncClient(
-        timeout=httpx.Timeout(30.0),
-        limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+        **httpx_client_kwargs(
+            timeout=httpx.Timeout(30.0),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+            proxy_url=config.network.proxy_url,
+        )
     )
     app.state.http_client = http_client
 
@@ -105,6 +117,7 @@ async def lifespan(app: FastAPI):
             logger=logger,
             cache_dir=daily_cache_dir,
             http_client=http_client,
+            proxy_url=config.network.proxy_url,
         )
     else:
         data_fetcher = None
@@ -123,6 +136,7 @@ async def lifespan(app: FastAPI):
         raw_cache_dir=holiday_raw_cache_dir,
         ghproxy_urls=config.network.ghproxy_urls,
         timeout_sec=holiday_source.timeout_sec if holiday_source else 10,
+        proxy_url=config.network.proxy_url,
     )
 
     # 初始化带缓存的趣味内容服务
@@ -132,6 +146,7 @@ async def lifespan(app: FastAPI):
             config=fun_content_source,
             logger=logger,
             cache_dir=daily_cache_dir,
+            proxy_url=config.network.proxy_url,
         )
     else:
         fun_content_service = None
@@ -144,13 +159,16 @@ async def lifespan(app: FastAPI):
             config=crazy_thursday_source,
             logger=logger,
             cache_dir=daily_cache_dir,
+            proxy_url=config.network.proxy_url,
         )
 
     # Initialize stock index service if config exists
     stock_index_service = None
     stock_index_source = config.get_source(StockIndexSource)
     if stock_index_source:
-        stock_index_service = StockIndexService(stock_index_source)
+        stock_index_service = StockIndexService(
+            stock_index_source, proxy_url=config.network.proxy_url
+        )
 
     # Initialize gold price service if config exists
     gold_price_service = None
@@ -161,6 +179,7 @@ async def lifespan(app: FastAPI):
             logger=logger,
             cache_dir=daily_cache_dir,
             http_client=http_client,
+            proxy_url=config.network.proxy_url,
         )
 
     # Initialize daily English service if config exists
@@ -171,12 +190,14 @@ async def lifespan(app: FastAPI):
             cfg=daily_english_source.backend,
             ghproxy_urls=config.network.ghproxy_urls,
             logger=logger,
+            proxy_url=config.network.proxy_url,
         )
         daily_english_service = CachedDailyEnglishService(
             config=daily_english_source,
             backend=dict_backend,
             logger=logger,
             cache_dir=daily_cache_dir,
+            proxy_url=config.network.proxy_url,
         )
 
     # Get templates configuration
@@ -187,6 +208,7 @@ async def lifespan(app: FastAPI):
         images_dir=str(cache_dir / "images"),
         render_config=config.templates.config,
         logger=logger,
+        proxy_url=config.network.proxy_url,
     )
 
     cache_cleaner = CacheCleaner(
@@ -245,7 +267,11 @@ async def lifespan(app: FastAPI):
         results = await asyncio.gather(*coros, return_exceptions=True)
         for name, result in zip(names, results):
             if isinstance(result, Exception):
-                logger.warning(f"Cache warmup [{name}] failed: {result}")
+                logger.warning(
+                    "Cache warmup [%s] failed: %s",
+                    name,
+                    safe_exception_for_log(result, config.network.proxy_url),
+                )
         logger.info("Daily cache warmup completed")
 
     await warmup_daily_cache()
@@ -259,7 +285,10 @@ async def lifespan(app: FastAPI):
         try:
             await generate_and_save_image(app)
         except Exception as e:
-            logger.error(f"Image generation task failed: {e}")
+            logger.error(
+                "Image generation task failed: %s",
+                safe_exception_for_log(e, config.network.proxy_url),
+            )
 
     if config.scheduler.mode == "hourly":
         scheduler.add_hourly_job(
@@ -267,7 +296,9 @@ async def lifespan(app: FastAPI):
             func=generate_image_task,
             minute=config.scheduler.minute_of_hour,
         )
-        logger.info(f"Scheduler mode: hourly (minute={config.scheduler.minute_of_hour:02d})")
+        logger.info(
+            f"Scheduler mode: hourly (minute={config.scheduler.minute_of_hour:02d})"
+        )
     else:
         # Add daily image generation tasks for each configured time
         for idx, time_str in enumerate(config.scheduler.daily_times):
@@ -297,7 +328,9 @@ async def lifespan(app: FastAPI):
     today_str = today_business().isoformat()
     data_file = data_dir / f"{today_str}.json"
     need_regenerate = False
-    cache_is_valid_but_expired = False  # Track if cache is structurally valid but just expired
+    cache_is_valid_but_expired = (
+        False  # Track if cache is structurally valid but just expired
+    )
 
     if not data_file.exists():
         logger.info("No existing data file found for today")
@@ -329,13 +362,17 @@ async def lifespan(app: FastAPI):
                         )
                         need_regenerate = True
                     elif updated_at_ms < 0:
-                        logger.warning(f"Invalid updated_at value: {updated_at_ms} (negative timestamp)")
+                        logger.warning(
+                            f"Invalid updated_at value: {updated_at_ms} (negative timestamp)"
+                        )
                         need_regenerate = True
                     else:
                         # 使用日期边界判断替代 TTL
                         cached_date = data.get("date")
                         if cached_date != today_str:
-                            logger.info(f"Cache date mismatch: {cached_date} != {today_str}")
+                            logger.info(
+                                f"Cache date mismatch: {cached_date} != {today_str}"
+                            )
                             need_regenerate = True
                             cache_is_valid_but_expired = True
                 except (TypeError, ValueError, KeyError) as e:
@@ -364,8 +401,13 @@ async def lifespan(app: FastAPI):
                     logger.info("Background refresh cancelled due to shutdown")
                     raise
                 except Exception as e:
-                    logger.error(f"Background refresh failed: {e}")
-                    logger.warning("Stale cache will be used until next scheduled refresh")
+                    logger.error(
+                        "Background refresh failed: %s",
+                        safe_exception_for_log(e, config.network.proxy_url),
+                    )
+                    logger.warning(
+                        "Stale cache will be used until next scheduled refresh"
+                    )
                 finally:
                     app.state.is_refreshing = False
 
@@ -382,7 +424,9 @@ async def lifespan(app: FastAPI):
                     if data_file.is_file():
                         data_file.unlink()
                     elif data_file.is_dir():
-                        logger.error(f"Data file path is a directory, not a file: {data_file}")
+                        logger.error(
+                            f"Data file path is a directory, not a file: {data_file}"
+                        )
                         import shutil
 
                         shutil.rmtree(data_file)
@@ -394,8 +438,13 @@ async def lifespan(app: FastAPI):
                 await generate_and_save_image(app)
                 logger.info("Initial image generated successfully")
             except Exception as e:
-                logger.error(f"Initial image generation failed: {e}")
-                logger.warning("Service will start without cache, API will trigger on-demand generation")
+                logger.error(
+                    "Initial image generation failed: %s",
+                    safe_exception_for_log(e, config.network.proxy_url),
+                )
+                logger.warning(
+                    "Service will start without cache, API will trigger on-demand generation"
+                )
 
     # 7. Browser warmup (background, non-blocking)
     async def _browser_warmup():
@@ -406,7 +455,10 @@ async def lifespan(app: FastAPI):
             logger.info("Browser warmup cancelled due to shutdown")
             raise
         except Exception as e:
-            logger.warning(f"Browser warmup failed: {e}")
+            logger.warning(
+                "Browser warmup failed: %s",
+                safe_exception_for_log(e, config.network.proxy_url),
+            )
 
     app.state.browser_warmup_task = asyncio.create_task(_browser_warmup())
 
@@ -440,19 +492,35 @@ async def lifespan(app: FastAPI):
         if hasattr(app.state, "scheduler"):
             app.state.scheduler.shutdown()
 
+        # Close stock index private HTTP client
+        if (
+            hasattr(app.state, "stock_index_service")
+            and app.state.stock_index_service is not None
+        ):
+            try:
+                await app.state.stock_index_service.close()
+            except Exception as e:
+                logger.warning(
+                    "Failed to close stock index service: %s", safe_exception_for_log(e)
+                )
+
         # Shutdown browser manager
         if hasattr(app.state, "browser_manager"):
             try:
                 await app.state.browser_manager.shutdown()
             except Exception as e:
-                logger.warning(f"Failed to shutdown browser manager: {e}")
+                logger.warning(
+                    "Failed to shutdown browser manager: %s", safe_exception_for_log(e)
+                )
 
         # Close shared HTTP client
         if hasattr(app.state, "http_client"):
             try:
                 await app.state.http_client.aclose()
             except Exception as e:
-                logger.warning(f"Failed to close http client: {e}")
+                logger.warning(
+                    "Failed to close http client: %s", safe_exception_for_log(e)
+                )
 
         logger.info("Moyuren API stopped")
 

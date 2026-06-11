@@ -17,6 +17,7 @@ from urllib.parse import quote, urlparse
 import httpx
 
 from app.core.config import DailyEnglishSource, DictBackendConfig, SQLiteBackendConfig
+from app.core.network import create_async_client, redact_url, safe_exception_for_log
 from app.core.filelock import async_file_lock
 from app.services.calendar import today_business
 from app.services.daily_cache import DailyCache
@@ -223,7 +224,9 @@ def _extract_stardict_db_from_zip(
             raise FileNotFoundError("stardict.db not found in zip archive")
 
         if member.file_size > max_size_bytes:
-            raise ValueError(f"Extracted stardict.db too large: {member.file_size} bytes")
+            raise ValueError(
+                f"Extracted stardict.db too large: {member.file_size} bytes"
+            )
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
         with zf.open(member, "r") as src, out_path.open("wb") as dst:
@@ -305,9 +308,7 @@ def _extract_stardict_db_from_7z(
 
             size = extracted_path.stat().st_size
             if size > max_size_bytes:
-                raise ValueError(
-                    f"Extracted stardict.db too large: {size} bytes"
-                )
+                raise ValueError(f"Extracted stardict.db too large: {size} bytes")
 
             out_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(extracted_path, out_path)
@@ -332,6 +333,7 @@ class SQLiteBackend:
         checksum_sha256: str,
         ghproxy_urls: list[str],
         logger: logging.Logger,
+        proxy_url: str | None = None,
     ) -> None:
         """初始化 SQLite 词库后端。
 
@@ -341,6 +343,7 @@ class SQLiteBackend:
             checksum_sha256: 可选的归档 SHA-256 校验值。
             ghproxy_urls: 下载代理前缀列表。
             logger: 日志记录器。
+            proxy_url: 可选全局代理 URL。
         """
         self._db_path = Path(db_path)
         self._download_url = download_url
@@ -348,6 +351,7 @@ class SQLiteBackend:
         self._ghproxy_urls = ghproxy_urls
         self._logger = logger
         self._last_failure_ts: float = 0.0
+        self._proxy_url = proxy_url
 
     def _build_download_urls(self) -> list[str]:
         """构建带代理回退的下载地址列表。
@@ -408,8 +412,11 @@ class SQLiteBackend:
         tmp_path = Path(tmp_name)
 
         try:
-            async with httpx.AsyncClient(
-                timeout=timeout, follow_redirects=True, headers=headers
+            async with create_async_client(
+                timeout=timeout,
+                follow_redirects=True,
+                headers=headers,
+                proxy_url=self._proxy_url,
             ) as client:
                 async with client.stream("GET", url) as resp:
                     resp.raise_for_status()
@@ -457,7 +464,10 @@ class SQLiteBackend:
             return
 
         now = time.time()
-        if self._last_failure_ts > 0 and (now - self._last_failure_ts) < self._COOLDOWN_SEC:
+        if (
+            self._last_failure_ts > 0
+            and (now - self._last_failure_ts) < self._COOLDOWN_SEC
+        ):
             remaining = int(self._COOLDOWN_SEC - (now - self._last_failure_ts))
             raise RuntimeError(
                 f"SQLite backend is cooling down after failure ({remaining}s remaining)"
@@ -486,7 +496,7 @@ class SQLiteBackend:
                     for url in urls:
                         try:
                             self._logger.info(
-                                "Downloading ECDICT archive from %s", url
+                                "Downloading ECDICT archive from %s", redact_url(url)
                             )
                             archive_path = await self._download_to_tempfile(
                                 url, suffix=suffix
@@ -495,14 +505,14 @@ class SQLiteBackend:
                         except Exception as e:
                             last_error = e
                             self._logger.warning(
-                                "Download failed from %s: %s", url, e
+                                "Download failed from %s: %s",
+                                redact_url(url),
+                                safe_exception_for_log(e, url, self._proxy_url),
                             )
                             continue
 
                     if archive_path is None:
-                        raise RuntimeError(
-                            f"All download URLs failed: {last_error}"
-                        )
+                        raise RuntimeError(f"All download URLs failed: {last_error}")
 
                     if self._checksum_sha256:
                         digest = await asyncio.to_thread(_sha256sum, archive_path)
@@ -539,7 +549,9 @@ class SQLiteBackend:
                             tmp_db_path.unlink(missing_ok=True)
 
                     elapsed_ms = int((time.perf_counter() - start_ts) * 1000)
-                    archive_size = archive_path.stat().st_size if archive_path.exists() else 0
+                    archive_size = (
+                        archive_path.stat().st_size if archive_path.exists() else 0
+                    )
                     self._logger.info(
                         "ECDICT sqlite ready: db=%s elapsed=%dms "
                         "archive=%dB extracted=%dB",
@@ -552,8 +564,7 @@ class SQLiteBackend:
                     self._last_failure_ts = time.time()
                     self._logger.warning(
                         "Failed to ensure ECDICT sqlite backend ready: %s",
-                        e,
-                        exc_info=True,
+                        safe_exception_for_log(e, self._download_url, self._proxy_url),
                     )
                     raise
                 finally:
@@ -593,9 +604,10 @@ class SQLiteBackend:
             if row is None:
                 return None
 
-            translation = _split_lines(
-                str(row["translation"]) if row["translation"] else "", 3
-            ) or ""
+            translation = (
+                _split_lines(str(row["translation"]) if row["translation"] else "", 3)
+                or ""
+            )
             definition = _split_lines(
                 str(row["definition"]) if row["definition"] else None, 2
             )
@@ -613,7 +625,9 @@ class SQLiteBackend:
                 "definition": definition,
                 "collins": _parse_int(row["collins"]),
                 "oxford": _parse_bool_oxford(row["oxford"]),
-                "tag": [t[:30] for t in str(tags_raw).split()[:10] if t] if tags_raw else [],
+                "tag": [t[:30] for t in str(tags_raw).split()[:10] if t]
+                if tags_raw
+                else [],
             }
         finally:
             conn.close()
@@ -730,6 +744,7 @@ def build_dict_backend(
     cfg: DictBackendConfig,
     ghproxy_urls: list[str],
     logger: logging.Logger,
+    proxy_url: str | None = None,
 ) -> DictBackend:
     """根据配置创建词典后端。
 
@@ -737,6 +752,7 @@ def build_dict_backend(
         cfg: 词典后端配置。
         ghproxy_urls: 可选下载代理前缀列表。
         logger: 日志记录器。
+        proxy_url: 可选全局代理 URL。
 
     Returns:
         符合 DictBackend 协议的后端实例。
@@ -751,6 +767,7 @@ def build_dict_backend(
             checksum_sha256=cfg.checksum_sha256,
             ghproxy_urls=ghproxy_urls,
             logger=logger,
+            proxy_url=proxy_url,
         )
     raise NotImplementedError(f"{type(cfg).__name__} backend not implemented yet")
 
@@ -766,6 +783,7 @@ class DailyEnglishService:
         config: DailyEnglishSource,
         backend: DictBackend,
         logger: logging.Logger,
+        proxy_url: str | None = None,
     ) -> None:
         """初始化每日英语服务。
 
@@ -773,10 +791,12 @@ class DailyEnglishService:
             config: 每日英语数据源配置。
             backend: 单词释义查询后端。
             logger: 日志记录器。
+            proxy_url: 可选全局代理 URL。
         """
         self._config = config
         self._backend = backend
         self._logger = logger
+        self._proxy_url = proxy_url
 
     async def ensure_ready(self) -> None:
         """Ensure the dictionary backend is ready (e.g., download DB if needed)."""
@@ -823,7 +843,10 @@ class DailyEnglishService:
                 return None
             return word.strip() or None
         except Exception as e:
-            self._logger.warning("Random word API failed: %s", e)
+            self._logger.warning(
+                "Random word API failed: %s",
+                safe_exception_for_log(e, self._config.word_api_url, self._proxy_url),
+            )
             return None
 
     async def fetch_daily_word(self) -> WordInfo | None:
@@ -839,8 +862,8 @@ class DailyEnglishService:
         api_failures = 0
         min_d, max_d = self._difficulty_range_tuple()
 
-        async with httpx.AsyncClient(
-            timeout=timeout, follow_redirects=True
+        async with create_async_client(
+            timeout=timeout, follow_redirects=True, proxy_url=self._proxy_url
         ) as client:
             for attempt in range(self._config.max_retries):
                 difficulty = random.randint(min_d, max_d)
@@ -886,6 +909,7 @@ class CachedDailyEnglishService(DailyCache[dict]):
         backend: DictBackend,
         logger: logging.Logger,
         cache_dir: Path,
+        proxy_url: str | None = None,
     ) -> None:
         """初始化带缓存的每日英语服务。
 
@@ -894,10 +918,12 @@ class CachedDailyEnglishService(DailyCache[dict]):
             backend: 单词释义查询后端。
             logger: 日志记录器。
             cache_dir: 缓存目录。
+            proxy_url: 可选全局代理 URL。
         """
         super().__init__("daily_english", cache_dir, logger)
+        self._proxy_url = proxy_url
         self._service = DailyEnglishService(
-            config=config, backend=backend, logger=logger
+            config=config, backend=backend, logger=logger, proxy_url=proxy_url
         )
         self._backend = backend
 
@@ -913,7 +939,9 @@ class CachedDailyEnglishService(DailyCache[dict]):
         try:
             await self._backend.ensure_ready()
         except Exception as e:
-            self.logger.warning("Dict backend not ready: %s", e)
+            self.logger.warning(
+                "Dict backend not ready: %s", safe_exception_for_log(e, self._proxy_url)
+            )
         result = await self._service.fetch_daily_word()
         return dict(result) if result else None
 

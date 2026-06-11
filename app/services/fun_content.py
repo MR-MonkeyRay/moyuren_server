@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from app.core.config import FunContentEndpoint, FunContentSource
+from app.core.network import create_async_client, safe_exception_for_log
 from app.services.calendar import today_business
 from app.services.daily_cache import DailyCache
 
@@ -18,15 +19,20 @@ logger = logging.getLogger(__name__)
 class FunContentService:
     """Service for fetching fun content from various APIs."""
 
-    _DEFAULT_CONTENT = {"title": "🐟 摸鱼小贴士", "content": "工作再忙，也要记得摸鱼。适当休息，效率更高！"}
+    _DEFAULT_CONTENT = {
+        "title": "🐟 摸鱼小贴士",
+        "content": "工作再忙，也要记得摸鱼。适当休息，效率更高！",
+    }
 
-    def __init__(self, config: FunContentSource):
+    def __init__(self, config: FunContentSource, proxy_url: str | None = None):
         """Initialize the service with configuration.
 
         Args:
             config: Fun content configuration.
+            proxy_url: Optional outbound proxy URL.
         """
         self.config = config
+        self._proxy_url = proxy_url
 
     async def fetch_content(self, target_date: date) -> dict[str, str]:
         """Fetch fun content with date-based random selection.
@@ -42,7 +48,9 @@ class FunContentService:
         """
         endpoints = self._shuffle_by_date(target_date)
 
-        async with httpx.AsyncClient(timeout=self.config.timeout_sec) as client:
+        async with create_async_client(
+            timeout=self.config.timeout_sec, proxy_url=self._proxy_url
+        ) as client:
             for endpoint in endpoints:
                 result = await self._fetch_endpoint(client, endpoint)
                 if result:
@@ -67,7 +75,9 @@ class FunContentService:
         rng.shuffle(endpoints)
         return endpoints
 
-    async def _fetch_endpoint(self, client: httpx.AsyncClient, endpoint: FunContentEndpoint) -> dict[str, str] | None:
+    async def _fetch_endpoint(
+        self, client: httpx.AsyncClient, endpoint: FunContentEndpoint
+    ) -> dict[str, str] | None:
         """Fetch content from a single endpoint.
 
         Args:
@@ -91,9 +101,13 @@ class FunContentService:
         except httpx.HTTPStatusError as e:
             logger.warning(f"HTTP {e.response.status_code} from {endpoint.name}")
         except httpx.RequestError as e:
-            logger.warning(f"Request error fetching {endpoint.name}: {e}")
+            logger.warning(
+                f"Request error fetching {endpoint.name}: {safe_exception_for_log(e, endpoint.url, self._proxy_url)}"
+            )
         except (ValueError, KeyError) as e:
-            logger.warning(f"Failed to parse response from {endpoint.name}: {e}")
+            logger.warning(
+                f"Failed to parse response from {endpoint.name}: {safe_exception_for_log(e, endpoint.url)}"
+            )
         return None
 
     def _extract_by_path(self, data: Any, path: str) -> Any:
@@ -126,6 +140,7 @@ class CachedFunContentService(DailyCache[dict[str, str]]):
         config: FunContentSource,
         logger: logging.Logger,
         cache_dir: Path,
+        proxy_url: str | None = None,
     ) -> None:
         """初始化带缓存的趣味内容服务。
 
@@ -133,9 +148,11 @@ class CachedFunContentService(DailyCache[dict[str, str]]):
             config: 趣味内容配置
             logger: 日志记录器
             cache_dir: 缓存目录路径
+            proxy_url: 可选全局代理 URL
         """
         super().__init__("fun_content", cache_dir, logger)
-        self._service = FunContentService(config)
+        self._proxy_url = proxy_url
+        self._service = FunContentService(config, proxy_url=proxy_url)
 
     async def fetch_fresh(self) -> dict[str, str] | None:
         """从网络获取新鲜数据。
@@ -146,5 +163,8 @@ class CachedFunContentService(DailyCache[dict[str, str]]):
         try:
             return await self._service.fetch_content(today_business())
         except Exception as e:
-            self.logger.error(f"Failed to fetch fun content: {e}")
+            self.logger.error(
+                "Failed to fetch fun content: %s",
+                safe_exception_for_log(e, self._proxy_url),
+            )
             return None

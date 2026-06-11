@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from app.core.config import GoldPriceSource
+from app.core.network import create_async_client, safe_exception_for_log
 from app.services.daily_cache import DailyCache
 
 
@@ -19,17 +20,20 @@ class GoldPriceService:
         config: GoldPriceSource,
         http_client: httpx.AsyncClient | None = None,
         logger: logging.Logger | None = None,
-    ):
+        proxy_url: str | None = None,
+    ) -> None:
         """初始化金价服务。
 
         Args:
             config: 金价接口配置，包含 URL 和超时时间。
             http_client: 可选外部 HTTP 客户端；提供时由调用方负责生命周期。
             logger: 可选日志记录器；未提供时使用当前模块 logger。
+            proxy_url: 可选全局代理 URL；仅在未注入 HTTP 客户端时生效。
         """
         self.config = config
         self._http_client = http_client
         self._logger = logger if logger else logging.getLogger(__name__)
+        self._proxy_url = proxy_url
 
     @asynccontextmanager
     async def _get_client(self):
@@ -37,7 +41,9 @@ class GoldPriceService:
         if self._http_client:
             yield self._http_client
         else:
-            async with httpx.AsyncClient(timeout=self.config.timeout_sec) as client:
+            async with create_async_client(
+                timeout=self.config.timeout_sec, proxy_url=self._proxy_url
+            ) as client:
                 yield client
 
     def _parse_response(self, data: Any) -> dict[str, Any] | None:
@@ -47,7 +53,9 @@ class GoldPriceService:
             Dictionary with today_price, sell_price, unit if found, None otherwise.
         """
         if not isinstance(data, dict):
-            self._logger.warning(f"Gold price API returned non-dict response: {type(data).__name__}")
+            self._logger.warning(
+                f"Gold price API returned non-dict response: {type(data).__name__}"
+            )
             return None
         metals = data.get("data", {}).get("metals")
         if not isinstance(metals, list):
@@ -81,9 +89,13 @@ class GoldPriceService:
         except httpx.TimeoutException:
             self._logger.warning("Timeout fetching gold price")
         except httpx.HTTPStatusError as e:
-            self._logger.warning(f"HTTP {e.response.status_code} from gold price endpoint")
+            self._logger.warning(
+                f"HTTP {e.response.status_code} from gold price endpoint"
+            )
         except Exception as e:
-            self._logger.warning(f"Failed to fetch gold price: {e}")
+            self._logger.warning(
+                f"Failed to fetch gold price: {safe_exception_for_log(e, self.config.url, self._proxy_url)}"
+            )
         return None
 
 
@@ -96,6 +108,7 @@ class CachedGoldPriceService(DailyCache[dict]):
         logger: logging.Logger,
         cache_dir: Path,
         http_client: httpx.AsyncClient | None = None,
+        proxy_url: str | None = None,
     ) -> None:
         """初始化带日级缓存的金价服务。
 
@@ -104,12 +117,15 @@ class CachedGoldPriceService(DailyCache[dict]):
             logger: 日志记录器。
             cache_dir: 日级缓存目录。
             http_client: 可选外部 HTTP 客户端。
+            proxy_url: 可选全局代理 URL；仅在未注入 HTTP 客户端时生效。
 
         Side Effects:
             初始化 gold_price 缓存命名空间并创建内部 GoldPriceService。
         """
         super().__init__("gold_price", cache_dir, logger)
-        self._service = GoldPriceService(config, http_client, logger)
+        self._service = GoldPriceService(
+            config, http_client, logger, proxy_url=proxy_url
+        )
 
     async def fetch_fresh(self) -> dict[str, Any] | None:
         """从金价接口获取新鲜数据。

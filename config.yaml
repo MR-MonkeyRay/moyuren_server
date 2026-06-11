@@ -23,6 +23,7 @@ ops:
   api_key: ""
 
 network:
+  proxy_url: null  # Optional: "http://proxy.example:8080" or "socks5://proxy.example:1080"
   ghproxy_urls:
     - "https://ghfast.top/"
 
