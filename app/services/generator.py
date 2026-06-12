@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import FastAPI
 from app.core.filelock import FileLockTimeout, async_file_lock
+from app.core.network import safe_exception_for_log
 
 from app.core.errors import StorageError
 from app.services.calendar import get_display_timezone, today_business
@@ -124,7 +125,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             data = await data_fetcher.get()
             return data if data is not None else {}
         except Exception as e:
-            logger.warning(f"Failed to fetch API data: {e}", exc_info=True)
+            logger.warning("Failed to fetch API data: %s", safe_exception_for_log(e))
             return {}
 
     async def fetch_holidays():
@@ -140,7 +141,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             holidays = await holiday_service.get()
             return holidays if holidays is not None else []
         except Exception as e:
-            logger.warning(f"Failed to fetch holidays: {e}", exc_info=True)
+            logger.warning("Failed to fetch holidays: %s", safe_exception_for_log(e))
             return []
 
     async def fetch_fun_content():
@@ -157,7 +158,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
         try:
             return await fun_content_service.get()
         except Exception as e:
-            logger.warning(f"Failed to fetch fun content: {e}", exc_info=True)
+            logger.warning("Failed to fetch fun content: %s", safe_exception_for_log(e))
             return None
 
     async def fetch_kfc():
@@ -174,7 +175,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
         try:
             return await kfc_service.get()
         except Exception as e:
-            logger.warning(f"Failed to fetch KFC content: {e}", exc_info=True)
+            logger.warning("Failed to fetch KFC content: %s", safe_exception_for_log(e))
             return None
 
     async def fetch_stock_indices():
@@ -191,7 +192,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
         try:
             return await stock_index_service.fetch_indices()
         except Exception as e:
-            logger.warning(f"Failed to fetch stock indices: {e}", exc_info=True)
+            logger.warning("Failed to fetch stock indices: %s", safe_exception_for_log(e))
             return None
 
     async def fetch_gold_price():
@@ -208,7 +209,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
         try:
             return await gold_price_service.get()
         except Exception as e:
-            logger.warning(f"Failed to fetch gold price: {e}", exc_info=True)
+            logger.warning("Failed to fetch gold price: %s", safe_exception_for_log(e))
             return None
 
     async def fetch_daily_english():
@@ -225,7 +226,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
         try:
             return await daily_english_service.get()
         except Exception as e:
-            logger.warning(f"Failed to fetch daily english: {e}", exc_info=True)
+            logger.warning("Failed to fetch daily english: %s", safe_exception_for_log(e))
             return None
 
     # Execute all fetches in parallel

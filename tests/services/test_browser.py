@@ -25,8 +25,16 @@ class TestBrowserManager:
     def test_configure(self, manager: BrowserManager) -> None:
         """Test configure with logger."""
         new_logger = logging.getLogger("new_test")
-        manager.configure(new_logger)
+        manager.configure(new_logger, proxy_url="http://proxy.example:8080")
         assert manager._logger is new_logger
+        assert manager._proxy_url == "http://proxy.example:8080"
+
+    def test_configure_rejects_proxy_change_after_launch(self, manager: BrowserManager) -> None:
+        """Test changing proxy after browser launch is rejected."""
+        manager._browser = MagicMock()
+
+        with pytest.raises(RuntimeError, match="Cannot change browser proxy"):
+            manager.configure(logging.getLogger("new_test"), proxy_url="http://proxy.example:8080")
 
     @pytest.mark.asyncio
     async def test_ensure_browser_lazy_init(self, manager: BrowserManager) -> None:
@@ -43,6 +51,29 @@ class TestBrowserManager:
 
             assert manager._playwright is not None
             assert manager._browser is not None
+
+    @pytest.mark.asyncio
+    async def test_ensure_browser_launches_with_proxy(self, manager: BrowserManager) -> None:
+        """Test Chromium launch receives Playwright proxy config."""
+        manager.configure(logging.getLogger("new_test"), proxy_url="socks5://user:pass@proxy.example:1080")
+        mock_browser = MagicMock()
+
+        mock_playwright_instance = AsyncMock()
+        mock_playwright_instance.chromium.launch = AsyncMock(return_value=mock_browser)
+
+        with patch("app.services.browser.async_playwright") as mock_async_pw:
+            mock_async_pw.return_value.start = AsyncMock(return_value=mock_playwright_instance)
+
+            await manager._ensure_browser()
+
+        mock_playwright_instance.chromium.launch.assert_awaited_once_with(
+            headless=True,
+            proxy={
+                "server": "socks5://proxy.example:1080",
+                "username": "user",
+                "password": "pass",
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_ensure_browser_already_initialized(self, manager: BrowserManager) -> None:
@@ -138,6 +169,24 @@ class TestBrowserManager:
 
         assert manager._browser is None
         assert manager._playwright is None
+
+    @pytest.mark.asyncio
+    async def test_shutdown_allows_later_reuse(self, manager: BrowserManager) -> None:
+        """Test shutdown closes resources without making the manager permanently unusable."""
+        mock_browser = AsyncMock()
+        mock_playwright = AsyncMock()
+
+        manager._browser = mock_browser
+        manager._playwright = mock_playwright
+
+        await manager.shutdown()
+
+        assert manager._shutting_down is False
+        manager.configure(logging.getLogger("reused"), proxy_url="http://proxy.example:8080")
+        manager._ensure_browser = AsyncMock()
+        manager._browser = AsyncMock()
+        await manager.create_page({"width": 800, "height": 600, "device_scale_factor": 2})
+        manager._ensure_browser.assert_awaited_once()
 
     # --- warmup ---
 

@@ -18,7 +18,13 @@ import httpx
 from jinja2 import Environment, FileSystemLoader, TemplateError
 from markupsafe import Markup, escape
 
-from app.core.config import TemplateItemConfig, TemplateRenderConfig, TemplatesConfig, ViewportConfig
+from app.core.config import (
+    TemplateItemConfig,
+    TemplateRenderConfig,
+    TemplatesConfig,
+    ViewportConfig,
+)
+from app.core.network import create_async_client, safe_exception_for_log
 from app.core.errors import RenderError
 from app.services.browser import browser_manager
 
@@ -130,6 +136,7 @@ class ImageRenderer:
         images_dir: str,
         render_config: TemplateRenderConfig,
         logger: logging.Logger,
+        proxy_url: str | None = None,
     ) -> None:
         """Initialize the image renderer.
 
@@ -138,6 +145,7 @@ class ImageRenderer:
             images_dir: Directory where generated images will be saved.
             render_config: Render configuration including viewport and quality settings.
             logger: Logger instance for logging render status.
+            proxy_url: Optional outbound proxy URL for remote render resources.
         """
         self.templates_config = templates_config
         self.images_dir = Path(images_dir)
@@ -146,6 +154,7 @@ class ImageRenderer:
         self._env_cache: dict[str, Environment] = {}
         self.resource_cache_dir = self.images_dir.parent / "render_resources"
         self._render_degraded: bool = False
+        self._proxy_url = proxy_url
 
         # Ensure images directory exists
         self.images_dir.mkdir(parents=True, exist_ok=True)
@@ -191,12 +200,16 @@ class ImageRenderer:
 
         # Step 1: Render HTML with Jinja2
         html_content = self._render_template(data, template_item)
-        self.logger.info(f"Rendered HTML for '{template_item.name}' ({len(html_content)} bytes)")
+        self.logger.info(
+            f"Rendered HTML for '{template_item.name}' ({len(html_content)} bytes)"
+        )
 
         # Step 2: Generate screenshot with Playwright
         viewport = template_item.viewport
         jpeg_quality = template_item.jpeg_quality or self.render_config.jpeg_quality
-        device_scale_factor = template_item.device_scale_factor or self.render_config.device_scale_factor
+        device_scale_factor = (
+            template_item.device_scale_factor or self.render_config.device_scale_factor
+        )
         image_bytes = await self._generate_screenshot(
             html_content,
             viewport,
@@ -217,7 +230,9 @@ class ImageRenderer:
             self.logger.warning("Render completed with degraded stylesheet(s)")
         return filename
 
-    def _render_template(self, data: dict[str, Any], template_item: TemplateItemConfig) -> str:
+    def _render_template(
+        self, data: dict[str, Any], template_item: TemplateItemConfig
+    ) -> str:
         """Render Jinja2 template with provided data.
 
         Args:
@@ -291,7 +306,9 @@ class ImageRenderer:
             # can keep the network busy long enough to fail otherwise valid renders.
             set_content_start = time.monotonic()
             self.logger.info(f"Loading HTML into browser for '{template_name}'")
-            page_load_timeout_ms = self._timeout_ms(self.render_config.page_load_timeout_sec)
+            page_load_timeout_ms = self._timeout_ms(
+                self.render_config.page_load_timeout_sec
+            )
             await page.set_content(
                 html_content,
                 wait_until="domcontentloaded",
@@ -375,8 +392,10 @@ class ImageRenderer:
         def log_failed_request(request: Any) -> None:
             tracked = tracked_resources.pop(id(request), None)
             url = tracked.url if tracked else str(getattr(request, "url", ""))
-            resource_type = tracked.resource_type if tracked else str(
-                getattr(request, "resource_type", "unknown")
+            resource_type = (
+                tracked.resource_type
+                if tracked
+                else str(getattr(request, "resource_type", "unknown"))
             )
             self.logger.warning(
                 f"Render resource request failed: {resource_type} "
@@ -450,7 +469,9 @@ class ImageRenderer:
                 timeout_ms,
             )
         except Exception as e:
-            self.logger.warning(f"Render readiness wait skipped for {template_name}: {e}")
+            self.logger.warning(
+                f"Render readiness wait skipped for {template_name}: {e}"
+            )
             if tracked_resources is not None:
                 self._log_pending_render_resources(template_name, tracked_resources)
             return
@@ -463,7 +484,9 @@ class ImageRenderer:
             if tracked_resources is not None:
                 self._log_pending_render_resources(template_name, tracked_resources)
         elif result == "error":
-            self.logger.warning(f"Font readiness wait failed for {template_name}; continuing")
+            self.logger.warning(
+                f"Font readiness wait failed for {template_name}; continuing"
+            )
 
     async def _install_resource_cache_routes(self, page: Any) -> None:
         """Intercept remote font resources and serve them from a TTL cache."""
@@ -499,20 +522,28 @@ class ImageRenderer:
                 cached = await self._get_remote_resource(url, ttl=ttl, timeout=timeout)
             except ValueError:
                 # Size limit exceeded - treat as unavailable
-                self.logger.warning(f"Render resource rejected (size limit exceeded): {self._sanitize_url_for_log(url)}")
+                self.logger.warning(
+                    f"Render resource rejected (size limit exceeded): {self._sanitize_url_for_log(url)}"
+                )
                 cached = None
             if cached is not None:
-                self.logger.info(f"Render resource {cached.cache_state}: {self._sanitize_url_for_log(url)}")
+                self.logger.info(
+                    f"Render resource {cached.cache_state}: {self._sanitize_url_for_log(url)}"
+                )
                 await route.fulfill(
                     status=200,
                     content_type=cached.content_type,
-                    headers=self._cached_resource_headers(ttl, resource_type, cached.content_type),
+                    headers=self._cached_resource_headers(
+                        ttl, resource_type, cached.content_type
+                    ),
                     body=cached.body,
                 )
                 return
 
             if resource_type == "stylesheet":
-                self.logger.warning(f"Using empty stylesheet fallback for render resource: {self._sanitize_url_for_log(url)}")
+                self.logger.warning(
+                    f"Using empty stylesheet fallback for render resource: {self._sanitize_url_for_log(url)}"
+                )
                 self._render_degraded = True
                 await route.fulfill(
                     status=200,
@@ -522,7 +553,9 @@ class ImageRenderer:
                 )
                 return
 
-            self.logger.warning(f"Aborting uncached render resource after fetch failure: {self._sanitize_url_for_log(url)}")
+            self.logger.warning(
+                f"Aborting uncached render resource after fetch failure: {self._sanitize_url_for_log(url)}"
+            )
             await route.abort()
 
         await page.route("**/*", handle_route)
@@ -541,9 +574,14 @@ class ImageRenderer:
             return False
         parsed = urlparse(url)
         hostname = (parsed.hostname or "").lower()
-        return any(hostname == suffix or hostname.endswith(f".{suffix}") for suffix in _CACHEABLE_HOST_SUFFIXES)
+        return any(
+            hostname == suffix or hostname.endswith(f".{suffix}")
+            for suffix in _CACHEABLE_HOST_SUFFIXES
+        )
 
-    async def _get_remote_resource(self, url: str, ttl: int, timeout: float) -> _CachedResource | None:
+    async def _get_remote_resource(
+        self, url: str, ttl: int, timeout: float
+    ) -> _CachedResource | None:
         """读取或刷新远程渲染资源缓存。
 
         Args:
@@ -570,7 +608,9 @@ class ImageRenderer:
         age = now - cached_meta["fetched_at"] if cached_meta else None
         if cached_body is not None and cached_meta and age is not None and age <= ttl:
             return _CachedResource(
-                body=self._rewrite_css_urls(cached_body, url, cached_meta["content_type"]),
+                body=self._rewrite_css_urls(
+                    cached_body, url, cached_meta["content_type"]
+                ),
                 content_type=cached_meta["content_type"],
                 cache_state="cache hit",
             )
@@ -583,14 +623,18 @@ class ImageRenderer:
         except (httpx.HTTPError, OSError) as e:
             if cached_body is not None and cached_meta:
                 self.logger.warning(
-                    f"Render resource refresh failed, using stale cache: {self._sanitize_url_for_log(url)} ({type(e).__name__}: {e})"
+                    f"Render resource refresh failed, using stale cache: {self._sanitize_url_for_log(url)} ({safe_exception_for_log(e, url, self._proxy_url)})"
                 )
                 return _CachedResource(
-                    body=self._rewrite_css_urls(cached_body, url, cached_meta["content_type"]),
+                    body=self._rewrite_css_urls(
+                        cached_body, url, cached_meta["content_type"]
+                    ),
                     content_type=cached_meta["content_type"],
                     cache_state="stale cache",
                 )
-            self.logger.warning(f"Render resource fetch failed: {self._sanitize_url_for_log(url)} ({type(e).__name__}: {e})")
+            self.logger.warning(
+                f"Render resource fetch failed: {self._sanitize_url_for_log(url)} ({safe_exception_for_log(e, url, self._proxy_url)})"
+            )
             return None
 
         self._write_cached_resource(body_path, meta_path, url, content_type, body, now)
@@ -600,7 +644,9 @@ class ImageRenderer:
             cache_state="cache refresh",
         )
 
-    async def _fetch_remote_resource_async(self, url: str, timeout: float) -> tuple[str, bytes]:
+    async def _fetch_remote_resource_async(
+        self, url: str, timeout: float
+    ) -> tuple[str, bytes]:
         """按流式下载远程资源，并在下载过程中限制资源大小。
 
         Args:
@@ -616,11 +662,17 @@ class ImageRenderer:
             OSError: 当底层网络读写失败时抛出。
         """
         max_size = self.render_config.remote_resource_max_size_kb * 1024
-        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout), follow_redirects=True) as client:
+        async with create_async_client(
+            timeout=httpx.Timeout(timeout),
+            follow_redirects=True,
+            proxy_url=self._proxy_url,
+        ) as client:
             # Check content-length header before downloading
             async with client.stream("GET", url) as response:
                 response.raise_for_status()
-                content_type = response.headers.get("content-type") or self._guess_content_type(url)
+                content_type = response.headers.get(
+                    "content-type"
+                ) or self._guess_content_type(url)
 
                 content_length = response.headers.get("content-length")
                 if content_length is not None:
@@ -648,7 +700,9 @@ class ImageRenderer:
 
             return content_type, body
 
-    def _cached_resource_headers(self, ttl: int, resource_type: str, content_type: str) -> dict[str, str]:
+    def _cached_resource_headers(
+        self, ttl: int, resource_type: str, content_type: str
+    ) -> dict[str, str]:
         """构造缓存资源响应头。
 
         Args:
@@ -690,7 +744,12 @@ class ImageRenderer:
         """
         try:
             data = json.loads(meta_path.read_text(encoding="utf-8"))
-            if not isinstance(data, dict) or "url" not in data or "content_type" not in data or "fetched_at" not in data:
+            if (
+                not isinstance(data, dict)
+                or "url" not in data
+                or "content_type" not in data
+                or "fetched_at" not in data
+            ):
                 return None
             data["fetched_at"] = float(data["fetched_at"])
             return data
@@ -744,7 +803,10 @@ class ImageRenderer:
                 "size": len(body),
             }
             meta_tmp = tempfile.NamedTemporaryFile(
-                dir=self.resource_cache_dir, suffix=".meta.tmp", delete=False, mode="w",
+                dir=self.resource_cache_dir,
+                suffix=".meta.tmp",
+                delete=False,
+                mode="w",
                 encoding="utf-8",
             )
             try:
@@ -758,7 +820,9 @@ class ImageRenderer:
                 os.unlink(meta_tmp.name)
                 raise
         except OSError as e:
-            self.logger.warning(f"Failed to write render resource cache for {self._sanitize_url_for_log(url)}: {e}")
+            self.logger.warning(
+                f"Failed to write render resource cache for {self._sanitize_url_for_log(url)}: {e}"
+            )
 
     def _rewrite_css_urls(self, body: bytes, base_url: str, content_type: str) -> bytes:
         """将 CSS 中的相对 url() 地址改写为绝对地址。
@@ -794,7 +858,9 @@ class ImageRenderer:
                 return match.group(0)
             return f"{prefix}{urljoin(base_url, raw_url)}{suffix}"
 
-        rewritten = re.sub(r"(url\(\s*['\"]?)([^)'\"\s]+?)(['\"]?\s*\))", rewrite_match, css)
+        rewritten = re.sub(
+            r"(url\(\s*['\"]?)([^)'\"\s]+?)(['\"]?\s*\))", rewrite_match, css
+        )
         return rewritten.encode("utf-8")
 
     def _guess_content_type(self, url: str) -> str:

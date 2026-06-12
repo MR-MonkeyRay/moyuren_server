@@ -324,6 +324,7 @@ sudo chown -R 1000:1000 cache logs
 | `logging.file` | `LOGGING_FILE` | 日志文件路径（空字符串表示只输出到标准输出） |
 | `timezone.business` | - | 业务时区（节假日/节气/周末判断） |
 | `timezone.display` | - | 显示时区（图片时间戳、API 响应时间；支持 `local`） |
+| `network.proxy_url` | - | 全局出站代理 URL，默认空；支持 `http://`、`socks5://`，可包含代理账号密码；同时用于应用和脚本的 HTTPX 请求及 Playwright 浏览器启动 |
 | `network.ghproxy_urls` | - | GitHub 代理 URL 列表（用于加速节假日数据和 ECDICT 下载） |
 | `data_sources` | - | 外部数据源配置列表（新闻、趣味内容等） |
 | `data_sources[].type` | - | 数据源类型（news/fun_content/crazy_thursday/holiday/stock_index/gold_price/daily_english） |

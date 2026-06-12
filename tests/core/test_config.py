@@ -10,6 +10,7 @@ from app.core.config import (
     FunContentSource,
     HolidaySource,
     LoggingConfig,
+    NetworkConfig,
     NewsSource,
     OpsConfig,
     SchedulerConfig,
@@ -28,7 +29,9 @@ class TestServerConfig:
 
     def test_valid_server_config(self) -> None:
         """Test valid server configuration."""
-        config = ServerConfig(host="0.0.0.0", port=8000, base_domain="http://localhost:8000")
+        config = ServerConfig(
+            host="0.0.0.0", port=8000, base_domain="http://localhost:8000"
+        )
         assert config.host == "0.0.0.0"
         assert config.port == 8000
 
@@ -112,6 +115,43 @@ class TestOpsConfig:
         assert config.api_key == "test-key-123"
 
 
+class TestNetworkConfig:
+    """Tests for global network configuration."""
+
+    def test_default_proxy_is_none(self) -> None:
+        """Test default proxy is disabled."""
+        config = NetworkConfig()
+        assert config.proxy_url is None
+
+    @pytest.mark.parametrize(
+        "proxy_url",
+        [
+            "http://proxy.example:8080",
+            "socks5://user:password@proxy.example:1080",
+        ],
+    )
+    def test_valid_proxy_url(self, proxy_url: str) -> None:
+        """Test supported proxy URL formats."""
+        config = NetworkConfig(proxy_url=proxy_url)
+        assert config.proxy_url == proxy_url
+
+    @pytest.mark.parametrize(
+        "proxy_url",
+        [
+            "ftp://proxy.example:21",
+            "https://proxy.example:8443",
+            "http://",
+            "http://proxy.example/path",
+            "http://proxy.example:8080?token=value",
+            "http://proxy.example:8080#frag",
+        ],
+    )
+    def test_invalid_proxy_url_raises_error(self, proxy_url: str) -> None:
+        """Test invalid proxy URLs are rejected."""
+        with pytest.raises(ValidationError):
+            NetworkConfig(proxy_url=proxy_url)
+
+
 class TestTemplatesConfig:
     """Tests for TemplatesConfig model."""
 
@@ -121,10 +161,14 @@ class TestTemplatesConfig:
             default="main",
             items=[
                 TemplateItemConfig(
-                    name="main", path="templates/main.html", viewport=ViewportConfig(width=800, height=600)
+                    name="main",
+                    path="templates/main.html",
+                    viewport=ViewportConfig(width=800, height=600),
                 ),
                 TemplateItemConfig(
-                    name="alt", path="templates/alt.html", viewport=ViewportConfig(width=800, height=600)
+                    name="alt",
+                    path="templates/alt.html",
+                    viewport=ViewportConfig(width=800, height=600),
                 ),
             ],
         )
@@ -137,7 +181,9 @@ class TestTemplatesConfig:
             default="main",
             items=[
                 TemplateItemConfig(
-                    name="main", path="templates/main.html", viewport=ViewportConfig(width=800, height=600)
+                    name="main",
+                    path="templates/main.html",
+                    viewport=ViewportConfig(width=800, height=600),
                 ),
             ],
         )
@@ -149,7 +195,9 @@ class TestTemplatesConfig:
         config = TemplatesConfig(
             items=[
                 TemplateItemConfig(
-                    name="main", path="templates/main.html", viewport=ViewportConfig(width=800, height=600)
+                    name="main",
+                    path="templates/main.html",
+                    viewport=ViewportConfig(width=800, height=600),
                 )
             ]
         )
@@ -162,10 +210,14 @@ class TestTemplatesConfig:
             TemplatesConfig(
                 items=[
                     TemplateItemConfig(
-                        name="main", path="templates/main.html", viewport=ViewportConfig(width=800, height=600)
+                        name="main",
+                        path="templates/main.html",
+                        viewport=ViewportConfig(width=800, height=600),
                     ),
                     TemplateItemConfig(
-                        name="main", path="templates/other.html", viewport=ViewportConfig(width=800, height=600)
+                        name="main",
+                        path="templates/other.html",
+                        viewport=ViewportConfig(width=800, height=600),
                     ),
                 ]
             )
@@ -249,14 +301,20 @@ class TestCrazyThursdaySource:
     def test_valid_config(self) -> None:
         """Test valid crazy thursday configuration."""
         config = CrazyThursdaySource(
-            type="crazy_thursday", enabled=True, url="https://api.example.com/kfc", timeout_sec=5
+            type="crazy_thursday",
+            enabled=True,
+            url="https://api.example.com/kfc",
+            timeout_sec=5,
         )
         assert config.enabled is True
 
     def test_disabled_config(self) -> None:
         """Test disabled configuration."""
         config = CrazyThursdaySource(
-            type="crazy_thursday", enabled=False, url="https://api.example.com/kfc", timeout_sec=5
+            type="crazy_thursday",
+            enabled=False,
+            url="https://api.example.com/kfc",
+            timeout_sec=5,
         )
         assert config.enabled is False
 
@@ -370,7 +428,9 @@ class TestNewsSource:
 
     def test_valid_config(self) -> None:
         """Test valid news source configuration."""
-        config = NewsSource(type="news", url="https://api.example.com/news", params={"key": "value"})
+        config = NewsSource(
+            type="news", url="https://api.example.com/news", params={"key": "value"}
+        )
         assert config.type == "news"
         assert config.url == "https://api.example.com/news"
 
@@ -390,7 +450,10 @@ class TestFunContentSource:
             type="fun_content",
             endpoints=[
                 FunContentEndpoint(
-                    name="joke", url="https://api.example.com/joke", data_path="data", display_title="笑话"
+                    name="joke",
+                    url="https://api.example.com/joke",
+                    data_path="data",
+                    display_title="笑话",
                 )
             ],
         )

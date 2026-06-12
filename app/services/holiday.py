@@ -9,11 +9,14 @@ from typing import Any
 
 import httpx
 
+from app.core.network import create_async_client, redact_url, safe_exception_for_log
 from app.services.calendar import get_business_timezone
 from app.services.daily_cache import DailyCache
 
 # GitHub 原始源（硬编码，不可配置）
-GITHUB_RAW_URL = "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json"
+GITHUB_RAW_URL = (
+    "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json"
+)
 
 
 class HolidayService:
@@ -29,6 +32,7 @@ class HolidayService:
         cache_dir: str | Path = "cache/holidays",
         ghproxy_urls: list[str] | None = None,
         timeout_sec: int = 10,
+        proxy_url: str | None = None,
     ) -> None:
         """初始化节假日数据服务。
 
@@ -37,6 +41,7 @@ class HolidayService:
             cache_dir: 年度节假日原始数据缓存目录。
             ghproxy_urls: GitHub raw 镜像代理前缀列表，按顺序优先尝试。
             timeout_sec: 请求超时时间，单位秒。
+            proxy_url: 可选全局代理 URL。
 
         Side Effects:
             创建缓存目录（如果不存在）。
@@ -46,16 +51,21 @@ class HolidayService:
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._ghproxy_urls = ghproxy_urls or []
         self._timeout_sec = timeout_sec
+        self._proxy_url = proxy_url
 
     def _build_urls(self, year: int) -> list[str]:
         """构建 URL 列表：镜像源优先，GitHub 原始源兜底"""
         urls = []
         # 镜像源：前缀 + raw.githubusercontent.com/...
-        raw_path = f"raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json"
+        raw_path = (
+            f"raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json"
+        )
         for proxy_prefix in self._ghproxy_urls:
             # 校验镜像前缀必须包含协议
             if not proxy_prefix.startswith(("http://", "https://")):
-                self._logger.warning(f"跳过无效代理前缀（缺少协议）: {proxy_prefix}")
+                self._logger.warning(
+                    f"跳过无效代理前缀（缺少协议）: {redact_url(proxy_prefix)}"
+                )
                 continue
             # 确保代理地址以 / 结尾
             prefix = proxy_prefix.rstrip("/") + "/"
@@ -95,13 +105,19 @@ class HolidayService:
         age = time.time() - mtime
         # 兜底：系统时间回拨时视为过期
         if age < 0:
-            self._logger.warning(f"{year} 年缓存 mtime 异常（系统时间可能回拨），视为过期")
+            self._logger.warning(
+                f"{year} 年缓存 mtime 异常（系统时间可能回拨），视为过期"
+            )
             return False
         if age < ttl:
-            self._logger.debug(f"{year} 年缓存有效，已缓存 {age / 3600:.1f} 小时，TTL {ttl / 3600:.1f} 小时")
+            self._logger.debug(
+                f"{year} 年缓存有效，已缓存 {age / 3600:.1f} 小时，TTL {ttl / 3600:.1f} 小时"
+            )
             return True
         else:
-            self._logger.debug(f"{year} 年缓存已过期，已缓存 {age / 3600:.1f} 小时，TTL {ttl / 3600:.1f} 小时")
+            self._logger.debug(
+                f"{year} 年缓存已过期，已缓存 {age / 3600:.1f} 小时，TTL {ttl / 3600:.1f} 小时"
+            )
             return False
 
     async def fetch_holidays(self) -> list[dict[str, Any]]:
@@ -111,9 +127,13 @@ class HolidayService:
         prev_year = current_year - 1
         next_year = current_year + 1
 
-        self._logger.info(f"开始获取 {prev_year}、{current_year} 和 {next_year} 年节假日数据")
+        self._logger.info(
+            f"开始获取 {prev_year}、{current_year} 和 {next_year} 年节假日数据"
+        )
 
-        async with httpx.AsyncClient(timeout=self._timeout_sec) as client:
+        async with create_async_client(
+            timeout=self._timeout_sec, proxy_url=self._proxy_url
+        ) as client:
             tasks = [
                 self._fetch_year_data(client, prev_year),
                 self._fetch_year_data(client, current_year),
@@ -123,7 +143,9 @@ class HolidayService:
 
         return self._merge_and_process(list(results))
 
-    async def _fetch_year_data(self, client: httpx.AsyncClient, year: int) -> dict[str, Any] | None:
+    async def _fetch_year_data(
+        self, client: httpx.AsyncClient, year: int
+    ) -> dict[str, Any] | None:
         """获取指定年份的节假日数据，支持 TTL 缓存、多源重试和降级"""
         # 1. 检查缓存是否有效
         if self._is_cache_valid(year):
@@ -140,7 +162,7 @@ class HolidayService:
                 response = await client.get(url)
                 response.raise_for_status()
                 data = response.json()
-                self._logger.debug(f"成功从 {url} 获取 {year} 年节假日数据")
+                self._logger.debug(f"成功从 {redact_url(url)} 获取 {year} 年节假日数据")
 
                 # 成功获取后更新缓存
                 self._save_to_cache(year, data)
@@ -148,11 +170,15 @@ class HolidayService:
 
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 404:
-                    self._logger.warning(f"数据源 {url} 返回 404")
+                    self._logger.warning(f"数据源 {redact_url(url)} 返回 404")
                     continue
-                self._logger.warning(f"数据源 {url} 请求失败: {e}")
+                self._logger.warning(
+                    f"数据源 {redact_url(url)} 请求失败: {safe_exception_for_log(e, url, self._proxy_url)}"
+                )
             except Exception as e:
-                self._logger.warning(f"数据源 {url} 访问异常: {e}")
+                self._logger.warning(
+                    f"数据源 {redact_url(url)} 访问异常: {safe_exception_for_log(e, url, self._proxy_url)}"
+                )
 
         # 3. 网络请求全部失败，尝试读取过期缓存（降级策略）
         self._logger.warning(f"所有数据源均无法获取 {year} 年数据，尝试读取本地缓存")
@@ -187,7 +213,9 @@ class HolidayService:
             self._logger.warning(f"读取 {year} 年缓存失败: {e}")
             return None
 
-    def _merge_and_process(self, data_list: list[dict[str, Any] | None | Exception]) -> list[dict[str, Any]]:
+    def _merge_and_process(
+        self, data_list: list[dict[str, Any] | None | Exception]
+    ) -> list[dict[str, Any]]:
         """合并多年数据，过滤休息日，排序后聚合连续假期"""
         all_days: list[dict[str, Any]] = []
 
@@ -235,7 +263,9 @@ class HolidayService:
 
         return result
 
-    def _group_continuous_holidays(self, days: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _group_continuous_holidays(
+        self, days: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """将连续的同名假期聚合为假期组"""
         if not days:
             return []
@@ -266,7 +296,9 @@ class HolidayService:
                 continue
 
             # 判断连续性：同名 AND 日期连续
-            is_continuous = (day_name == last_name) and (day_date == last_date + timedelta(days=1))
+            is_continuous = (day_name == last_name) and (
+                day_date == last_date + timedelta(days=1)
+            )
 
             if is_continuous:
                 current_group.append(day)
@@ -338,6 +370,7 @@ class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
         raw_cache_dir: Path,
         ghproxy_urls: list[str] | None = None,
         timeout_sec: int = 10,
+        proxy_url: str | None = None,
     ) -> None:
         """初始化带缓存的节假日服务。
 
@@ -347,6 +380,7 @@ class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
             raw_cache_dir: 原始年度数据目录（如 cache/holidays/）
             ghproxy_urls: 代理源 URL 列表
             timeout_sec: 请求超时时间（秒）
+            proxy_url: 可选全局代理 URL
         """
         super().__init__("holidays", cache_dir, logger)
         self._service = HolidayService(
@@ -354,6 +388,7 @@ class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
             cache_dir=raw_cache_dir,
             ghproxy_urls=ghproxy_urls,
             timeout_sec=timeout_sec,
+            proxy_url=proxy_url,
         )
 
     async def fetch_fresh(self) -> list[dict[str, Any]] | None:
@@ -365,5 +400,5 @@ class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
         try:
             return await self._service.fetch_holidays()
         except Exception as e:
-            self.logger.error(f"Failed to fetch holidays: {e}", exc_info=True)
+            self.logger.error("Failed to fetch holidays: %s", safe_exception_for_log(e))
             return None

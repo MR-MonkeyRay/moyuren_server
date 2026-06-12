@@ -11,6 +11,7 @@ import exchange_calendars as xcals
 import httpx
 
 from app.core.config import StockIndexSource
+from app.core.network import create_async_client, safe_exception_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -40,17 +41,19 @@ DEFAULT_TIMEZONE = "Asia/Shanghai"
 class StockIndexService:
     """Service for fetching stock market index data."""
 
-    def __init__(self, config: StockIndexSource):
+    def __init__(self, config: StockIndexSource, proxy_url: str | None = None) -> None:
         """Initialize the service with configuration.
 
         Args:
             config: Stock index configuration.
+            proxy_url: Optional outbound proxy URL.
         """
         self.config = config
         self._cache: dict[str, Any] = {"data": None, "fetched_at": 0}
         self._calendars: dict[str, Any] = {}
         self._lock = asyncio.Lock()
         self._http_client: httpx.AsyncClient | None = None
+        self._proxy_url = proxy_url
         self._init_calendars()
 
     def _init_calendars(self) -> None:
@@ -66,7 +69,9 @@ class StockIndexService:
     async def _get_http_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client for connection reuse."""
         if self._http_client is None or self._http_client.is_closed:
-            self._http_client = httpx.AsyncClient(timeout=self.config.timeout_sec)
+            self._http_client = create_async_client(
+                timeout=self.config.timeout_sec, proxy_url=self._proxy_url
+            )
         return self._http_client
 
     async def close(self) -> None:
@@ -81,7 +86,9 @@ class StockIndexService:
         try:
             return ZoneInfo(tz_name)
         except Exception:
-            logger.warning(f"Invalid timezone '{tz_name}' for market {market}, using {DEFAULT_TIMEZONE}")
+            logger.warning(
+                f"Invalid timezone '{tz_name}' for market {market}, using {DEFAULT_TIMEZONE}"
+            )
             return ZoneInfo(DEFAULT_TIMEZONE)
 
     async def fetch_indices(self, now: datetime | None = None) -> dict[str, Any]:
@@ -133,7 +140,9 @@ class StockIndexService:
                 return result
 
             except Exception as e:
-                logger.warning(f"Failed to fetch stock indices: {e}")
+                logger.warning(
+                    f"Failed to fetch stock indices: {safe_exception_for_log(e, self.config.quote_url, self._proxy_url)}"
+                )
                 # Return stale cache if available
                 if self._cache.get("data"):
                     stale_data = self._cache["data"].copy()

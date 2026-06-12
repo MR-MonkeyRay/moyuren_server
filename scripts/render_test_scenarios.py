@@ -21,6 +21,8 @@ from app.core.config import (
     load_config,
 )
 from app.core.logging import setup_logging
+from app.core.network import safe_exception_for_log
+from app.services.browser import browser_manager
 from app.services.calendar import init_timezones
 from app.services.compute import DataComputer
 from app.services.fetcher import DataFetcher
@@ -265,7 +267,9 @@ def parse_args() -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(description="渲染测试场景图片")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--scenario", choices=list(SCENARIOS.keys()), help="渲染指定场景")
+    group.add_argument(
+        "--scenario", choices=list(SCENARIOS.keys()), help="渲染指定场景"
+    )
     group.add_argument("--all", action="store_true", help="渲染全部场景")
     group.add_argument("--list", action="store_true", help="列出所有可用场景")
     return parser.parse_args()
@@ -319,6 +323,7 @@ async def get_base_template_data(
     daily_english_service: DailyEnglishService | None,
     data_computer: DataComputer,
     logger,
+    proxy_url: str | None = None,
 ) -> dict:
     """获取并计算一份可用于测试场景覆盖的基础模板数据。
 
@@ -341,7 +346,7 @@ async def get_base_template_data(
         holidays = await holiday_service.fetch_holidays()
         raw_data["holidays"] = holidays
     except Exception as e:
-        logger.warning(f"获取节假日失败: {e}")
+        logger.warning(f"获取节假日失败: {safe_exception_for_log(e, proxy_url)}")
         raw_data["holidays"] = []
 
     try:
@@ -350,7 +355,7 @@ async def get_base_template_data(
         fun_content = await fun_content_service.fetch_content(date.today())
         raw_data["fun_content"] = fun_content
     except Exception as e:
-        logger.warning(f"获取趣味内容失败: {e}")
+        logger.warning(f"获取趣味内容失败: {safe_exception_for_log(e, proxy_url)}")
         raw_data["fun_content"] = None
 
     raw_data["kfc_copy"] = None
@@ -363,7 +368,7 @@ async def get_base_template_data(
             raw_data["stock_indices"] = stock_indices
             logger.info(f"获取到 {len(stock_indices.get('items', []))} 条股票指数数据")
         except Exception as e:
-            logger.warning(f"获取股票指数失败: {e}")
+            logger.warning(f"获取股票指数失败: {safe_exception_for_log(e, proxy_url)}")
 
     # 获取金价数据
     raw_data["gold_price"] = None
@@ -374,7 +379,7 @@ async def get_base_template_data(
             if gold_price:
                 logger.info(f"获取到金价数据: {gold_price.get('today_price')}")
         except Exception as e:
-            logger.warning(f"获取金价数据失败: {e}")
+            logger.warning(f"获取金价数据失败: {safe_exception_for_log(e, proxy_url)}")
 
     # 获取每日英语数据
     raw_data["daily_english"] = None
@@ -386,7 +391,9 @@ async def get_base_template_data(
             if daily_english:
                 logger.info(f"获取到每日英语数据: {daily_english.get('word')}")
         except Exception as e:
-            logger.warning(f"获取每日英语数据失败: {e}")
+            logger.warning(
+                f"获取每日英语数据失败: {safe_exception_for_log(e, proxy_url)}"
+            )
 
     return data_computer.compute(raw_data)
 
@@ -452,140 +459,171 @@ async def main():
     # Load config
     config = load_config()
     logger = setup_logging(config.logging, logger_name="render_test")
-
-    # Initialize timezones
-    init_timezones(business_tz=config.timezone.business, display_tz=config.timezone.display)
-
-    # Ensure directories exist
-    cache_dir = Path(config.paths.cache_dir)
-    (cache_dir / "images").mkdir(parents=True, exist_ok=True)
-    (cache_dir / "holidays").mkdir(parents=True, exist_ok=True)
-
-    # Initialize services
-    news_source = config.get_source(NewsSource)
-    data_fetcher = DataFetcher(
-        source=news_source,
-        logger=logger,
-    )
-    holiday_cache_dir = cache_dir / "holidays"
-    holiday_source = config.get_source(HolidaySource)
-    holiday_service = HolidayService(
-        logger=logger,
-        cache_dir=holiday_cache_dir,
-        ghproxy_urls=config.network.ghproxy_urls,
-        timeout_sec=holiday_source.timeout_sec if holiday_source else 10,
-    )
-    fun_content_source = config.get_source(FunContentSource)
-    fun_content_service = FunContentService(fun_content_source)
-    data_computer = DataComputer()
-
-    # Initialize stock index service
+    proxy_url = config.network.proxy_url
+    browser_manager.configure(logger, proxy_url=proxy_url)
     stock_index_service = None
-    stock_index_source = config.get_source(StockIndexSource)
-    if stock_index_source:
-        stock_index_service = StockIndexService(stock_index_source)
+    try:
+        # Initialize timezones
+        init_timezones(
+            business_tz=config.timezone.business, display_tz=config.timezone.display
+        )
 
-    # Initialize gold price service
-    gold_price_service = None
-    gold_price_source = config.get_source(GoldPriceSource)
-    if gold_price_source:
-        gold_price_service = GoldPriceService(gold_price_source)
+        # Ensure directories exist
+        cache_dir = Path(config.paths.cache_dir)
+        (cache_dir / "images").mkdir(parents=True, exist_ok=True)
+        (cache_dir / "holidays").mkdir(parents=True, exist_ok=True)
 
-    # Initialize daily english service if config exists
-    daily_english_service = None
-    daily_english_source = config.get_source(DailyEnglishSource)
-    if daily_english_source and daily_english_source.enabled:
-        dict_backend = build_dict_backend(
-            cfg=daily_english_source.backend,
+        # Initialize services
+        news_source = config.get_source(NewsSource)
+        data_fetcher = DataFetcher(
+            source=news_source,
+            logger=logger,
+            proxy_url=proxy_url,
+        )
+        holiday_cache_dir = cache_dir / "holidays"
+        holiday_source = config.get_source(HolidaySource)
+        holiday_service = HolidayService(
+            logger=logger,
+            cache_dir=holiday_cache_dir,
             ghproxy_urls=config.network.ghproxy_urls,
-            logger=logger,
+            timeout_sec=holiday_source.timeout_sec if holiday_source else 10,
+            proxy_url=proxy_url,
         )
-        daily_english_service = DailyEnglishService(
-            config=daily_english_source,
-            backend=dict_backend,
+        fun_content_source = config.get_source(FunContentSource)
+        fun_content_service = FunContentService(fun_content_source, proxy_url=proxy_url)
+        data_computer = DataComputer()
+
+        # Initialize stock index service
+        stock_index_service = None
+        stock_index_source = config.get_source(StockIndexSource)
+        if stock_index_source:
+            stock_index_service = StockIndexService(
+                stock_index_source, proxy_url=proxy_url
+            )
+
+        # Initialize gold price service
+        gold_price_service = None
+        gold_price_source = config.get_source(GoldPriceSource)
+        if gold_price_source:
+            gold_price_service = GoldPriceService(
+                gold_price_source, proxy_url=proxy_url
+            )
+
+        # Initialize daily english service if config exists
+        daily_english_service = None
+        daily_english_source = config.get_source(DailyEnglishSource)
+        if daily_english_source and daily_english_source.enabled:
+            dict_backend = build_dict_backend(
+                cfg=daily_english_source.backend,
+                ghproxy_urls=config.network.ghproxy_urls,
+                logger=logger,
+                proxy_url=proxy_url,
+            )
+            daily_english_service = DailyEnglishService(
+                config=daily_english_source,
+                backend=dict_backend,
+                logger=logger,
+                proxy_url=proxy_url,
+            )
+
+        # Get templates configuration
+        templates_config = config.get_templates_config()
+
+        image_renderer = ImageRenderer(
+            templates_config=templates_config,
+            images_dir=str(cache_dir / "images"),
+            render_config=config.templates.config,
             logger=logger,
+            proxy_url=proxy_url,
         )
 
-    # Get templates configuration
-    templates_config = config.get_templates_config()
+        logger.info("开始生成测试场景图片...")
 
-    image_renderer = ImageRenderer(
-        templates_config=templates_config,
-        images_dir=str(cache_dir / "images"),
-        render_config=config.templates.config,
-        logger=logger,
-    )
+        # 获取当前日期（时区初始化后）
+        today_str = get_today_str()
 
-    logger.info("开始生成测试场景图片...")
+        base_template_data = await get_base_template_data(
+            data_fetcher=data_fetcher,
+            holiday_service=holiday_service,
+            fun_content_service=fun_content_service,
+            stock_index_service=stock_index_service,
+            gold_price_service=gold_price_service,
+            daily_english_service=daily_english_service,
+            data_computer=data_computer,
+            logger=logger,
+            proxy_url=proxy_url,
+        )
 
-    # 获取当前日期（时区初始化后）
-    today_str = get_today_str()
+        if args.all:
+            for scenario_name, scenario_data in SCENARIOS.items():
+                logger.info(f"渲染场景: {scenario_name}")
+                overrides = replace_today_placeholder(
+                    scenario_data["overrides"], today_str
+                )
+                scenario_template = apply_scenario_overrides(
+                    base_template_data,
+                    overrides,
+                )
+                image_path = await render_scenario(
+                    scenario_name,
+                    scenario_template,
+                    image_renderer,
+                    str(cache_dir / "images"),
+                    logger,
+                )
+                print(f"\n✅ 场景 {scenario_name} 已生成: {image_path.absolute()}")
+                print(f"说明: {scenario_data['description']}")
+            return
 
-    base_template_data = await get_base_template_data(
-        data_fetcher=data_fetcher,
-        holiday_service=holiday_service,
-        fun_content_service=fun_content_service,
-        stock_index_service=stock_index_service,
-        gold_price_service=gold_price_service,
-        daily_english_service=daily_english_service,
-        data_computer=data_computer,
-        logger=logger,
-    )
-
-    if args.all:
-        for scenario_name, scenario_data in SCENARIOS.items():
-            logger.info(f"渲染场景: {scenario_name}")
+        if args.scenario:
+            scenario_data = SCENARIOS[args.scenario]
             overrides = replace_today_placeholder(scenario_data["overrides"], today_str)
             scenario_template = apply_scenario_overrides(
                 base_template_data,
                 overrides,
             )
             image_path = await render_scenario(
-                scenario_name,
+                args.scenario,
                 scenario_template,
                 image_renderer,
                 str(cache_dir / "images"),
                 logger,
             )
-            print(f"\n✅ 场景 {scenario_name} 已生成: {image_path.absolute()}")
+            print(f"\n✅ 场景 {args.scenario} 已生成: {image_path.absolute()}")
             print(f"说明: {scenario_data['description']}")
-        return
+            return
 
-    if args.scenario:
-        scenario_data = SCENARIOS[args.scenario]
-        overrides = replace_today_placeholder(scenario_data["overrides"], today_str)
-        scenario_template = apply_scenario_overrides(
-            base_template_data,
-            overrides,
-        )
+        mixed_overrides = replace_today_placeholder(MIXED_OVERRIDES, today_str)
+        mixed_template = apply_scenario_overrides(base_template_data, mixed_overrides)
+        logger.info("已覆盖测试数据：当日周末、当日节气、当日假日/补班")
         image_path = await render_scenario(
-            args.scenario,
-            scenario_template,
+            None,
+            mixed_template,
             image_renderer,
             str(cache_dir / "images"),
             logger,
         )
-        print(f"\n✅ 场景 {args.scenario} 已生成: {image_path.absolute()}")
-        print(f"说明: {scenario_data['description']}")
-        return
 
-    mixed_overrides = replace_today_placeholder(MIXED_OVERRIDES, today_str)
-    mixed_template = apply_scenario_overrides(base_template_data, mixed_overrides)
-    logger.info("已覆盖测试数据：当日周末、当日节气、当日假日/补班")
-    image_path = await render_scenario(
-        None,
-        mixed_template,
-        image_renderer,
-        str(cache_dir / "images"),
-        logger,
-    )
-
-    print(f"\n✅ 测试图片已生成: {image_path.absolute()}")
-    print("\n模拟场景：")
-    print("  - 当日周末：🎉 周末愉快，摸鱼无罪！")
-    print("  - 当日节气：今日 立春，顺应天时")
-    print("  - 当日补班：😭 补班中")
-    print("  - 当日假期：🥳 假期中")
+        print(f"\n✅ 测试图片已生成: {image_path.absolute()}")
+        print("\n模拟场景：")
+        print("  - 当日周末：🎉 周末愉快，摸鱼无罪！")
+        print("  - 当日节气：今日 立春，顺应天时")
+        print("  - 当日补班：😭 补班中")
+        print("  - 当日假期：🥳 假期中")
+    finally:
+        if stock_index_service is not None:
+            try:
+                await stock_index_service.close()
+            except Exception as e:
+                logger.warning(
+                    "Failed to close stock index service: %s", safe_exception_for_log(e)
+                )
+        try:
+            await browser_manager.shutdown()
+        except Exception as e:
+            logger.warning(
+                "Failed to shutdown browser manager: %s", safe_exception_for_log(e)
+            )
 
 
 if __name__ == "__main__":
