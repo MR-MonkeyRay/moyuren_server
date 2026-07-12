@@ -377,6 +377,46 @@ class TestImageRenderer:
         fetch.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_browser_headers_do_not_reuse_legacy_css_cache(
+        self, renderer: ImageRenderer
+    ) -> None:
+        """A negotiated browser response must not reuse old non-browser CSS."""
+        url = "https://fonts.googleapis.cn/css2?family=Noto+Sans+SC"
+        legacy_cache_key = _resource_cache_key(url)
+        (renderer.resource_cache_dir / f"{legacy_cache_key}.body").write_bytes(
+            b"src: url(legacy-font.ttf)"
+        )
+        (renderer.resource_cache_dir / f"{legacy_cache_key}.meta").write_text(
+            json.dumps(
+                {
+                    "url": url,
+                    "content_type": "text/css",
+                    "fetched_at": time.time(),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with patch.object(
+            renderer,
+            "_fetch_remote_resource_async",
+            return_value=("text/css", b"src: url(modern-font.woff2)"),
+        ) as fetch:
+            cached = await renderer._get_remote_resource(
+                url,
+                ttl=3600,
+                timeout=1.0,
+                request_headers={
+                    "user-agent": "Mozilla/5.0 HeadlessChrome/140.0.0.0",
+                    "accept": "text/css,*/*;q=0.1",
+                },
+            )
+
+        assert cached is not None
+        assert b"modern-font.woff2" in cached.body
+        fetch.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_get_remote_resource_uses_stale_cache_on_fetch_failure(
         self, renderer: ImageRenderer
     ) -> None:
@@ -406,6 +446,39 @@ class TestImageRenderer:
 
         assert cached is not None
         assert cached.body == b"font-bytes"
+        assert cached.content_type == "font/woff2"
+        assert cached.cache_state == "stale cache"
+
+    @pytest.mark.asyncio
+    async def test_get_remote_resource_uses_stale_cache_when_refresh_is_oversized(
+        self, renderer: ImageRenderer
+    ) -> None:
+        """Test an oversized refresh cannot displace an existing stale font."""
+        url = "https://fonts.gstatic.cn/s/font.woff2"
+        cache_key = _resource_cache_key(url)
+        body_path = renderer.resource_cache_dir / f"{cache_key}.body"
+        meta_path = renderer.resource_cache_dir / f"{cache_key}.meta"
+        body_path.write_bytes(b"stale-font-bytes")
+        meta_path.write_text(
+            json.dumps(
+                {
+                    "url": url,
+                    "content_type": "font/woff2",
+                    "fetched_at": time.time() - 7200,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with patch.object(
+            renderer,
+            "_fetch_remote_resource_async",
+            side_effect=ValueError("Remote resource too large"),
+        ):
+            cached = await renderer._get_remote_resource(url, ttl=3600, timeout=1.0)
+
+        assert cached is not None
+        assert cached.body == b"stale-font-bytes"
         assert cached.content_type == "font/woff2"
         assert cached.cache_state == "stale cache"
 
@@ -538,6 +611,77 @@ class TestImageRenderer:
             proxy_url=renderer._proxy_url,
         )
         assert body == b"body { font-family: Test; }"
+
+    @pytest.mark.asyncio
+    async def test_resource_route_forwards_browser_content_negotiation_headers(
+        self, renderer: ImageRenderer
+    ) -> None:
+        """Google Fonts must see Chromium headers so it returns modern font formats."""
+        page = AsyncMock()
+        await renderer._install_resource_cache_routes(page)
+
+        route = AsyncMock()
+        request = MagicMock()
+        request.url = "https://fonts.googleapis.cn/css2?family=Noto+Sans+SC"
+        request.resource_type = "stylesheet"
+        request.headers = {
+            "user-agent": "Mozilla/5.0 HeadlessChrome/140.0.0.0",
+            "accept": "text/css,*/*;q=0.1",
+            "cookie": "must-not-be-forwarded=1",
+        }
+        route.request = request
+
+        with patch.object(
+            renderer, "_get_remote_resource", return_value=None
+        ) as get_resource:
+            handle_route = page.route.call_args[0][1]
+            await handle_route(route)
+
+        get_resource.assert_awaited_once_with(
+            request.url,
+            ttl=renderer.render_config.remote_resource_cache_ttl_sec,
+            timeout=renderer.render_config.remote_resource_timeout_sec,
+            request_headers={
+                "user-agent": "Mozilla/5.0 HeadlessChrome/140.0.0.0",
+                "accept": "text/css,*/*;q=0.1",
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_fetch_remote_resource_uses_browser_headers(
+        self, renderer: ImageRenderer
+    ) -> None:
+        """Test the remote fetch preserves the selected browser headers."""
+        url = "https://fonts.googleapis.cn/css2?family=Noto+Sans+SC"
+        request_headers = {
+            "user-agent": "Mozilla/5.0 HeadlessChrome/140.0.0.0",
+            "accept": "text/css,*/*;q=0.1",
+        }
+
+        async def chunks():
+            yield b"@font-face {}"
+
+        mock_response = MagicMock()
+        mock_response.headers = {"content-type": "text/css"}
+        mock_response.raise_for_status = MagicMock()
+        mock_response.aiter_bytes = MagicMock(return_value=chunks())
+
+        with patch("app.services.renderer.create_async_client") as mock_client_cls:
+            mock_client = AsyncMock()
+            stream_cm = MagicMock()
+            stream_cm.__aenter__ = AsyncMock(return_value=mock_response)
+            stream_cm.__aexit__ = AsyncMock(return_value=None)
+            mock_client.stream = MagicMock(return_value=stream_cm)
+            mock_client_cls.return_value.__aenter__ = AsyncMock(
+                return_value=mock_client
+            )
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            await renderer._fetch_remote_resource_async(
+                url, timeout=5.0, request_headers=request_headers
+            )
+
+        mock_client.stream.assert_called_once_with("GET", url, headers=request_headers)
 
     @pytest.mark.asyncio
     async def test_install_resource_cache_routes_adds_cors_for_cached_fonts(

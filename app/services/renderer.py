@@ -35,6 +35,7 @@ _CACHEABLE_HOST_SUFFIXES = (
     "fonts.gstatic.com",
     "fonts.gstatic.cn",
 )
+_CONTENT_NEGOTIATION_HEADERS = ("user-agent", "accept")
 
 
 @dataclass
@@ -518,8 +519,14 @@ class ImageRenderer:
                 await route.continue_()
                 return
 
+            request_headers = self._content_negotiation_headers(request)
             try:
-                cached = await self._get_remote_resource(url, ttl=ttl, timeout=timeout)
+                cached = await self._get_remote_resource(
+                    url,
+                    ttl=ttl,
+                    timeout=timeout,
+                    request_headers=request_headers,
+                )
             except ValueError:
                 # Size limit exceeded - treat as unavailable
                 self.logger.warning(
@@ -560,6 +567,22 @@ class ImageRenderer:
 
         await page.route("**/*", handle_route)
 
+    def _content_negotiation_headers(self, request: Any) -> dict[str, str] | None:
+        """Select safe browser headers that affect the CDN response representation."""
+        raw_headers = getattr(request, "headers", None)
+        if not isinstance(raw_headers, dict):
+            return None
+
+        normalized = {
+            str(key).lower(): str(value) for key, value in raw_headers.items()
+        }
+        selected = {
+            name: normalized[name]
+            for name in _CONTENT_NEGOTIATION_HEADERS
+            if normalized.get(name)
+        }
+        return selected or None
+
     def _should_cache_resource(self, url: str, resource_type: str) -> bool:
         """判断远程资源是否应进入渲染资源缓存。
 
@@ -580,7 +603,11 @@ class ImageRenderer:
         )
 
     async def _get_remote_resource(
-        self, url: str, ttl: int, timeout: float
+        self,
+        url: str,
+        ttl: int,
+        timeout: float,
+        request_headers: dict[str, str] | None = None,
     ) -> _CachedResource | None:
         """读取或刷新远程渲染资源缓存。
 
@@ -588,6 +615,7 @@ class ImageRenderer:
             url: 远程资源 URL。
             ttl: 缓存有效期，单位为秒。
             timeout: 远程请求超时时间，单位为秒。
+            request_headers: 参与响应表示选择的浏览器请求头。
 
         Returns:
             可用于响应浏览器请求的缓存资源；无缓存且刷新失败时返回 None。
@@ -598,7 +626,15 @@ class ImageRenderer:
         Side Effects:
             可能发起网络请求、写入缓存文件，并在刷新失败时写入警告日志。
         """
-        cache_key = hashlib.sha256(url.encode("utf-8")).hexdigest()
+        cache_identity = url
+        if request_headers:
+            cache_identity = json.dumps(
+                {"url": url, "headers": request_headers},
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        cache_key = hashlib.sha256(cache_identity.encode("utf-8")).hexdigest()
         body_path = self.resource_cache_dir / f"{cache_key}.body"
         meta_path = self.resource_cache_dir / f"{cache_key}.meta"
         now = time.time()
@@ -619,7 +655,23 @@ class ImageRenderer:
             content_type, body = await self._fetch_remote_resource_async(
                 url,
                 timeout,
+                request_headers=request_headers,
             )
+        except ValueError as e:
+            if cached_body is not None and cached_meta:
+                self.logger.warning(
+                    f"Render resource refresh exceeded size limit, using stale cache: "
+                    f"{self._sanitize_url_for_log(url)} "
+                    f"({safe_exception_for_log(e, url, self._proxy_url)})"
+                )
+                return _CachedResource(
+                    body=self._rewrite_css_urls(
+                        cached_body, url, cached_meta["content_type"]
+                    ),
+                    content_type=cached_meta["content_type"],
+                    cache_state="stale cache",
+                )
+            raise
         except (httpx.HTTPError, OSError) as e:
             if cached_body is not None and cached_meta:
                 self.logger.warning(
@@ -645,13 +697,17 @@ class ImageRenderer:
         )
 
     async def _fetch_remote_resource_async(
-        self, url: str, timeout: float
+        self,
+        url: str,
+        timeout: float,
+        request_headers: dict[str, str] | None = None,
     ) -> tuple[str, bytes]:
         """按流式下载远程资源，并在下载过程中限制资源大小。
 
         Args:
             url: 远程资源 URL。
             timeout: HTTP 请求超时时间，单位为秒。
+            request_headers: 浏览器内容协商头；仅包含安全白名单字段。
 
         Returns:
             二元组，包含响应 Content-Type 和资源字节内容。
@@ -668,7 +724,10 @@ class ImageRenderer:
             proxy_url=self._proxy_url,
         ) as client:
             # Check content-length header before downloading
-            async with client.stream("GET", url) as response:
+            stream_kwargs = (
+                {"headers": request_headers} if request_headers is not None else {}
+            )
+            async with client.stream("GET", url, **stream_kwargs) as response:
                 response.raise_for_status()
                 content_type = response.headers.get(
                     "content-type"
