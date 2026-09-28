@@ -2,20 +2,18 @@
 
 import logging
 import re
-import time
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import httpx
 
-from app.core.config import NewsSource
-from app.core.network import create_async_client, redact_url, safe_exception_for_log
+from app.core.config import InstancesConfig, NewsSource
+from app.core.network import create_async_client, safe_exception_for_log
 from app.services.calendar import today_business
 from app.services.daily_cache import DailyCache
-from app.services.news_instances import PublicInstanceProvider
+from app.services.instances import InstanceRouter
 
 # 60s 静态镜像（GitHub 原始源，硬编码，与 holiday 服务的镜像策略保持一致）。
 # 60s.viki.moe 的 /v2/60s 对数据中心/海外出口 IP 会返回 Cloudflare 403，
@@ -29,15 +27,6 @@ _NEWS_STATIC_CDN_URLS = (
     "https://raw.githubusercontent.com/vikiboss/60s-static-host/main/static/60s/{date}.json",
 )
 
-# 主源路径缺省值：用于拼接公共实例地址（实例与主源提供相同端点）
-_DEFAULT_NEWS_PATH = "/v2/60s"
-# 单个端点连续失败达到该次数后进入冷却
-_ENDPOINT_FAILURE_THRESHOLD = 2
-# 端点冷却时长（秒），冷却期内不再尝试
-_ENDPOINT_COOLDOWN_SEC = 600.0
-# 单次 fetch 最多尝试的端点数量（主源 + 公共实例），用于限制最坏耗时
-_MAX_ENDPOINT_ATTEMPTS = 4
-
 
 class DataFetcher:
     """Asynchronous data fetcher for news API."""
@@ -50,16 +39,18 @@ class DataFetcher:
         proxy_url: str | None = None,
         ghproxy_urls: list[str] | None = None,
         date_provider: Callable[[], date] | None = None,
+        instances: InstancesConfig | None = None,
     ) -> None:
         """初始化新闻数据获取器。
 
         Args:
-            source: 新闻源配置，包含请求地址、参数、超时时间与公共实例配置。
+            source: 新闻源配置，包含请求地址、参数与超时时间。
             logger: 日志记录器。
             http_client: 可选外部 HTTP 客户端；提供时复用该客户端发送请求。
             proxy_url: 可选全局代理 URL；仅在未注入 HTTP 客户端时生效。
             ghproxy_urls: GitHub raw 镜像代理前缀列表；主源不可用时用于构建静态镜像兜底地址。
             date_provider: 可选日期提供器，用于确定兜底镜像请求的日期；默认使用业务日期。
+            instances: 全局 60s 公共实例配置；主源不可用时按健康度切换。
         """
         self.source = source
         self.logger = logger
@@ -67,203 +58,12 @@ class DataFetcher:
         self._proxy_url = proxy_url
         self._ghproxy_urls = ghproxy_urls or []
         self._date_provider = date_provider
-        self._instance_urls = list(source.instance_urls or [])
-        self._instance_provider = (
-            PublicInstanceProvider(
-                logger=logger,
-                list_url=source.instance_list_url,
-                timeout_sec=float(source.timeout_sec),
-                proxy_url=proxy_url,
-            )
-            if source.instance_list_url
-            else None
+        self._router = InstanceRouter.from_config(
+            instances,
+            logger,
+            proxy_url=proxy_url,
+            timeout_sec=float(source.timeout_sec),
         )
-        self._endpoint_failures: dict[str, int] = {}
-        self._endpoint_cooldown_until: dict[str, float] = {}
-        self._preferred_endpoint: str | None = None
-
-    def _endpoint_path(self) -> str:
-        """返回公共实例需要拼接的端点路径。
-
-        Returns:
-            主源 URL 的路径部分；主源未带路径时使用 ``/v2/60s``。
-        """
-        path = urlparse(str(self.source.url)).path
-        return path if path and path != "/" else _DEFAULT_NEWS_PATH
-
-    def _build_instance_url(self, base: str) -> str:
-        """把实例基地址补全为与主源一致的完整端点地址。
-
-        Args:
-            base: 实例基地址，例如 ``https://60s.crystelf.top`` 或 ``https://api.cczo.cc/60s``。
-
-        Returns:
-            完整端点地址，例如 ``https://60s.crystelf.top/v2/60s``。
-        """
-        return f"{base.rstrip('/')}{self._endpoint_path()}"
-
-    async def _candidate_endpoints(self) -> list[str]:
-        """构建候选端点列表（主源优先，其次为配置与发现的公共实例）。
-
-        Returns:
-            去重后的候选端点地址列表。
-        """
-        endpoints = [str(self.source.url)]
-        bases = list(self._instance_urls)
-        if self._instance_provider is not None:
-            bases.extend(await self._instance_provider.get_instances())
-        for base in bases:
-            url = self._build_instance_url(base)
-            if url not in endpoints:
-                endpoints.append(url)
-        return endpoints
-
-    def _order_endpoints(self, endpoints: list[str]) -> list[str]:
-        """按健康状况排序候选端点。
-
-        优先使用最近成功的端点（粘性），冷却期内的端点降级到最后尝试，并限制尝试数量。
-
-        Args:
-            endpoints: 候选端点地址列表。
-
-        Returns:
-            本次请求实际尝试的端点顺序。
-        """
-        now = time.monotonic()
-        available = [
-            url
-            for url in endpoints
-            if self._endpoint_cooldown_until.get(url, 0.0) <= now
-        ]
-        cooling = [
-            url
-            for url in endpoints
-            if self._endpoint_cooldown_until.get(url, 0.0) > now
-        ]
-        if self._preferred_endpoint in available:
-            available.remove(self._preferred_endpoint)
-            available.insert(0, self._preferred_endpoint)
-        return (available + cooling)[:_MAX_ENDPOINT_ATTEMPTS]
-
-    def _mark_endpoint_success(self, url: str) -> None:
-        """记录端点请求成功，并将其设为优先端点。
-
-        Args:
-            url: 请求成功的端点地址。
-        """
-        self._endpoint_failures.pop(url, None)
-        self._endpoint_cooldown_until.pop(url, None)
-        self._preferred_endpoint = url
-
-    def _mark_endpoint_failure(self, url: str) -> None:
-        """记录端点请求失败，连续失败超阈值时进入冷却。
-
-        Args:
-            url: 请求失败的端点地址。
-        """
-        failures = self._endpoint_failures.get(url, 0) + 1
-        self._endpoint_failures[url] = failures
-        if failures >= _ENDPOINT_FAILURE_THRESHOLD:
-            self._endpoint_cooldown_until[url] = (
-                time.monotonic() + _ENDPOINT_COOLDOWN_SEC
-            )
-            self.logger.warning(
-                "News endpoint %s failed %d times, cooling down for %.0fs",
-                redact_url(url),
-                failures,
-                _ENDPOINT_COOLDOWN_SEC,
-            )
-        if self._preferred_endpoint == url:
-            self._preferred_endpoint = None
-
-    async def _request_endpoint(
-        self,
-        client: httpx.AsyncClient,
-        url: str,
-    ) -> dict[str, Any] | None:
-        """请求单个新闻端点。
-
-        Args:
-            client: 用于请求的 HTTP 客户端。
-            url: 端点地址。
-
-        Returns:
-            端点返回的 JSON 字典；请求失败或响应非对象时返回 None。
-        """
-        try:
-            response = await client.get(
-                url,
-                params=self.source.params,
-                timeout=httpx.Timeout(self.source.timeout_sec),
-            )
-            response.raise_for_status()
-            data = response.json()
-        except httpx.TimeoutException:
-            self.logger.warning("Timeout fetching news from %s", redact_url(url))
-            return None
-        except httpx.HTTPStatusError as e:
-            self.logger.warning(
-                "HTTP error fetching news from %s: status=%s",
-                redact_url(url),
-                e.response.status_code,
-            )
-            return None
-        except httpx.RequestError as e:
-            self.logger.warning(
-                "Request error fetching news from %s: %s",
-                redact_url(url),
-                safe_exception_for_log(e, url, self._proxy_url),
-            )
-            return None
-        except ValueError as e:
-            self.logger.warning(
-                "Invalid JSON from news endpoint %s: %s",
-                redact_url(url),
-                safe_exception_for_log(e, url, self._proxy_url),
-            )
-            return None
-        except Exception as e:
-            self.logger.error(
-                "Unexpected error fetching news from %s: %s",
-                redact_url(url),
-                safe_exception_for_log(e, url, self._proxy_url),
-            )
-            return None
-
-        if not isinstance(data, dict):
-            self.logger.warning(
-                "Unexpected non-object response from %s", redact_url(url)
-            )
-            return None
-
-        self.logger.info("Successfully fetched news from %s", redact_url(url))
-        return data
-
-    async def _fetch_from_endpoints(
-        self, client: httpx.AsyncClient
-    ) -> dict[str, Any] | None:
-        """按健康度顺序尝试主源与公共实例，返回首个成功结果。
-
-        Args:
-            client: 用于请求的 HTTP 客户端。
-
-        Returns:
-            首个成功端点的 JSON 字典；全部失败时返回 None。
-        """
-        endpoints = await self._candidate_endpoints()
-        ordered = self._order_endpoints(endpoints)
-        self.logger.debug(
-            "News endpoints to try: %d/%d", len(ordered), len(endpoints)
-        )
-
-        for url in ordered:
-            data = await self._request_endpoint(client, url)
-            if data is not None:
-                self._mark_endpoint_success(url)
-                return data
-            self._mark_endpoint_failure(url)
-
-        return None
 
     async def fetch(self) -> dict[str, Any] | None:
         """Fetch data from the news source.
@@ -297,9 +97,15 @@ class DataFetcher:
         Returns:
             首个成功来源的 JSON 字典；全部失败时返回 None。
         """
-        data = await self._fetch_from_endpoints(client)
-        if data is not None:
-            return data
+        result = await self._router.fetch_json(
+            client,
+            str(self.source.url),
+            parse=lambda data: data if isinstance(data, dict) else None,
+            params=self.source.params,
+            timeout=httpx.Timeout(self.source.timeout_sec),
+        )
+        if result is not None:
+            return result[1]
 
         self.logger.warning(
             f"All news endpoints unavailable for {self.source.type}, trying static mirror"
@@ -395,6 +201,7 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
         proxy_url: str | None = None,
         ghproxy_urls: list[str] | None = None,
         date_provider: Callable[[], date] | None = None,
+        instances: InstancesConfig | None = None,
     ) -> None:
         """初始化带日级缓存的新闻数据获取器。
 
@@ -406,6 +213,7 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
             proxy_url: 可选全局代理 URL；仅在未注入 HTTP 客户端时生效。
             ghproxy_urls: GitHub raw 镜像代理前缀列表；主源不可用时用于静态镜像兜底。
             date_provider: 可选日期提供器，用于测试或替换业务日期来源。
+            instances: 全局 60s 公共实例配置；主源不可用时按健康度切换。
 
         Side Effects:
             初始化 DailyCache 命名空间并创建内部 DataFetcher。
@@ -418,6 +226,7 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
             proxy_url=proxy_url,
             ghproxy_urls=ghproxy_urls,
             date_provider=date_provider,
+            instances=instances,
         )
 
     def _extract_news_date(self, data: dict[str, Any] | None) -> date | None:

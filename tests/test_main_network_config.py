@@ -71,6 +71,7 @@ def _fake_config(tmp_path):
             proxy_url="http://user:pass@proxy.example:8080",
             ghproxy_urls=["https://mirror.example/"],
         ),
+        instances=SimpleNamespace(list_url=None, urls=None),
         templates=SimpleNamespace(config=SimpleNamespace()),
         cache=SimpleNamespace(retain_days=30),
         scheduler=SimpleNamespace(mode="hourly", minute_of_hour=0, daily_times=[]),

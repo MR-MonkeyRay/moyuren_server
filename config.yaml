@@ -27,6 +27,14 @@ network:
   ghproxy_urls:
     - "https://ghfast.top/"
 
+# 60s 公共实例（news / fun_content / crazy_thursday / gold_price 共享）
+# 60s 主域名对数据中心/海外出口 IP 会返回 Cloudflare 403，主源不可用时自动切换到这些等价实例
+instances:
+  # 官方实例列表文档（Markdown），自动解析并带 6 小时缓存；null 表示关闭自动发现
+  list_url: "https://docs.60s-api.viki.moe/7306811m0.md"
+  # 额外/兜底的实例基地址（可选，优先于自动发现结果；端点路径沿用各数据源的 url）
+  urls: []
+
 templates:
   default: "moyuren"
   dir: "templates"
@@ -47,13 +55,8 @@ data_sources:
     timeout_sec: 10
     params:
       "force-update": "false"
-    # 主接口不可用时，依次尝试：公共实例（下方列表）→ 60s 静态镜像
+    # 主接口不可用时依次回退：全局 instances 公共实例 → 60s 静态镜像
     # （cdn.jsdmirror.com / 60s-static.viki.moe / GitHub raw，并复用 network.ghproxy_urls）
-    # 公共实例列表文档地址（Markdown），自动解析并带 6 小时缓存；置空则关闭自动发现
-    instance_list_url: "https://docs.60s-api.viki.moe/7306811m0.md"
-    # 额外/兜底的实例基地址（可选，优先于自动发现结果；端点路径沿用上方 url）
-    # instance_urls:
-    #   - "https://60s.crystelf.top"
 
   - type: "fun_content"
     timeout_sec: 5

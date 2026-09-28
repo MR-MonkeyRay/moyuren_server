@@ -2,13 +2,15 @@
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import httpx
 
-from app.core.config import CrazyThursdaySource
+from app.core.config import CrazyThursdaySource, InstancesConfig
 from app.core.network import create_async_client, safe_exception_for_log
 from app.services.calendar import today_business
 from app.services.daily_cache import DailyCache
+from app.services.instances import InstanceRouter
 
 logger = logging.getLogger(__name__)
 
@@ -16,18 +18,32 @@ logger = logging.getLogger(__name__)
 class KfcService:
     """Service for fetching KFC Crazy Thursday content."""
 
-    def __init__(self, config: CrazyThursdaySource, proxy_url: str | None = None):
+    def __init__(
+        self,
+        config: CrazyThursdaySource,
+        proxy_url: str | None = None,
+        instances: InstancesConfig | None = None,
+    ):
         """Initialize the service with configuration.
 
         Args:
             config: Crazy Thursday configuration.
             proxy_url: Optional outbound proxy URL.
+            instances: Global 60s public instance configuration.
         """
         self.config = config
         self._proxy_url = proxy_url
+        self._router = InstanceRouter.from_config(
+            instances,
+            logger,
+            proxy_url=proxy_url,
+            timeout_sec=float(config.timeout_sec),
+        )
 
     async def fetch_kfc_copy(self) -> str | None:
         """Fetch KFC crazy thursday copy.
+
+        主源不可用时按健康度切换到 60s 公共实例。
 
         Returns:
             The content string if successful, None otherwise.
@@ -35,46 +51,52 @@ class KfcService:
         if not self.config.enabled:
             return None
 
-        async with create_async_client(
-            timeout=self.config.timeout_sec, proxy_url=self._proxy_url
-        ) as client:
-            try:
-                resp = await client.get(self.config.url)
-                resp.raise_for_status()
-                data = resp.json()
-
-                # Viki API structure handling
-                # Expected format: {"code": 200, "data": {"kfc": "..."}}
-                content = None
-                if isinstance(data, dict):
-                    data_field = data.get("data")
-                    if isinstance(data_field, dict):
-                        content = data_field.get("kfc")
-                    elif isinstance(data_field, str):
-                        content = data_field
-                    else:
-                        content = data.get("text")
-                elif isinstance(data, str):
-                    content = data
-
-                if content:
-                    # Handle escaped newlines in the text
-                    content = str(content).strip().replace("\\n", "\n")
-                    return content
-
-                logger.warning("Empty content received from KFC endpoint")
-                return None
-
-            except httpx.TimeoutException:
-                logger.warning("Timeout fetching KFC content")
-            except httpx.HTTPStatusError as e:
-                logger.warning(f"HTTP {e.response.status_code} from KFC endpoint")
-            except Exception as e:
-                logger.warning(
-                    f"Failed to fetch KFC content: {safe_exception_for_log(e, self.config.url, self._proxy_url)}"
+        try:
+            async with create_async_client(
+                timeout=self.config.timeout_sec, proxy_url=self._proxy_url
+            ) as client:
+                result = await self._router.fetch_json(
+                    client,
+                    self.config.url,
+                    parse=self._parse_kfc_response,
+                    timeout=httpx.Timeout(self.config.timeout_sec),
                 )
+        except httpx.RequestError as e:
+            logger.warning(
+                f"Failed to fetch KFC content: {safe_exception_for_log(e, self.config.url, self._proxy_url)}"
+            )
+            return None
 
-        return None
+        if result is None:
+            logger.warning("Empty content received from KFC endpoint")
+            return None
+        return result[1]
+
+    def _parse_kfc_response(self, data: Any) -> str | None:
+        """从 60s KFC 接口响应中提取文案.
+
+        Args:
+            data: 接口返回的 JSON 数据, 期望格式 ``{"code": 200, "data": {"kfc": "..."}}``.
+
+        Returns:
+            去空白并还原换行后的文案; 缺失或为空时返回 None.
+        """
+        content = None
+        if isinstance(data, dict):
+            data_field = data.get("data")
+            if isinstance(data_field, dict):
+                content = data_field.get("kfc")
+            elif isinstance(data_field, str):
+                content = data_field
+            else:
+                content = data.get("text")
+        elif isinstance(data, str):
+            content = data
+
+        if not content:
+            return None
+        # Handle escaped newlines in the text
+        return str(content).strip().replace("\\n", "\n")
 
 
 class CachedKfcService(DailyCache[str]):
@@ -90,6 +112,7 @@ class CachedKfcService(DailyCache[str]):
         logger: logging.Logger,
         cache_dir: Path,
         proxy_url: str | None = None,
+        instances: InstancesConfig | None = None,
     ) -> None:
         """初始化带缓存的 KFC 服务。
 
@@ -98,11 +121,12 @@ class CachedKfcService(DailyCache[str]):
             logger: 日志记录器
             cache_dir: 缓存目录路径
             proxy_url: 可选全局代理 URL
+            instances: 全局 60s 公共实例配置；主源不可用时按健康度切换
         """
         super().__init__("kfc", cache_dir, logger)
         self.config = config
         self._proxy_url = proxy_url
-        self._service = KfcService(config, proxy_url=proxy_url)
+        self._service = KfcService(config, proxy_url=proxy_url, instances=instances)
 
     async def fetch_fresh(self) -> str | None:
         """从网络获取新鲜数据（仅周四获取）。

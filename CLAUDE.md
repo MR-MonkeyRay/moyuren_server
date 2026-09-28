@@ -18,12 +18,13 @@
 | 日级缓存 | `app/services/daily_cache.py` | 日级缓存抽象基类（自动过期、降级） |
 | 缓存清理 | `app/services/cache.py` | 缓存清理服务 |
 | 获取 | `app/services/fetcher.py` | 异步并行 HTTP 请求（主源 + 公共实例智能切换 + 静态镜像兜底） |
-| 实例发现 | `app/services/news_instances.py` | 解析 60s 公共实例列表文档，带 TTL 缓存 |
+| 实例路由 | `app/services/instances.py` | 解析 60s 公共实例列表文档（带 TTL 缓存）并在主源/实例间智能切换 |
+| 实例配置 | `config.yaml` `instances.*` | 全局 60s 公共实例清单（news/fun_content/crazy_thursday/gold_price 共享） |
 | 日历 | `app/services/calendar.py` | 农历、节气、时区管理（CalendarService） |
 | 节假日 | `app/services/holiday.py` | 中国法定节假日数据获取与处理 |
-| 趣味内容 | `app/services/fun_content.py` | 随机获取冷笑话/一言/段子 |
-| KFC | `app/services/kfc.py` | 疯狂星期四文案（周四刷新） |
-| 金价 | `app/services/gold_price.py` | 实时金价数据获取与缓存 |
+| 趣味内容 | `app/services/fun_content.py` | 随机获取冷笑话/一言/段子（主源不可用时切换公共实例） |
+| KFC | `app/services/kfc.py` | 疯狂星期四文案（周四刷新，主源不可用时切换公共实例） |
+| 金价 | `app/services/gold_price.py` | 实时金价数据获取与缓存（主源不可用时切换公共实例） |
 | 股票指数 | `app/services/stock_index.py` | 大盘指数实时行情（StockIndexService） |
 | 每日英语 | `app/services/daily_english.py` | 每日英语单词服务（ECDICT + 随机 API） |
 | 计算 | `app/services/compute.py` | 原始数据 → 模板上下文 |
@@ -67,6 +68,7 @@ Docker：`docker-compose up -d`
 - `logging.*`：日志配置
 - `network.ghproxy_urls`：GitHub 代理 URL 列表（加速节假日数据/ECDICT 下载）
 - `data_sources`：数据源配置统一在此列表中管理（news/fun_content/crazy_thursday/holiday/stock_index/gold_price/daily_english）
+- `instances.*`：全局 60s 公共实例配置（`list_url` 官方实例列表文档、`urls` 额外实例），被 news/fun_content/crazy_thursday/gold_price 共享
 
 ## 开发指引
 

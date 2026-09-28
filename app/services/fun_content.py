@@ -8,10 +8,11 @@ from typing import Any
 
 import httpx
 
-from app.core.config import FunContentEndpoint, FunContentSource
+from app.core.config import FunContentEndpoint, FunContentSource, InstancesConfig
 from app.core.network import create_async_client, safe_exception_for_log
 from app.services.calendar import today_business
 from app.services.daily_cache import DailyCache
+from app.services.instances import InstanceRouter
 
 logger = logging.getLogger(__name__)
 
@@ -24,15 +25,27 @@ class FunContentService:
         "content": "工作再忙，也要记得摸鱼。适当休息，效率更高！",
     }
 
-    def __init__(self, config: FunContentSource, proxy_url: str | None = None):
+    def __init__(
+        self,
+        config: FunContentSource,
+        proxy_url: str | None = None,
+        instances: InstancesConfig | None = None,
+    ):
         """Initialize the service with configuration.
 
         Args:
             config: Fun content configuration.
             proxy_url: Optional outbound proxy URL.
+            instances: Global 60s public instance configuration.
         """
         self.config = config
         self._proxy_url = proxy_url
+        self._router = InstanceRouter.from_config(
+            instances,
+            logger,
+            proxy_url=proxy_url,
+            timeout_sec=float(config.timeout_sec),
+        )
 
     async def fetch_content(self, target_date: date) -> dict[str, str]:
         """Fetch fun content with date-based random selection.
@@ -80,6 +93,8 @@ class FunContentService:
     ) -> dict[str, str] | None:
         """Fetch content from a single endpoint.
 
+        主源不可用时按健康度切换到 60s 公共实例的同一路径端点。
+
         Args:
             client: The HTTP client to use for requests.
             endpoint: The endpoint configuration.
@@ -87,27 +102,30 @@ class FunContentService:
         Returns:
             Dictionary with 'title' and 'content' if successful, None otherwise.
         """
-        try:
-            resp = await client.get(endpoint.url)
-            resp.raise_for_status()
-            data = resp.json()
+        result = await self._router.fetch_json(
+            client,
+            endpoint.url,
+            parse=lambda data: self._extract_content(data, endpoint),
+            timeout=httpx.Timeout(self.config.timeout_sec),
+        )
+        if result is None:
+            return None
+        return {"title": endpoint.display_title, "content": result[1]}
 
-            content = self._extract_by_path(data, endpoint.data_path)
-            if content and isinstance(content, str) and content.strip():
-                return {"title": endpoint.display_title, "content": content.strip()}
-            logger.debug(f"No valid content from {endpoint.name}")
-        except httpx.TimeoutException:
-            logger.warning(f"Timeout fetching {endpoint.name}")
-        except httpx.HTTPStatusError as e:
-            logger.warning(f"HTTP {e.response.status_code} from {endpoint.name}")
-        except httpx.RequestError as e:
-            logger.warning(
-                f"Request error fetching {endpoint.name}: {safe_exception_for_log(e, endpoint.url, self._proxy_url)}"
-            )
-        except (ValueError, KeyError) as e:
-            logger.warning(
-                f"Failed to parse response from {endpoint.name}: {safe_exception_for_log(e, endpoint.url)}"
-            )
+    def _extract_content(self, data: Any, endpoint: FunContentEndpoint) -> str | None:
+        """从端点响应中提取可用文案.
+
+        Args:
+            data: 端点返回的 JSON 数据.
+            endpoint: 端点配置, 提供 data_path.
+
+        Returns:
+            去空白后的文案字符串; 缺失或为空时返回 None.
+        """
+        content = self._extract_by_path(data, endpoint.data_path)
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+        logger.debug(f"No valid content from {endpoint.name}")
         return None
 
     def _extract_by_path(self, data: Any, path: str) -> Any:
@@ -141,6 +159,7 @@ class CachedFunContentService(DailyCache[dict[str, str]]):
         logger: logging.Logger,
         cache_dir: Path,
         proxy_url: str | None = None,
+        instances: InstancesConfig | None = None,
     ) -> None:
         """初始化带缓存的趣味内容服务。
 
@@ -149,10 +168,13 @@ class CachedFunContentService(DailyCache[dict[str, str]]):
             logger: 日志记录器
             cache_dir: 缓存目录路径
             proxy_url: 可选全局代理 URL
+            instances: 全局 60s 公共实例配置；主源不可用时按健康度切换
         """
         super().__init__("fun_content", cache_dir, logger)
         self._proxy_url = proxy_url
-        self._service = FunContentService(config, proxy_url=proxy_url)
+        self._service = FunContentService(
+            config, proxy_url=proxy_url, instances=instances
+        )
 
     async def fetch_fresh(self) -> dict[str, str] | None:
         """从网络获取新鲜数据。

@@ -10,7 +10,7 @@ import pytest
 import respx
 from httpx import Response
 
-from app.core.config import CrazyThursdaySource
+from app.core.config import CrazyThursdaySource, InstancesConfig
 from app.services.kfc import CachedKfcService, KfcService
 
 
@@ -280,3 +280,52 @@ class TestCachedKfcService:
                 mock_fetch.side_effect = Exception("Network error")
                 result = await service.fetch_fresh()
                 assert result is None
+
+
+class TestKfcInstanceSwitching:
+    """Tests for public 60s instance switching in KfcService."""
+
+    @pytest.fixture
+    def config(self) -> CrazyThursdaySource:
+        """Create an enabled KFC configuration with a public instance fallback."""
+        return CrazyThursdaySource(
+            enabled=True,
+            url="https://api.example.com/v2/kfc",
+            timeout_sec=5,
+        )
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_switches_to_instance_when_primary_blocked(
+        self, config: CrazyThursdaySource
+    ) -> None:
+        """Test a blocked primary endpoint falls through to the public instance."""
+        service = KfcService(
+            config=config, instances=InstancesConfig(urls=["https://inst.example.com"])
+        )
+        respx.get("https://api.example.com/v2/kfc").mock(return_value=Response(403))
+        respx.get("https://inst.example.com/v2/kfc").mock(
+            return_value=Response(200, json={"code": 200, "data": {"kfc": "V我50"}})
+        )
+
+        result = await service.fetch_kfc_copy()
+
+        assert result == "V我50"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_returns_none_when_primary_and_instance_fail(
+        self, config: CrazyThursdaySource
+    ) -> None:
+        """Test None is returned when both the primary and the instance are unusable."""
+        service = KfcService(
+            config=config, instances=InstancesConfig(urls=["https://inst.example.com"])
+        )
+        respx.get("https://api.example.com/v2/kfc").mock(return_value=Response(403))
+        respx.get("https://inst.example.com/v2/kfc").mock(
+            return_value=Response(200, json={"code": 200, "data": {}})
+        )
+
+        result = await service.fetch_kfc_copy()
+
+        assert result is None

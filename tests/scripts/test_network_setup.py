@@ -69,6 +69,7 @@ def _fake_config(tmp_path):
             proxy_url=proxy_url,
             ghproxy_urls=["https://mirror.example/"],
         ),
+        instances=SimpleNamespace(list_url=None, urls=None),
         templates=SimpleNamespace(config=SimpleNamespace()),
         get_source=get_source,
         get_templates_config=lambda: SimpleNamespace(
