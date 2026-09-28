@@ -479,6 +479,7 @@ async def main():
             source=news_source,
             logger=logger,
             proxy_url=proxy_url,
+            ghproxy_urls=config.network.ghproxy_urls,
         )
         holiday_cache_dir = cache_dir / "holidays"
         holiday_source = config.get_source(HolidaySource)

@@ -24,6 +24,13 @@ https://api.monkeyray.net/api/v1/moyuren
   - 自动清理过期图片文件
 - 60 秒读懂世界新闻
   - 数据源：[60s-api](https://60s.viki.moe)
+  - 主接口不可用（如 Cloudflare 对数据中心/海外出口 IP 返回 403）时，自动切换到
+    [公共实例](https://docs.60s-api.viki.moe/7306811m0)：实例列表由 `data_sources[news].instance_list_url`
+    指向的文档页自动解析（6 小时缓存），并按健康度智能切换——优先复用上次成功的实例（粘性），
+    连续失败 2 次的实例降级到最后尝试（10 分钟冷却），单次最多尝试 4 个端点
+  - 所有实例均失败时，继续回退到 60s 静态镜像
+    （`cdn.jsdmirror.com` → `60s-static.viki.moe` → GitHub raw → `network.ghproxy_urls` 代理前缀），
+    避免新闻长期停留在旧日期
 - 农历信息与节气（干支年、生肖、二十四节气）
   - 数据源：[tyme4py](https://github.com/6tail/tyme4py)
 - 节日倒计时整合（法定假日 + 农历/公历节日）
@@ -325,9 +332,11 @@ sudo chown -R 1000:1000 cache logs
 | `timezone.business` | - | 业务时区（节假日/节气/周末判断） |
 | `timezone.display` | - | 显示时区（图片时间戳、API 响应时间；支持 `local`） |
 | `network.proxy_url` | - | 全局出站代理 URL，默认空；支持 `http://`、`socks5://`，可包含代理账号密码；同时用于应用和脚本的 HTTPX 请求及 Playwright 浏览器启动 |
-| `network.ghproxy_urls` | - | GitHub 代理 URL 列表（用于加速节假日数据和 ECDICT 下载） |
+| `network.ghproxy_urls` | - | GitHub 代理 URL 列表（用于加速节假日数据、ECDICT 下载和新闻静态镜像回退） |
 | `data_sources` | - | 外部数据源配置列表（新闻、趣味内容等） |
 | `data_sources[].type` | - | 数据源类型（news/fun_content/crazy_thursday/holiday/stock_index/gold_price/daily_english） |
+| `data_sources[news].instance_list_url` | - | 60s 公共实例列表文档地址（Markdown，默认官方文档页）；留空关闭自动发现 |
+| `data_sources[news].instance_urls` | - | 额外/兜底的实例基地址列表（可选，优先于自动发现结果；端点路径沿用 `url`） |
 | `templates.default` | - | 默认模板名 |
 | `templates.dir` | - | 模板目录（默认 `templates`，自动扫描 HTML 文件） |
 
@@ -398,6 +407,10 @@ data_sources:
     timeout_sec: 10
     params:
       "force-update": "false"
+    # 主接口失败时按序回退：公共实例（自动发现）→ 60s 静态镜像
+    instance_list_url: "https://docs.60s-api.viki.moe/7306811m0.md"
+    # instance_urls:              # 可选：额外/兜底实例基地址
+    #   - "https://60s.crystelf.top"
 
   - type: "fun_content"
     timeout_sec: 5
@@ -469,6 +482,7 @@ moyuren_server/
 │   ├── services/         # 业务逻辑
 │   │   ├── daily_cache.py # 日级缓存抽象基类
 │   │   ├── fetcher.py    # 数据获取
+│   │   ├── news_instances.py # 60s 公共实例发现与解析
 │   │   ├── holiday.py    # 节假日服务
 │   │   ├── fun_content.py # 趣味内容服务
 │   │   ├── kfc.py        # 疯狂星期四服务

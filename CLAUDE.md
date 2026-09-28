@@ -17,7 +17,8 @@
 | 服务容器 | `app/core/services.py` | AppServices 服务容器 |
 | 日级缓存 | `app/services/daily_cache.py` | 日级缓存抽象基类（自动过期、降级） |
 | 缓存清理 | `app/services/cache.py` | 缓存清理服务 |
-| 获取 | `app/services/fetcher.py` | 异步并行 HTTP 请求 |
+| 获取 | `app/services/fetcher.py` | 异步并行 HTTP 请求（主源 + 公共实例智能切换 + 静态镜像兜底） |
+| 实例发现 | `app/services/news_instances.py` | 解析 60s 公共实例列表文档，带 TTL 缓存 |
 | 日历 | `app/services/calendar.py` | 农历、节气、时区管理（CalendarService） |
 | 节假日 | `app/services/holiday.py` | 中国法定节假日数据获取与处理 |
 | 趣味内容 | `app/services/fun_content.py` | 随机获取冷笑话/一言/段子 |
