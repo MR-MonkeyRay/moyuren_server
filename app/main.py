@@ -118,6 +118,7 @@ async def lifespan(app: FastAPI):
             cache_dir=daily_cache_dir,
             http_client=http_client,
             proxy_url=config.network.proxy_url,
+            ghproxy_urls=config.network.ghproxy_urls,
         )
     else:
         data_fetcher = None
