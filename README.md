@@ -22,13 +22,14 @@ https://api.monkeyray.net/api/v1/moyuren
   - 混合更新策略：缓存过期时后台异步刷新（快速启动），无缓存时同步生成
   - 降级策略：网络失败时返回过期缓存
   - 自动清理过期图片文件
+- 60s-api 数据源公共实例智能切换（新闻、趣味内容、疯狂星期四、金价）
+  - 60s 主域名对数据中心/海外出口 IP 会返回 Cloudflare 403，此时自动切换到
+    [公共实例](https://docs.60s-api.viki.moe/7306811m0)：实例清单由全局配置
+    `instances.list_url` 指向的文档页自动解析（6 小时缓存），四个数据源共享，并按健康度智能切换——
+    优先复用上次成功的实例（粘性），连续失败 2 次的实例降级到最后尝试（10 分钟冷却），单次最多尝试 4 个端点
 - 60 秒读懂世界新闻
   - 数据源：[60s-api](https://60s.viki.moe)
-  - 主接口不可用（如 Cloudflare 对数据中心/海外出口 IP 返回 403）时，自动切换到
-    [公共实例](https://docs.60s-api.viki.moe/7306811m0)：实例列表由 `data_sources[news].instance_list_url`
-    指向的文档页自动解析（6 小时缓存），并按健康度智能切换——优先复用上次成功的实例（粘性），
-    连续失败 2 次的实例降级到最后尝试（10 分钟冷却），单次最多尝试 4 个端点
-  - 所有实例均失败时，继续回退到 60s 静态镜像
+  - 主源与公共实例均不可用时，继续回退到 60s 静态镜像
     （`cdn.jsdmirror.com` → `60s-static.viki.moe` → GitHub raw → `network.ghproxy_urls` 代理前缀），
     避免新闻长期停留在旧日期
 - 农历信息与节气（干支年、生肖、二十四节气）
@@ -36,14 +37,14 @@ https://api.monkeyray.net/api/v1/moyuren
 - 节日倒计时整合（法定假日 + 农历/公历节日）
   - 数据源：[holiday-cn](https://github.com/NateScarlet/holiday-cn)
 - 趣味内容随机展示（冷笑话、一言、段子、摸鱼语录）
-  - 数据源：[60s-api](https://60s.viki.moe)
+  - 数据源：[60s-api](https://60s.viki.moe)，支持公共实例智能切换
 - 疯狂星期四：每周四自动展示 KFC 文案
-  - 数据源：[60s-api](https://60s.viki.moe)
+  - 数据源：[60s-api](https://60s.viki.moe)，支持公共实例智能切换
 - 大盘指数实时行情（上证、深证、创业板、恒生、道琼斯）
   - 数据源：[东方财富](https://www.eastmoney.com)
   - 交易日历：[exchange_calendars](https://github.com/gerrymanoim/exchange_calendars)
 - 实时金价查询（人民币/美元）
-  - 数据源：[60s-api](https://60s.viki.moe)
+  - 数据源：[60s-api](https://60s.viki.moe)，支持公共实例智能切换
 - 每日英语单词（ECDICT 词典 + 随机 API）
   - 数据源：[ECDICT](https://github.com/skywind3000/ECDICT)、[60s-api](https://60s.viki.moe)
 - 周/月/年进度百分比计算
@@ -335,8 +336,8 @@ sudo chown -R 1000:1000 cache logs
 | `network.ghproxy_urls` | - | GitHub 代理 URL 列表（用于加速节假日数据、ECDICT 下载和新闻静态镜像回退） |
 | `data_sources` | - | 外部数据源配置列表（新闻、趣味内容等） |
 | `data_sources[].type` | - | 数据源类型（news/fun_content/crazy_thursday/holiday/stock_index/gold_price/daily_english） |
-| `data_sources[news].instance_list_url` | - | 60s 公共实例列表文档地址（Markdown，默认官方文档页）；留空关闭自动发现 |
-| `data_sources[news].instance_urls` | - | 额外/兜底的实例基地址列表（可选，优先于自动发现结果；端点路径沿用 `url`） |
+| `instances.list_url` | - | 60s 公共实例列表文档地址（Markdown），由 news/fun_content/crazy_thursday/gold_price 共享；`null` 关闭自动发现 |
+| `instances.urls` | - | 额外/兜底的实例基地址列表（可选，优先于自动发现结果；端点路径沿用各数据源的 `url`） |
 | `templates.default` | - | 默认模板名 |
 | `templates.dir` | - | 模板目录（默认 `templates`，自动扫描 HTML 文件） |
 
@@ -401,16 +402,18 @@ scheduler:
 #     - "06:00"   # hourly 模式下会被忽略，仅用于回退 daily 时复用
 #   minute_of_hour: 0
 
+# 60s 公共实例（news / fun_content / crazy_thursday / gold_price 共享）
+instances:
+  list_url: "https://docs.60s-api.viki.moe/7306811m0.md"
+  urls: []
+
 data_sources:
   - type: "news"
     url: "https://60s.viki.moe/v2/60s"
     timeout_sec: 10
     params:
       "force-update": "false"
-    # 主接口失败时按序回退：公共实例（自动发现）→ 60s 静态镜像
-    instance_list_url: "https://docs.60s-api.viki.moe/7306811m0.md"
-    # instance_urls:              # 可选：额外/兜底实例基地址
-    #   - "https://60s.crystelf.top"
+    # 主接口失败时按序回退：公共实例（全局 instances 配置）→ 60s 静态镜像
 
   - type: "fun_content"
     timeout_sec: 5
@@ -482,7 +485,7 @@ moyuren_server/
 │   ├── services/         # 业务逻辑
 │   │   ├── daily_cache.py # 日级缓存抽象基类
 │   │   ├── fetcher.py    # 数据获取
-│   │   ├── news_instances.py # 60s 公共实例发现与解析
+│   │   ├── instances.py  # 60s 公共实例发现与智能切换
 │   │   ├── holiday.py    # 节假日服务
 │   │   ├── fun_content.py # 趣味内容服务
 │   │   ├── kfc.py        # 疯狂星期四服务

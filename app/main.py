@@ -119,6 +119,7 @@ async def lifespan(app: FastAPI):
             http_client=http_client,
             proxy_url=config.network.proxy_url,
             ghproxy_urls=config.network.ghproxy_urls,
+            instances=config.instances,
         )
     else:
         data_fetcher = None
@@ -148,6 +149,7 @@ async def lifespan(app: FastAPI):
             logger=logger,
             cache_dir=daily_cache_dir,
             proxy_url=config.network.proxy_url,
+            instances=config.instances,
         )
     else:
         fun_content_service = None
@@ -161,6 +163,7 @@ async def lifespan(app: FastAPI):
             logger=logger,
             cache_dir=daily_cache_dir,
             proxy_url=config.network.proxy_url,
+            instances=config.instances,
         )
 
     # Initialize stock index service if config exists
@@ -181,6 +184,7 @@ async def lifespan(app: FastAPI):
             cache_dir=daily_cache_dir,
             http_client=http_client,
             proxy_url=config.network.proxy_url,
+            instances=config.instances,
         )
 
     # Initialize daily English service if config exists

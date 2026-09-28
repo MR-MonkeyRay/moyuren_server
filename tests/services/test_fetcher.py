@@ -9,7 +9,7 @@ import pytest
 import respx
 from httpx import Response
 
-from app.core.config import NewsSource
+from app.core.config import InstancesConfig, NewsSource
 from app.services.calendar import today_business
 from app.services.fetcher import (
     _NEWS_STATIC_CDN_URLS,
@@ -531,38 +531,16 @@ class TestDataFetcherInstanceSwitching:
 
     @pytest.fixture
     def source(self) -> NewsSource:
-        return NewsSource(
-            url="https://api.example.com/v2/60s",
-            timeout_sec=5,
-            instance_urls=["https://inst1.example.com/", "https://inst2.example.com/prefix"],
-        )
+        return NewsSource(url="https://api.example.com/v2/60s", timeout_sec=5)
 
     @pytest.fixture
     def fetcher(self, source: NewsSource, logger: logging.Logger) -> DataFetcher:
-        return DataFetcher(source=source, logger=logger)
-
-    def test_instance_url_reuses_primary_path(self, fetcher: DataFetcher) -> None:
-        """Instance base URLs are completed with the primary source path."""
-        assert (
-            fetcher._build_instance_url("https://inst1.example.com")
-            == "https://inst1.example.com/v2/60s"
-        )
-        assert (
-            fetcher._build_instance_url("https://inst2.example.com/prefix")
-            == "https://inst2.example.com/prefix/v2/60s"
-        )
-
-    def test_instance_url_defaults_path_without_primary_path(
-        self, logger: logging.Logger
-    ) -> None:
-        """A primary URL without a path falls back to the default 60s path."""
-        fetcher = DataFetcher(
-            source=NewsSource(url="https://api.example.com"), logger=logger
-        )
-
-        assert (
-            fetcher._build_instance_url("https://inst.example.com")
-            == "https://inst.example.com/v2/60s"
+        return DataFetcher(
+            source=source,
+            logger=logger,
+            instances=InstancesConfig(
+                urls=["https://inst1.example.com/", "https://inst2.example.com/prefix"]
+            ),
         )
 
     @respx.mock
@@ -601,50 +579,18 @@ class TestDataFetcherInstanceSwitching:
         assert primary_route.call_count == 1
         assert respx.calls.call_count == 3
 
-    def test_order_endpoints_prefers_sticky_then_deprioritizes_cooldown(
-        self, fetcher: DataFetcher
-    ) -> None:
-        """Sticky endpoint comes first; cooled-down endpoints go last."""
-        endpoints = ["https://a/v2/60s", "https://b/v2/60s", "https://c/v2/60s"]
-        fetcher._preferred_endpoint = "https://c/v2/60s"
-        for _ in range(2):
-            fetcher._mark_endpoint_failure("https://a/v2/60s")
-
-        assert fetcher._order_endpoints(endpoints) == [
-            "https://c/v2/60s",
-            "https://b/v2/60s",
-            "https://a/v2/60s",
-        ]
-
-    def test_order_endpoints_keeps_cooled_endpoints_as_last_resort(
-        self, fetcher: DataFetcher
-    ) -> None:
-        """Cooled-down endpoints are still attempted when nothing else is available."""
-        endpoints = ["https://a/v2/60s", "https://b/v2/60s"]
-        for url in endpoints:
-            for _ in range(2):
-                fetcher._mark_endpoint_failure(url)
-
-        assert fetcher._order_endpoints(endpoints) == endpoints
-
-    def test_order_endpoints_limits_attempts(self, fetcher: DataFetcher) -> None:
-        """At most four endpoints are attempted per fetch."""
-        endpoints = [f"https://inst{i}.example.com/v2/60s" for i in range(8)]
-
-        assert fetcher._order_endpoints(endpoints) == endpoints[:4]
-
     @respx.mock
     @pytest.mark.asyncio
     async def test_discovered_instances_are_used(
         self, logger: logging.Logger
     ) -> None:
         """Instances discovered from the docs page are used as fallbacks."""
-        source = NewsSource(
-            url="https://api.example.com/v2/60s",
-            timeout_sec=5,
-            instance_list_url=self.INSTANCE_LIST_URL,
+        source = NewsSource(url="https://api.example.com/v2/60s", timeout_sec=5)
+        fetcher = DataFetcher(
+            source=source,
+            logger=logger,
+            instances=InstancesConfig(list_url=self.INSTANCE_LIST_URL),
         )
-        fetcher = DataFetcher(source=source, logger=logger)
         payload = {"code": 200, "data": {"date": "2026-02-23", "news": ["发现新闻"]}}
         respx.get(self.INSTANCE_LIST_URL).mock(
             return_value=Response(200, text=self._instance_markdown("60s.inst.example.com"))
@@ -657,22 +603,6 @@ class TestDataFetcherInstanceSwitching:
         result = await fetcher.fetch()
 
         assert result == payload
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_instance_duplicating_primary_is_ignored(
-        self, logger: logging.Logger
-    ) -> None:
-        """An instance resolving to the primary URL is not added twice."""
-        source = NewsSource(
-            url="https://api.example.com/v2/60s",
-            instance_urls=["https://api.example.com"],
-        )
-        fetcher = DataFetcher(source=source, logger=logger)
-
-        assert await fetcher._candidate_endpoints() == [
-            "https://api.example.com/v2/60s"
-        ]
 
     @respx.mock
     @pytest.mark.asyncio

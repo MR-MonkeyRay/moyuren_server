@@ -480,6 +480,7 @@ async def main():
             logger=logger,
             proxy_url=proxy_url,
             ghproxy_urls=config.network.ghproxy_urls,
+            instances=config.instances,
         )
         holiday_cache_dir = cache_dir / "holidays"
         holiday_source = config.get_source(HolidaySource)
@@ -491,7 +492,9 @@ async def main():
             proxy_url=proxy_url,
         )
         fun_content_source = config.get_source(FunContentSource)
-        fun_content_service = FunContentService(fun_content_source, proxy_url=proxy_url)
+        fun_content_service = FunContentService(
+            fun_content_source, proxy_url=proxy_url, instances=config.instances
+        )
         data_computer = DataComputer()
 
         # Initialize stock index service
@@ -507,7 +510,7 @@ async def main():
         gold_price_source = config.get_source(GoldPriceSource)
         if gold_price_source:
             gold_price_service = GoldPriceService(
-                gold_price_source, proxy_url=proxy_url
+                gold_price_source, proxy_url=proxy_url, instances=config.instances
             )
 
         # Initialize daily english service if config exists

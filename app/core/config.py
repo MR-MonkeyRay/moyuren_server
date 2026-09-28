@@ -199,6 +199,36 @@ class NetworkConfig(BaseModel):
         return normalize_proxy_url(value)
 
 
+class InstancesConfig(BaseModel):
+    """60s 公共实例的全局配置.
+
+    60s 主域名（60s.viki.moe）对数据中心/海外出口 IP 会返回 Cloudflare 403，
+    新闻、趣味内容、疯狂星期四、金价等数据源在主源不可用时切换到公共实例。
+    实例清单对所有 60s 数据源共享，因此在此统一配置。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    list_url: str | None = None
+    urls: list[str] | None = None
+
+    @field_validator("urls")
+    @classmethod
+    def validate_urls(cls, value: list[str] | None) -> list[str] | None:
+        """归一化实例基地址列表.
+
+        Args:
+            value: 实例基地址列表，例如 ``["https://60s.crystelf.top"]``.
+
+        Returns:
+            去掉末尾斜杠与空项后的列表；未配置时返回 None.
+        """
+        if value is None:
+            return None
+        normalized = [item.strip().rstrip("/") for item in value if item.strip()]
+        return normalized or None
+
+
 class DataSourceBase(BaseModel):
     """Base model for all data sources."""
 
@@ -233,24 +263,6 @@ class NewsSource(DataSourceBase):
     type: Literal["news"] = "news"
     url: str
     params: dict[str, Any] | None = None
-    instance_urls: list[str] | None = None
-    instance_list_url: str | None = None
-
-    @field_validator("instance_urls")
-    @classmethod
-    def validate_instance_urls(cls, value: list[str] | None) -> list[str] | None:
-        """归一化公共实例基地址列表.
-
-        Args:
-            value: 实例基地址列表，例如 ``["https://60s.crystelf.top"]``.
-
-        Returns:
-            去掉末尾斜杠与空项后的列表；未配置时返回 None.
-        """
-        if value is None:
-            return None
-        normalized = [item.strip().rstrip("/") for item in value if item.strip()]
-        return normalized or None
 
     @field_validator("url")
     @classmethod
@@ -1017,6 +1029,7 @@ class AppConfig(BaseSettings):
     data_sources: list[DataSource]
     logging: LoggingConfig
     network: NetworkConfig = Field(default_factory=NetworkConfig)
+    instances: InstancesConfig = Field(default_factory=InstancesConfig)
     timezone: TimezoneConfig = Field(default_factory=TimezoneConfig)
 
     @model_validator(mode="after")

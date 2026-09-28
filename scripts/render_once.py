@@ -63,6 +63,7 @@ async def main():
             logger=logger,
             proxy_url=config.network.proxy_url,
             ghproxy_urls=config.network.ghproxy_urls,
+            instances=config.instances,
         )
         holiday_cache_dir = cache_dir / "holidays"
         holiday_source = config.get_source(HolidaySource)
@@ -75,7 +76,7 @@ async def main():
         )
         fun_content_source = config.get_source(FunContentSource)
         fun_content_service = FunContentService(
-            fun_content_source, proxy_url=config.network.proxy_url
+            fun_content_source, proxy_url=config.network.proxy_url, instances=config.instances
         )
 
         # Initialize KFC service if config exists
@@ -83,7 +84,7 @@ async def main():
         crazy_thursday_source = config.get_source(CrazyThursdaySource)
         if crazy_thursday_source:
             kfc_service = KfcService(
-                crazy_thursday_source, proxy_url=config.network.proxy_url
+                crazy_thursday_source, proxy_url=config.network.proxy_url, instances=config.instances
             )
 
         # Initialize stock index service if config exists
@@ -99,7 +100,7 @@ async def main():
         gold_price_source = config.get_source(GoldPriceSource)
         if gold_price_source:
             gold_price_service = GoldPriceService(
-                gold_price_source, proxy_url=config.network.proxy_url
+                gold_price_source, proxy_url=config.network.proxy_url, instances=config.instances
             )
 
         # Initialize daily english service if config exists

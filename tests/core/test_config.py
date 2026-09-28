@@ -9,6 +9,7 @@ from app.core.config import (
     FunContentEndpoint,
     FunContentSource,
     HolidaySource,
+    InstancesConfig,
     LoggingConfig,
     NetworkConfig,
     NewsSource,
@@ -150,6 +151,35 @@ class TestNetworkConfig:
         """Test invalid proxy URLs are rejected."""
         with pytest.raises(ValidationError):
             NetworkConfig(proxy_url=proxy_url)
+
+
+class TestInstancesConfig:
+    """Tests for global 60s public instance configuration."""
+
+    def test_defaults_disable_instance_switching(self) -> None:
+        """Test an empty configuration performs no instance switching."""
+        config = InstancesConfig()
+        assert config.list_url is None
+        assert config.urls is None
+
+    def test_normalizes_urls(self) -> None:
+        """Test trailing slashes and blank entries are removed."""
+        config = InstancesConfig(urls=["https://60s.crystelf.top/", "  ", ""])
+        assert config.urls == ["https://60s.crystelf.top"]
+
+    def test_empty_urls_become_none(self) -> None:
+        """Test an all-blank URL list is treated as unset."""
+        assert InstancesConfig(urls=["", "  "]).urls is None
+
+    def test_explicit_null_urls_allowed(self) -> None:
+        """Test an explicit null URL list is allowed."""
+        assert InstancesConfig(urls=None).urls is None
+        assert InstancesConfig(list_url=None).list_url is None
+
+    def test_rejects_unknown_keys(self) -> None:
+        """Test unknown keys are rejected."""
+        with pytest.raises(ValidationError):
+            InstancesConfig(instances=["https://60s.crystelf.top"])
 
 
 class TestTemplatesConfig:

@@ -7,7 +7,7 @@ import pytest
 import respx
 from httpx import Response
 
-from app.core.config import FunContentEndpoint, FunContentSource
+from app.core.config import FunContentEndpoint, FunContentSource, InstancesConfig
 from app.services.fun_content import FunContentService
 
 
@@ -158,3 +158,53 @@ class TestFunContentService:
 
         # Should fall back to default
         assert result["title"] == "🐟 摸鱼小贴士"
+
+
+class TestFunContentInstanceSwitching:
+    """Tests for public 60s instance switching in FunContentService."""
+
+    @pytest.fixture
+    def config(self) -> FunContentSource:
+        """Create a fun content configuration with a public instance fallback."""
+        return FunContentSource(
+            timeout_sec=5,
+            endpoints=[
+                FunContentEndpoint(
+                    name="hitokoto",
+                    url="https://api.example.com/hitokoto",
+                    data_path="data.hitokoto",
+                    display_title="💬 一言",
+                ),
+                FunContentEndpoint(
+                    name="joke",
+                    url="https://api.example.com/joke",
+                    data_path="data.content",
+                    display_title="🤣 冷笑话",
+                ),
+            ],
+        )
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_switches_to_instance_when_primary_blocked(
+        self, config: FunContentSource
+    ) -> None:
+        """Test blocked primary endpoints fall through to same-path instance endpoints."""
+        service = FunContentService(
+            config=config, instances=InstancesConfig(urls=["https://inst.example.com"])
+        )
+        for path in ("hitokoto", "joke"):
+            respx.get(f"https://api.example.com/{path}").mock(
+                return_value=Response(403)
+            )
+        respx.get("https://inst.example.com/hitokoto").mock(
+            return_value=Response(200, json={"data": {"hitokoto": "实例一言"}})
+        )
+        respx.get("https://inst.example.com/joke").mock(
+            return_value=Response(200, json={"data": {"content": "实例笑话"}})
+        )
+
+        result = await service.fetch_content(date(2026, 2, 4))
+
+        assert result["content"] in {"实例一言", "实例笑话"}
+        assert result["title"] != "🐟 摸鱼小贴士"

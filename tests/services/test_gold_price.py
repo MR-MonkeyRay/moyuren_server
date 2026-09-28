@@ -2,13 +2,13 @@
 
 import logging
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 import respx
 from httpx import Response
 
+from app.core.config import GoldPriceSource, InstancesConfig
 from app.services.compute import DomainDataAggregator
 from app.services.gold_price import CachedGoldPriceService, GoldPriceService
 
@@ -17,9 +17,7 @@ class TestGoldPriceServiceParseResponse:
     """Tests for GoldPriceService._parse_response"""
 
     def _make_service(self):
-        config = MagicMock()
-        config.timeout_sec = 5
-        config.url = "https://example.com/gold"
+        config = GoldPriceSource(url="https://example.com/gold", timeout_sec=5)
         return GoldPriceService(config=config, logger=logging.getLogger("test"))
 
     def test_parse_valid_response(self) -> None:
@@ -148,10 +146,7 @@ class TestGoldPriceServiceFetch:
 
     def _make_config(self):
         """Create a mock config."""
-        config = MagicMock()
-        config.timeout_sec = 5
-        config.url = "https://example.com/gold"
-        return config
+        return GoldPriceSource(url="https://example.com/gold", timeout_sec=5)
 
     @respx.mock
     async def test_fetch_success_with_injected_client(self) -> None:
@@ -256,16 +251,64 @@ class TestGoldPriceServiceFetch:
 
         assert route.call_count == 2
 
+    @respx.mock
+    async def test_fetch_switches_to_public_instance(self) -> None:
+        """Test a blocked primary endpoint falls through to the public instance."""
+        config = GoldPriceSource(url="https://api.example.com/gold", timeout_sec=5)
+        instances = InstancesConfig(urls=["https://inst.example.com"])
+        respx.get("https://api.example.com/gold").mock(return_value=Response(403))
+        respx.get("https://inst.example.com/gold").mock(
+            return_value=Response(
+                200,
+                json={
+                    "data": {
+                        "metals": [
+                            {"name": "今日金价", "today_price": "680.00", "sell_price": "670.00", "unit": "元/克"}
+                        ]
+                    }
+                },
+            )
+        )
+
+        async with httpx.AsyncClient() as client:
+            service = GoldPriceService(
+                config,
+                http_client=client,
+                logger=logging.getLogger("test"),
+                instances=instances,
+            )
+            result = await service.fetch_gold_price()
+
+        assert result == {"today_price": "680.00", "sell_price": "670.00", "unit": "元/克"}
+
+    @respx.mock
+    async def test_fetch_returns_none_when_all_endpoints_unusable(self) -> None:
+        """Test None is returned when neither the primary nor the instance is usable."""
+        config = GoldPriceSource(url="https://api.example.com/gold", timeout_sec=5)
+        instances = InstancesConfig(urls=["https://inst.example.com"])
+        respx.get("https://api.example.com/gold").mock(return_value=Response(403))
+        respx.get("https://inst.example.com/gold").mock(
+            return_value=Response(200, json={"data": {"metals": []}})
+        )
+
+        async with httpx.AsyncClient() as client:
+            service = GoldPriceService(
+                config,
+                http_client=client,
+                logger=logging.getLogger("test"),
+                instances=instances,
+            )
+            result = await service.fetch_gold_price()
+
+        assert result is None
+
 
 class TestCachedGoldPriceService:
     """Tests for CachedGoldPriceService."""
 
     def _make_config(self):
         """Create a mock config."""
-        config = MagicMock()
-        config.timeout_sec = 5
-        config.url = "https://example.com/gold"
-        return config
+        return GoldPriceSource(url="https://example.com/gold", timeout_sec=5)
 
     @pytest.fixture
     def cache_dir(self, tmp_path: Path) -> Path:
@@ -274,6 +317,7 @@ class TestCachedGoldPriceService:
         cache_dir.mkdir()
         return cache_dir
 
+    @respx.mock
     def test_init_creates_service(self, cache_dir: Path) -> None:
         """Test constructor correctly initializes internal service."""
         config = self._make_config()
