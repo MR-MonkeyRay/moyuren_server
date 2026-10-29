@@ -123,6 +123,7 @@ async def main():
         if daily_english_source and daily_english_source.enabled:
             dict_backend = build_dict_backend(
                 cfg=daily_english_source.backend,
+                cache_dir=config.paths.cache_dir,
                 ghproxy_urls=config.network.ghproxy_urls,
                 logger=logger,
                 proxy_url=config.network.proxy_url,

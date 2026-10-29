@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     env:
+      SOURCE_SHA: ${{ github.sha }}
       PAGES_REPO: ${{ vars.PAGES_REPO || format('{0}/moyuren-pages', github.repository_owner) }}
       PAGES_BRANCH: ${{ vars.PAGES_BRANCH || 'main' }}
       STATIC_BASE_URL: ${{ vars.STATIC_BASE_URL || 'https://moyuren.pages.dev' }}
@@ -63,17 +64,19 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
 
       - name: Generate artifacts
         shell: bash
         run: |
           set -euo pipefail
           IMAGE_BASE="ghcr.io/${GITHUB_REPOSITORY,,}"
-          IMAGE_TAG="${GITHUB_SHA::7}"
+          IMAGE_TAG="sha-${SOURCE_SHA::7}"
           if docker pull "${IMAGE_BASE}:${IMAGE_TAG}" >/dev/null 2>&1; then
             IMAGE="${IMAGE_BASE}:${IMAGE_TAG}"
           else
-            echo "⚠️ Image ${IMAGE_TAG} not found, falling back to :latest"
+            echo "::warning::Image ${IMAGE_BASE}:${IMAGE_TAG} for source commit ${SOURCE_SHA} was not found; falling back to :latest, which may not match the checked-out scripts."
             IMAGE="${IMAGE_BASE}:latest"
           fi
           mkdir -p output && chmod 0755 output
@@ -141,5 +144,5 @@ jobs:
             exit 0
           fi
 
-          git commit -m "chore: publish ${DATE} (${GITHUB_SHA::7})"
+          git commit -m "chore: publish ${DATE} (${SOURCE_SHA::7})"
           git push --force-with-lease origin "HEAD:${PAGES_BRANCH}"

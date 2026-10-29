@@ -439,9 +439,25 @@ class SQLiteBackendConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["sqlite"] = "sqlite"
-    db_path: str = "cache/ecdict/stardict.db"
+    db_path: str = "ecdict/stardict.db"
     download_url: str = "https://github.com/skywind3000/ECDICT/releases/download/1.0.28/ecdict-sqlite-28.zip"
     checksum_sha256: str = ""
+
+    def resolve_db_path(self, cache_dir: str | Path) -> Path:
+        """解析词典数据库路径，兼容旧配置中的 cache/ 前缀.
+
+        Args:
+            cache_dir: 配置中的缓存根目录.
+
+        Returns:
+            绝对数据库路径，或基于缓存根目录的相对路径.
+        """
+        db_path = Path(self.db_path)
+        if db_path.is_absolute():
+            return db_path
+        if db_path.parts and db_path.parts[0] == "cache":
+            db_path = Path(*db_path.parts[1:])
+        return Path(cache_dir) / db_path
 
 
 DictBackendConfig = Annotated[

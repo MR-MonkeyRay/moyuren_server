@@ -341,6 +341,7 @@ sudo chown -R 1000:1000 cache logs
 | `network.ghproxy_urls` | `MOYUREN_NETWORK_GHPROXY_URLS` | GitHub 代理 URL 列表（JSON 数组，用于加速节假日数据、ECDICT 下载和新闻静态镜像回退） |
 | `data_sources` | - | 外部数据源配置列表（新闻、趣味内容等） |
 | `data_sources[].type` | - | 数据源类型（news/fun_content/crazy_thursday/holiday/stock_index/gold_price/daily_english） |
+| `data_sources[type=daily_english].backend.db_path` | - | ECDICT 数据库路径，默认 `ecdict/stardict.db`；相对路径基于 `paths.cache_dir`，兼容旧配置 `cache/ecdict/stardict.db`（去掉开头的 `cache/` 后解析），绝对路径保持不变 |
 | `instances.list_url` | `MOYUREN_INSTANCES_LIST_URL` | 60s 公共实例列表文档地址（Markdown），由 news/fun_content/crazy_thursday/gold_price 共享；`null` 关闭自动发现 |
 | `instances.urls` | `MOYUREN_INSTANCES_URLS` | 额外/兜底的实例基地址 JSON 数组（可选，优先于自动发现结果；端点路径沿用各数据源的 `url`） |
 | `templates.default` | - | 默认模板名 |

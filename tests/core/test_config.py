@@ -1,5 +1,7 @@
 """Tests for app/core/config.py - configuration management."""
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -17,6 +19,7 @@ from app.core.config import (
     OpsConfig,
     SchedulerConfig,
     ServerConfig,
+    SQLiteBackendConfig,
     StockIndexSource,
     TemplateItemConfig,
     TemplateRenderConfig,
@@ -25,6 +28,33 @@ from app.core.config import (
     ViewportConfig,
     load_config,
 )
+
+
+class TestSQLiteBackendConfig:
+    """Tests for SQLite dictionary path configuration."""
+
+    def test_default_db_path(self) -> None:
+        """Test the default path is relative to the cache directory."""
+        config = SQLiteBackendConfig()
+
+        assert config.db_path == "ecdict/stardict.db"
+        assert config.resolve_db_path("/tmp/c") == Path("/tmp/c/ecdict/stardict.db")
+
+    @pytest.mark.parametrize(
+        ("db_path", "expected"),
+        [
+            ("ecdict/stardict.db", "/tmp/c/ecdict/stardict.db"),
+            ("cache/ecdict/stardict.db", "/tmp/c/ecdict/stardict.db"),
+            ("/opt/ecdict/stardict.db", "/opt/ecdict/stardict.db"),
+            ("/cache/ecdict/stardict.db", "/cache/ecdict/stardict.db"),
+            ("cache-other/stardict.db", "/tmp/c/cache-other/stardict.db"),
+        ],
+    )
+    def test_resolve_db_path(self, db_path: str, expected: str) -> None:
+        """Test relative, legacy and absolute dictionary paths."""
+        config = SQLiteBackendConfig(db_path=db_path)
+
+        assert config.resolve_db_path(Path("/tmp/c")) == Path(expected)
 
 
 class TestServerConfig:

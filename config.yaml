@@ -113,7 +113,7 @@ data_sources:
     difficulty_range: [3, 5]
     backend:
       type: "sqlite"
-      db_path: "cache/ecdict/stardict.db"
+      db_path: "ecdict/stardict.db"
       download_url: "https://github.com/skywind3000/ECDICT/releases/download/1.0.28/ecdict-sqlite-28.zip"
 
 logging:

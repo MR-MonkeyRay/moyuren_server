@@ -16,7 +16,7 @@ from urllib.parse import quote, urlparse
 
 import httpx
 
-from app.core.config import DailyEnglishSource, DictBackendConfig, SQLiteBackendConfig
+from app.core.config import DailyEnglishSource, DictBackendConfig, PathsConfig, SQLiteBackendConfig
 from app.core.network import create_async_client, redact_url, safe_exception_for_log
 from app.core.filelock import async_file_lock
 from app.services.calendar import today_business
@@ -745,6 +745,7 @@ def build_dict_backend(
     ghproxy_urls: list[str],
     logger: logging.Logger,
     proxy_url: str | None = None,
+    cache_dir: str | Path | None = None,
 ) -> DictBackend:
     """根据配置创建词典后端。
 
@@ -753,6 +754,7 @@ def build_dict_backend(
         ghproxy_urls: 可选下载代理前缀列表。
         logger: 日志记录器。
         proxy_url: 可选全局代理 URL。
+        cache_dir: 缓存根目录，未指定时使用路径配置的默认值。
 
     Returns:
         符合 DictBackend 协议的后端实例。
@@ -761,8 +763,11 @@ def build_dict_backend(
         NotImplementedError: 配置类型尚未实现时抛出。
     """
     if isinstance(cfg, SQLiteBackendConfig):
+        resolved_db_path = cfg.resolve_db_path(
+            cache_dir if cache_dir is not None else PathsConfig().cache_dir
+        )
         return SQLiteBackend(
-            db_path=cfg.db_path,
+            db_path=str(resolved_db_path),
             download_url=cfg.download_url,
             checksum_sha256=cfg.checksum_sha256,
             ghproxy_urls=ghproxy_urls,

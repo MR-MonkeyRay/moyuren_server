@@ -218,7 +218,7 @@ jobs:
               DOCKERHUB_TAGS="${{ env.DOCKERHUB_REGISTRY }}/${DOCKERHUB_IMAGE_LOWER}:v${PROJECT_VERSION},${DOCKERHUB_TAGS}"
               echo "New tag created, pushing version tag v${PROJECT_VERSION}"
             else
-              echo "::warning::Tag already exists, only pushing latest to avoid overwriting"
+              echo "::warning::Tag already exists, pushing latest and commit SHA tags to avoid overwriting the version tag"
             fi
           else
             # 其他分支（develop 等）：使用版本号+SHA+分支名
@@ -230,6 +230,10 @@ jobs:
             DOCKERHUB_TAGS="${{ env.DOCKERHUB_REGISTRY }}/${DOCKERHUB_IMAGE_LOWER}:v${PROJECT_VERSION}-${SHORT_SHA}-${BRANCH_SUFFIX}"
             DOCKERHUB_TAGS="${DOCKERHUB_TAGS},${{ env.DOCKERHUB_REGISTRY }}/${DOCKERHUB_IMAGE_LOWER}:latest-${BRANCH_SUFFIX}"
           fi
+
+          # 每次构建都推送不可变的 commit SHA 标签
+          GHCR_TAGS="${GHCR_TAGS},${{ env.GHCR_REGISTRY }}/${IMAGE_NAME_LOWER}:sha-${SHORT_SHA}"
+          DOCKERHUB_TAGS="${DOCKERHUB_TAGS},${{ env.DOCKERHUB_REGISTRY }}/${DOCKERHUB_IMAGE_LOWER}:sha-${SHORT_SHA}"
 
           # 合并所有 tags
           ALL_TAGS="${GHCR_TAGS},${DOCKERHUB_TAGS}"
