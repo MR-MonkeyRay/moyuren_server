@@ -23,6 +23,7 @@ from app.core.config import (
     TemplatesConfig,
     TimezoneConfig,
     ViewportConfig,
+    load_config,
 )
 
 
@@ -156,7 +157,8 @@ class TestNetworkConfig:
         "proxy_url",
         [
             "http://proxy.example:8080",
-            "socks5://user:password@proxy.example:1080",
+            "http://user:password@proxy.example:8080",
+            "socks5://proxy.example:1080",
         ],
     )
     def test_valid_proxy_url(self, proxy_url: str) -> None:
@@ -179,6 +181,40 @@ class TestNetworkConfig:
         """Test invalid proxy URLs are rejected."""
         with pytest.raises(ValidationError):
             NetworkConfig(proxy_url=proxy_url)
+
+    @pytest.mark.parametrize(
+        "userinfo",
+        ["user:proxy-secret", "user", ":proxy-secret", "user:", "", ":"],
+    )
+    def test_authenticated_socks_proxy_raises_safe_error(self, userinfo: str) -> None:
+        """Test SOCKS userinfo is rejected without exposing credentials."""
+        proxy_url = f"socks5://{userinfo}@proxy.example:1080"
+        with pytest.raises(ValidationError) as exc_info:
+            NetworkConfig(proxy_url=proxy_url)
+
+        message = str(exc_info.value)
+        assert "Chromium cannot authenticate to SOCKS" in message
+        assert "unauthenticated SOCKS" in message
+        assert "HTTP proxy with credentials" in message
+        assert "gost/privoxy" in message
+        assert "proxy-secret" not in message
+        assert proxy_url not in message
+
+    def test_load_config_rejects_authenticated_socks_proxy(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test application and script config loading hides rejected proxy secrets."""
+        monkeypatch.setenv(
+            "MOYUREN_NETWORK_PROXY_URL",
+            "socks5://user:proxy-secret@proxy.example:1080",
+        )
+        with pytest.raises(ValueError) as exc_info:
+            load_config("config.yaml")
+
+        message = str(exc_info.value)
+        assert "Configuration validation failed" in message
+        assert "Chromium" in message
+        assert "proxy-secret" not in message
 
 
 class TestInstancesConfig:

@@ -175,7 +175,7 @@ class OpsConfig(BaseModel):
 class NetworkConfig(BaseModel):
     """Global network configuration."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
     ghproxy_urls: list[str] = Field(default_factory=list)
     proxy_url: str | None = None
@@ -215,9 +215,11 @@ class NetworkConfig(BaseModel):
     @classmethod
     def validate_proxy_url(cls, value: str | None) -> str | None:
         """Validate optional outbound proxy URL."""
-        from app.core.network import normalize_proxy_url
+        from app.core.network import normalize_proxy_url, playwright_proxy_config
 
-        return normalize_proxy_url(value)
+        normalized_proxy_url = normalize_proxy_url(value)
+        playwright_proxy_config(normalized_proxy_url)
+        return normalized_proxy_url
 
 
 class InstancesConfig(BaseModel):
@@ -1087,6 +1089,7 @@ class AppConfig(BaseSettings):
 
     model_config = SettingsConfigDict(
         extra="forbid",
+        hide_input_in_errors=True,
         env_prefix="MOYUREN_",
         env_nested_delimiter="_",
         env_nested_max_split=1,

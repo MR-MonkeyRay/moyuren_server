@@ -57,7 +57,7 @@ class TestBrowserManager:
     @pytest.mark.asyncio
     async def test_ensure_browser_launches_with_proxy(self, manager: BrowserManager) -> None:
         """Test Chromium launch receives Playwright proxy config."""
-        manager.configure(logging.getLogger("new_test"), proxy_url="socks5://user:pass@proxy.example:1080")
+        manager.configure(logging.getLogger("new_test"), proxy_url="http://user:pass@proxy.example:8080")
         mock_browser = MagicMock()
         mock_browser.is_connected.return_value = True
 
@@ -72,11 +72,30 @@ class TestBrowserManager:
         mock_playwright_instance.chromium.launch.assert_awaited_once_with(
             headless=True,
             proxy={
-                "server": "socks5://proxy.example:1080",
+                "server": "http://proxy.example:8080",
                 "username": "user",
                 "password": "pass",
             },
         )
+
+    @pytest.mark.asyncio
+    async def test_ensure_browser_rejects_authenticated_socks_proxy(
+        self, manager: BrowserManager
+    ) -> None:
+        """Test Chromium rejects SOCKS authentication before browser launch."""
+        manager.configure(logging.getLogger("new_test"), proxy_url="socks5://user:pass@proxy.example:1080")
+        mock_playwright_instance = AsyncMock()
+
+        with patch("app.services.browser.async_playwright") as mock_async_pw:
+            mock_async_pw.return_value.start = AsyncMock(return_value=mock_playwright_instance)
+
+            with pytest.raises(ValueError, match="Chromium cannot authenticate to SOCKS"):
+                await manager._ensure_browser()
+
+        mock_playwright_instance.chromium.launch.assert_not_called()
+        mock_playwright_instance.stop.assert_awaited_once()
+        assert manager._browser is None
+        assert manager._playwright is None
 
     @pytest.mark.asyncio
     async def test_ensure_browser_already_initialized(self, manager: BrowserManager) -> None:

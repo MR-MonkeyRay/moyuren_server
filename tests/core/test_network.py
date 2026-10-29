@@ -25,7 +25,8 @@ class TestProxyUrl:
         "value",
         [
             "http://proxy.example:8080",
-            "socks5://user:pass@proxy.example:1080",
+            "http://user:pass@proxy.example:8080",
+            "socks5://proxy.example:1080",
         ],
     )
     def test_normalize_supported_proxy(self, value: str) -> None:
@@ -103,9 +104,40 @@ class TestProxyUrl:
 
     def test_playwright_proxy_config_splits_credentials(self) -> None:
         """Test Playwright proxy config receives server and credentials separately."""
-        proxy = playwright_proxy_config("socks5://user:pass@proxy.example:1080")
+        proxy = playwright_proxy_config("http://user:pass@proxy.example:8080")
         assert proxy == {
-            "server": "socks5://proxy.example:1080",
+            "server": "http://proxy.example:8080",
             "username": "user",
             "password": "pass",
         }
+
+    def test_playwright_proxy_config_supports_unauthenticated_socks(self) -> None:
+        """Test SOCKS proxies without userinfo still work for Chromium."""
+        assert playwright_proxy_config("socks5://proxy.example:1080") == {
+            "server": "socks5://proxy.example:1080"
+        }
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "socks5://u:p@h:1",
+            "socks5://user:proxy-secret@proxy.example:1080",
+            "socks5://user@proxy.example:1080",
+            "socks5://:proxy-secret@proxy.example:1080",
+            "socks5://@proxy.example:1080",
+            "  SOCKS5://user:proxy-secret@[::1]:1080/  ",
+        ],
+    )
+    def test_playwright_proxy_config_rejects_socks_credentials(self, value: str) -> None:
+        """Test direct Playwright config calls reject SOCKS authentication safely."""
+        with pytest.raises(ValueError) as exc_info:
+            playwright_proxy_config(value)
+
+        message = str(exc_info.value)
+        assert "Chromium cannot authenticate to SOCKS" in message
+        assert "unauthenticated SOCKS" in message
+        assert "HTTP proxy with credentials" in message
+        assert "gost/privoxy" in message
+        assert "u:p" not in message
+        assert "proxy-secret" not in message
+        assert value.strip() not in message

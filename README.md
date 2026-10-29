@@ -337,7 +337,7 @@ sudo chown -R 1000:1000 cache logs
 | `logging.file` | `MOYUREN_LOGGING_FILE` | 日志文件路径（空字符串表示只输出到标准输出） |
 | `timezone.business` | `MOYUREN_TIMEZONE_BUSINESS` | 业务时区（节假日/节气/周末判断） |
 | `timezone.display` | `MOYUREN_TIMEZONE_DISPLAY` | 显示时区（图片时间戳、API 响应时间；支持 `local`） |
-| `network.proxy_url` | `MOYUREN_NETWORK_PROXY_URL` | 全局出站代理 URL，默认空；支持 `http://`、`socks5://`，可包含代理账号密码；同时用于应用和脚本的 HTTPX 请求及 Playwright 浏览器启动 |
+| `network.proxy_url` | `MOYUREN_NETWORK_PROXY_URL` | 全局出站代理 URL，默认空；支持 `http://`（可包含账号密码）和 `socks5://`（仅限无认证）；同时用于应用和脚本的 HTTPX 请求及 Playwright 浏览器启动。Chromium 不支持 SOCKS 认证，此类配置会在启动时被拒绝；需要认证时请使用 HTTP 代理，或通过 gost/privoxy 等本地转发器连接带认证的上游代理 |
 | `network.ghproxy_urls` | `MOYUREN_NETWORK_GHPROXY_URLS` | GitHub 代理 URL 列表（JSON 数组，用于加速节假日数据、ECDICT 下载和新闻静态镜像回退） |
 | `data_sources` | - | 外部数据源配置列表（新闻、趣味内容等） |
 | `data_sources[].type` | - | 数据源类型（news/fun_content/crazy_thursday/holiday/stock_index/gold_price/daily_english） |

@@ -129,6 +129,14 @@ def playwright_proxy_config(proxy_url: str | None) -> dict[str, str] | None:
         return None
 
     parsed = urlsplit(normalized_proxy_url)
+    if parsed.scheme == "socks5" and (
+        parsed.username is not None or parsed.password is not None
+    ):
+        raise ValueError(
+            "Chromium cannot authenticate to SOCKS proxies. "
+            "Use an unauthenticated SOCKS proxy, an HTTP proxy with credentials, "
+            "or a local forwarder (e.g. gost/privoxy) that adds authentication."
+        )
     if not parsed.hostname:
         return None
 
