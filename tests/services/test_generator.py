@@ -649,6 +649,9 @@ class TestGenerateAndSaveImageNormalFlow:
         data_dir.mkdir(parents=True, exist_ok=True)
         data_file = data_dir / f"{business_date.isoformat()}.json"
         data_file.write_text("{}", encoding="utf-8")
+        images_dir = cache_dir / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+        (images_dir / "moyuren_cached.jpg").write_bytes(b"cached")
 
         logger = MagicMock()
         template_item = SimpleNamespace(name="moyuren")
@@ -679,6 +682,78 @@ class TestGenerateAndSaveImageNormalFlow:
 
         assert results == {"moyuren": "moyuren_cached.jpg"}
         assert not async_lock.locked()
+
+    @pytest.mark.asyncio
+    async def test_rerenders_recent_template_when_cached_image_is_missing(
+        self, tmp_path: Path
+    ) -> None:
+        """Re-render a recent template when its referenced image is missing."""
+        from datetime import date
+        from types import SimpleNamespace
+
+        cache_dir = tmp_path / "cache"
+        data_dir = cache_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        business_date = date(2026, 2, 5)
+        data_file = data_dir / f"{business_date.isoformat()}.json"
+        data_file.write_text("{}", encoding="utf-8")
+
+        logger = MagicMock()
+        template_item = SimpleNamespace(name="moyuren")
+        templates_config = MagicMock()
+        templates_config.items = [template_item]
+
+        config = MagicMock()
+        config.paths = SimpleNamespace(cache_dir=str(cache_dir))
+        config.get_templates_config.return_value = templates_config
+
+        data_computer = MagicMock()
+        data_computer.compute.return_value = {"date": {"week_cn": "星期四"}}
+        image_renderer = MagicMock()
+        image_renderer.render = AsyncMock(return_value="moyuren_new.jpg")
+        app = SimpleNamespace(
+            state=SimpleNamespace(
+                logger=logger,
+                config=config,
+                data_computer=data_computer,
+                image_renderer=image_renderer,
+                cache_cleaner=MagicMock(),
+            )
+        )
+
+        @asynccontextmanager
+        async def _fake_file_lock(*args: object, **kwargs: object) -> AsyncIterator[None]:
+            yield
+
+        with (
+            patch("app.services.generator._get_async_lock", return_value=asyncio.Lock()),
+            patch("app.services.generator.async_file_lock", new=_fake_file_lock),
+            patch(
+                "app.services.generator.now_business",
+                return_value=datetime.combine(
+                    business_date, time(12), tzinfo=timezone.utc
+                ),
+            ),
+            patch(
+                "app.services.generator._read_data_file",
+                return_value={"updated_at": 999},
+            ),
+            patch("app.services.generator._is_recently_updated", return_value=True),
+            patch(
+                "app.services.generator._read_latest_filename",
+                return_value="moyuren_missing.jpg",
+            ),
+            patch(
+                "app.services.generator._fetch_all_data_parallel",
+                new=AsyncMock(return_value={}),
+            ),
+            patch("app.services.generator._update_data_file", new=AsyncMock()),
+            patch("app.services.generator._schedule_cache_cleanup"),
+        ):
+            results = await generate_and_save_image(app)
+
+        assert results == {"moyuren": "moyuren_new.jpg"}
+        image_renderer.render.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_partial_template_failure(self, tmp_path: Path) -> None:
@@ -831,6 +906,9 @@ class TestGenerateAndSaveImageNormalFlow:
         data_dir.mkdir(parents=True, exist_ok=True)
         data_file = data_dir / f"{business_date.isoformat()}.json"
         data_file.write_text("{}", encoding="utf-8")
+        images_dir = cache_dir / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+        (images_dir / "moyuren_cached.jpg").write_bytes(b"cached")
 
         logger = MagicMock()
         template_a = SimpleNamespace(name="moyuren")

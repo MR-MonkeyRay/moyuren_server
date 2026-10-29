@@ -191,10 +191,41 @@ def _build_markdown_response(data: dict, base_domain: str, template: str | None)
     )
 
 
+async def _generate_on_demand(
+    request: Request, logger: logging.Logger, template_name: str | None = None
+) -> JSONResponse | None:
+    """Generate images on demand and translate generation errors to responses."""
+    try:
+        await generate_and_save_image(request.app, template_name=template_name)
+    except GenerationBusyError:
+        logger.info("Generation in progress, returning 503 with Retry-After")
+        return JSONResponse(
+            content=error_response(
+                code=ErrorCode.GENERATION_BUSY,
+                message="Image generation in progress, another process is generating the image",
+            ),
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            headers={"Retry-After": "5"},
+        )
+    except Exception as e:
+        logger.error(f"On-demand image generation failed: {e}")
+        return JSONResponse(
+            content=error_response(
+                code=ErrorCode.GENERATION_FAILED,
+                message="Image generation failed, please try again later",
+            ),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    return None
+
+
 async def _load_data_for_date(
     request: Request,
     target_date: date,
     logger: logging.Logger,
+    template: str | None = None,
+    *,
+    allow_generation: bool = True,
 ) -> tuple[dict | None, JSONResponse | None]:
     """Load and validate data file for specified date.
 
@@ -202,6 +233,8 @@ async def _load_data_for_date(
         request: FastAPI request object
         target_date: Target date to load
         logger: Logger instance
+        template: Requested template, None means use first available
+        allow_generation: Whether this request may still attempt generation
 
     Returns:
         Tuple of (data, error_response). If successful, error_response is None.
@@ -212,29 +245,12 @@ async def _load_data_for_date(
 
     # For today's date, trigger generation if file doesn't exist
     today = today_business()
-    if target_date == today and not data_file.exists():
+    if target_date == today and not data_file.exists() and allow_generation:
         logger.info(f"Data file not found for today ({target_date}), triggering generation...")
-        try:
-            await generate_and_save_image(request.app)
-        except GenerationBusyError:
-            logger.info("Generation in progress, returning 503 with Retry-After")
-            return None, JSONResponse(
-                content=error_response(
-                    code=ErrorCode.GENERATION_BUSY,
-                    message="Image generation in progress, another process is generating the image",
-                ),
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                headers={"Retry-After": "5"},
-            )
-        except Exception as e:
-            logger.error(f"On-demand image generation failed: {e}")
-            return None, JSONResponse(
-                content=error_response(
-                    code=ErrorCode.GENERATION_FAILED,
-                    message="Image generation failed, please try again later",
-                ),
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        error = await _generate_on_demand(request, logger)
+        if error is not None:
+            return None, error
+        allow_generation = False
 
     # Read data file
     if not data_file.exists():
@@ -291,6 +307,32 @@ async def _load_data_for_date(
             ),
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+    if target_date == today:
+        images = data["images"]
+        filename = _get_filename_for_template(images, template)
+        known_template = template in images if template is not None else bool(images)
+        if not known_template:
+            templates = config.get_templates_config().items
+            known_template = any(template is None or item.name == template for item in templates)
+
+        if known_template:
+            _, image_error = _get_image_path(
+                filename or "", config.paths.cache_dir, logger
+            )
+            if image_error is not None:
+                if image_error.status_code == status.HTTP_404_NOT_FOUND and allow_generation:
+                    logger.info(
+                        f"Image file not found for today ({target_date}), triggering generation..."
+                    )
+                    template_name = template if template is not None else next(iter(images), None)
+                    error = await _generate_on_demand(request, logger, template_name=template_name)
+                    if error is not None:
+                        return None, error
+                    return await _load_data_for_date(
+                        request, target_date, logger, template, allow_generation=False
+                    )
+                return None, image_error
 
     return data, None
 
@@ -355,6 +397,63 @@ def _handle_markdown_response(
     )
 
 
+def _get_image_path(
+    filename: str, cache_dir: str, logger: logging.Logger
+) -> tuple[Path | None, JSONResponse | None]:
+    """Resolve an existing image file within the images directory."""
+    # Build and validate image path
+    images_dir = Path(cache_dir) / "images"
+
+    # Validate filename to prevent path traversal
+    if "/" in filename or "\\" in filename or ".." in filename:
+        logger.error(f"Invalid filename with path separators: {filename}")
+        return None, JSONResponse(
+            content=error_response(
+                code=ErrorCode.STORAGE_READ_FAILED,
+                message="Invalid filename: contains invalid characters",
+            ),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    image_path = images_dir / filename
+
+    # Ensure resolved path is still within images_dir
+    try:
+        resolved_path = image_path.resolve()
+        resolved_images = images_dir.resolve()
+        if not resolved_path.is_relative_to(resolved_images):
+            logger.error(f"Path traversal attempt: {filename}")
+            return None, JSONResponse(
+                content=error_response(
+                    code=ErrorCode.STORAGE_READ_FAILED,
+                    message="Invalid file path: outside images directory",
+                ),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+    except (OSError, ValueError) as e:
+        logger.error(f"Failed to resolve path: {e}")
+        return None, JSONResponse(
+            content=error_response(
+                code=ErrorCode.STORAGE_READ_FAILED,
+                message="Invalid file path",
+            ),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Check if image file exists
+    if not image_path.is_file():
+        logger.error(f"Image file not found: {image_path}")
+        return None, JSONResponse(
+            content=error_response(
+                code=ErrorCode.STORAGE_NOT_FOUND,
+                message=f"Image file not found: {filename}",
+            ),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    return image_path, None
+
+
 def _handle_image_response(
     data: dict,
     cache_dir: str,
@@ -375,55 +474,10 @@ def _handle_image_response(
             status_code=status.HTTP_404_NOT_FOUND,
         )
 
-    # Build and validate image path
-    images_dir = Path(cache_dir) / "images"
-
-    # Validate filename to prevent path traversal
-    if "/" in filename or "\\" in filename or ".." in filename:
-        logger.error(f"Invalid filename with path separators: {filename}")
-        return JSONResponse(
-            content=error_response(
-                code=ErrorCode.STORAGE_READ_FAILED,
-                message="Invalid filename: contains invalid characters",
-            ),
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-
-    image_path = images_dir / filename
-
-    # Ensure resolved path is still within images_dir
-    try:
-        resolved_path = image_path.resolve()
-        resolved_images = images_dir.resolve()
-        if not str(resolved_path).startswith(str(resolved_images)):
-            logger.error(f"Path traversal attempt: {filename}")
-            return JSONResponse(
-                content=error_response(
-                    code=ErrorCode.STORAGE_READ_FAILED,
-                    message="Invalid file path: outside images directory",
-                ),
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-    except (OSError, ValueError) as e:
-        logger.error(f"Failed to resolve path: {e}")
-        return JSONResponse(
-            content=error_response(
-                code=ErrorCode.STORAGE_READ_FAILED,
-                message="Invalid file path",
-            ),
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-
-    # Check if image file exists
-    if not image_path.is_file():
-        logger.error(f"Image file not found: {image_path}")
-        return JSONResponse(
-            content=error_response(
-                code=ErrorCode.STORAGE_NOT_FOUND,
-                message=f"Image file not found: {filename}",
-            ),
-            status_code=status.HTTP_404_NOT_FOUND,
-        )
+    image_path, error = _get_image_path(filename, cache_dir, logger)
+    if error is not None:
+        return error
+    assert image_path is not None
 
     logger.info(f"Serving moyuren image for {target_date}: {filename}")
     return FileResponse(
@@ -500,7 +554,7 @@ async def get_moyuren(
             )
 
     # Load data for target date
-    data, error = await _load_data_for_date(request, target_date, logger)
+    data, error = await _load_data_for_date(request, target_date, logger, template)
     if error:
         return error
 

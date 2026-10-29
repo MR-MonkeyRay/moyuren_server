@@ -56,6 +56,18 @@ def _is_recently_updated(state_data: dict, threshold_sec: int = 10) -> bool:
     return time.time() - updated_time < threshold_sec
 
 
+def _cached_image_exists(images_dir: Path, filename: str) -> bool:
+    """检查缓存图片文件是否存在于图片目录中"""
+    if "/" in filename or "\\" in filename or ".." in filename:
+        return False
+
+    image_path = images_dir / filename
+    try:
+        return image_path.resolve().parent == images_dir.resolve() and image_path.is_file()
+    except (OSError, ValueError):
+        return False
+
+
 def _read_latest_filename(data_file: Path, template_name: str | None = None) -> str | None:
     """读取 data 文件中的最新文件名
 
@@ -342,6 +354,7 @@ async def generate_and_save_image(
     config = app.state.config
     cache_dir = Path(config.paths.cache_dir)
     data_dir = cache_dir / "data"
+    images_dir = cache_dir / "images"
 
     # Determine which templates to render
     templates_config = config.get_templates_config()
@@ -384,7 +397,7 @@ async def generate_and_save_image(
                         missing_templates = []
                         for t in templates_to_render:
                             fn = _read_latest_filename(data_file, t.name)
-                            if fn:
+                            if fn and _cached_image_exists(images_dir, fn):
                                 cached_results[t.name] = fn
                             else:
                                 missing_templates.append(t)

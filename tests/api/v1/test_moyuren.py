@@ -5,13 +5,14 @@ import logging
 from datetime import date
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.v1.moyuren import router
+from app.services.generator import GenerationBusyError
 
 
 class TestMoyurenAPI:
@@ -364,9 +365,72 @@ class TestMoyurenAPI:
         app.state.config = mock_config
 
         client = TestClient(app)
-        response = client.get("/api/v1/moyuren?encode=image")
+        with patch("app.api.v1.moyuren.generate_and_save_image", new_callable=AsyncMock) as generate:
+            response = client.get("/api/v1/moyuren?encode=image")
 
+        generate.assert_awaited_once_with(app, template_name="moyuren")
         assert response.status_code == 404
         data = response.json()
         assert data["error"]["code"] == "STORAGE_4003"
         assert "Image file not found" in data["error"]["message"]
+
+    @pytest.mark.parametrize("encode", ["json", "text", "markdown", "image"])
+    def test_missing_today_image_is_regenerated(
+        self, app: FastAPI, client: TestClient, mock_today: MagicMock, encode: str,
+    ) -> None:
+        """Test missing today's image is regenerated for every output format."""
+        cache_dir = Path(app.state.config.paths.cache_dir)
+        image_path = cache_dir / "images" / "moyuren_20260210_072232.jpg"
+        image_path.unlink()
+
+        async def regenerate(
+            application: FastAPI, template_name: str | None = None,
+        ) -> dict[str, str]:
+            filename = "moyuren_regenerated.jpg"
+            (cache_dir / "images" / filename).write_bytes(b"regenerated image")
+            data_file = cache_dir / "data" / "2026-02-10.json"
+            data = json.loads(data_file.read_text())
+            data["images"] = {"moyuren": filename}
+            data_file.write_text(json.dumps(data))
+            return {"moyuren": filename}
+
+        with patch("app.api.v1.moyuren.generate_and_save_image", side_effect=regenerate) as generate:
+            response = client.get(f"/api/v1/moyuren?encode={encode}")
+
+        generate.assert_awaited_once_with(app, template_name="moyuren")
+        assert response.status_code == 200
+        if encode == "image":
+            assert response.content == b"regenerated image"
+        else:
+            assert "moyuren_regenerated.jpg" in response.text
+
+    def test_missing_today_image_generation_busy(
+        self, app: FastAPI, client: TestClient, mock_today: MagicMock,
+    ) -> None:
+        """Test busy generation returns 503 when today's image is missing."""
+        image_path = Path(app.state.config.paths.cache_dir) / "images" / "moyuren_20260210_072232.jpg"
+        image_path.unlink()
+        with patch(
+            "app.api.v1.moyuren.generate_and_save_image",
+            side_effect=GenerationBusyError("busy"),
+        ) as generate:
+            response = client.get("/api/v1/moyuren?encode=image")
+
+        generate.assert_awaited_once_with(app, template_name="moyuren")
+        assert response.status_code == 503
+        assert response.headers["Retry-After"] == "5"
+        assert response.json()["error"]["code"] == "GENERATION_5002"
+
+    def test_missing_history_image_does_not_generate(
+        self, app: FastAPI, client: TestClient, mock_today: MagicMock,
+    ) -> None:
+        """Test historical missing images return 404 without regeneration."""
+        mock_today.return_value = date(2026, 2, 11)
+        image_path = Path(app.state.config.paths.cache_dir) / "images" / "moyuren_20260210_072232.jpg"
+        image_path.unlink()
+        with patch("app.api.v1.moyuren.generate_and_save_image", new_callable=AsyncMock) as generate:
+            response = client.get("/api/v1/moyuren?date=2026-02-10&encode=image")
+
+        generate.assert_not_awaited()
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "STORAGE_4003"
