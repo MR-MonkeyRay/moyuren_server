@@ -1,8 +1,11 @@
 import asyncio
+import contextlib
 import json
 import logging
 import os
+import tempfile
 import time
+from collections.abc import Sequence
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -120,8 +123,12 @@ class HolidayService:
             )
             return False
 
-    async def fetch_holidays(self) -> list[dict[str, Any]]:
-        """获取去年、今年和明年的节假日数据，合并处理后返回"""
+    async def fetch_holidays(self) -> list[dict[str, Any]] | None:
+        """获取去年、今年和明年的节假日数据，合并处理后返回。
+
+        Returns:
+            至少一年获取成功时返回合并列表（可为空），全部失败时返回 None。
+        """
         today = self._get_today()
         current_year = today.year
         prev_year = current_year - 1
@@ -141,7 +148,20 @@ class HolidayService:
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        return self._merge_and_process(list(results))
+        valid_data = [data for data in results if isinstance(data, dict)]
+        if not valid_data:
+            self._logger.error("所有年份节假日数据均获取失败")
+            return None
+
+        return self._merge_and_process(valid_data)
+
+    def _is_valid_year_data(self, data: Any) -> bool:
+        """校验年度数据包含 days 列表，且每个条目均为字典"""
+        return (
+            isinstance(data, dict)
+            and isinstance(data.get("days"), list)
+            and all(isinstance(day, dict) for day in data["days"])
+        )
 
     async def _fetch_year_data(
         self, client: httpx.AsyncClient, year: int
@@ -162,6 +182,11 @@ class HolidayService:
                 response = await client.get(url)
                 response.raise_for_status()
                 data = response.json()
+                if not self._is_valid_year_data(data):
+                    self._logger.warning(
+                        f"数据源 {redact_url(url)} 返回的 {year} 年数据格式无效"
+                    )
+                    continue
                 self._logger.debug(f"成功从 {redact_url(url)} 获取 {year} 年节假日数据")
 
                 # 成功获取后更新缓存
@@ -191,30 +216,46 @@ class HolidayService:
         return None
 
     def _save_to_cache(self, year: int, data: dict[str, Any]) -> None:
-        """保存数据到本地缓存"""
+        """通过临时文件和原子替换保存数据到本地缓存"""
+        tmp_path: str | None = None
         try:
             cache_file = self._cache_dir / f"{year}.json"
-            with open(cache_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self._cache_dir,
+                delete=False,
+                suffix=".tmp",
+            ) as tmp_file:
+                tmp_path = tmp_file.name
+                json.dump(data, tmp_file, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, cache_file)
             self._logger.debug(f"已缓存 {year} 年数据到 {cache_file}")
         except Exception as e:
             self._logger.warning(f"缓存 {year} 年数据失败: {e}")
+            if tmp_path:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp_path)
 
     def _load_from_cache(self, year: int) -> dict[str, Any] | None:
-        """从本地缓存读取数据"""
+        """从本地缓存读取数据，格式无效时返回 None"""
         try:
             cache_file = self._cache_dir / f"{year}.json"
             if not cache_file.exists():
                 return None
 
             with open(cache_file, encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+            if not self._is_valid_year_data(data):
+                self._logger.warning(f"{year} 年缓存数据格式无效")
+                return None
+            return data
         except Exception as e:
             self._logger.warning(f"读取 {year} 年缓存失败: {e}")
             return None
 
     def _merge_and_process(
-        self, data_list: list[dict[str, Any] | None | Exception]
+        self, data_list: Sequence[dict[str, Any] | None | Exception]
     ) -> list[dict[str, Any]]:
         """合并多年数据，过滤休息日，排序后聚合连续假期"""
         all_days: list[dict[str, Any]] = []

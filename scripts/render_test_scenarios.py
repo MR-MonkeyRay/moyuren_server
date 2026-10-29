@@ -344,7 +344,9 @@ async def get_base_template_data(
 
     try:
         holidays = await holiday_service.fetch_holidays()
-        raw_data["holidays"] = holidays
+        raw_data["holidays"] = holidays if holidays is not None else []
+        if holidays is None:
+            logger.warning("获取节假日失败，使用默认空列表")
     except Exception as e:
         logger.warning(f"获取节假日失败: {safe_exception_for_log(e, proxy_url)}")
         raw_data["holidays"] = []

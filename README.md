@@ -37,6 +37,7 @@ https://api.monkeyray.net/api/v1/moyuren
   - 数据源：[tyme4py](https://github.com/6tail/tyme4py)
 - 节日倒计时整合（法定假日 + 农历/公历节日）
   - 数据源：[holiday-cn](https://github.com/NateScarlet/holiday-cn)
+  - 年度数据全部获取失败时保留过期聚合缓存；原始年度缓存校验数据格式并原子写入，避免无效响应或写入中断破坏缓存
 - 趣味内容随机展示（冷笑话、一言、段子、摸鱼语录）
   - 数据源：[60s-api](https://60s.viki.moe)，支持公共实例智能切换
 - 疯狂星期四：每周四自动展示 KFC 文案

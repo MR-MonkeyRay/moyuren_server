@@ -156,8 +156,11 @@ async def main():
         # 1.1 Fetch holiday data
         try:
             holidays = await holiday_service.fetch_holidays()
-            raw_data["holidays"] = holidays
-            logger.info(f"Fetched {len(holidays)} holidays")
+            raw_data["holidays"] = holidays if holidays is not None else []
+            if holidays is None:
+                logger.warning("Failed to fetch holidays, using default")
+            else:
+                logger.info(f"Fetched {len(holidays)} holidays")
         except Exception as e:
             logger.warning(
                 f"Failed to fetch holidays, using default: {safe_exception_for_log(e, config.network.proxy_url)}"
