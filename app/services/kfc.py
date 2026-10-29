@@ -93,10 +93,10 @@ class KfcService:
         elif isinstance(data, str):
             content = data
 
-        if not content:
+        if not isinstance(content, str) or not content.strip():
             return None
         # Handle escaped newlines in the text
-        return str(content).strip().replace("\\n", "\n")
+        return content.strip().replace("\\n", "\n")
 
 
 class CachedKfcService(DailyCache[str]):

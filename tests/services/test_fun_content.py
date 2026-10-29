@@ -159,6 +159,45 @@ class TestFunContentService:
         # Should fall back to default
         assert result["title"] == "🐟 摸鱼小贴士"
 
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            None,
+            [],
+            "text",
+            {},
+            {"data": None},
+            {"data": []},
+            {"data": {"hitokoto": None}},
+            {"data": {"hitokoto": {"text": "一言"}}},
+        ],
+    )
+    def test_extract_content_rejects_unusable_shapes(
+        self,
+        service: FunContentService,
+        sample_config: FunContentSource,
+        payload: object,
+    ) -> None:
+        """空值与结构异常的响应返回 None，不抛出异常。"""
+        endpoint = sample_config.endpoints[0]
+
+        assert service._extract_content(payload, endpoint) is None
+
+    @pytest.mark.parametrize(
+        ("payload", "path"),
+        [
+            (None, "data.content"),
+            ({"data": None}, "data.content"),
+            ({"data": []}, "data.content"),
+            ({"data": {"content": None}}, "data.content.value"),
+        ],
+    )
+    def test_extract_by_path_handles_null_intermediate_values(
+        self, service: FunContentService, payload: object, path: str
+    ) -> None:
+        """路径中间值无效时返回 None，不抛出异常。"""
+        assert service._extract_by_path(payload, path) is None
+
 
 class TestFunContentInstanceSwitching:
     """Tests for public 60s instance switching in FunContentService."""

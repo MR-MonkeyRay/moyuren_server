@@ -1,8 +1,10 @@
 """Tests for app/services/fetcher.py - data fetching service."""
 
+import json
 import logging
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -41,6 +43,48 @@ class TestDataFetcher:
     def fetcher(self, sample_endpoint: NewsSource, logger: logging.Logger) -> DataFetcher:
         """Create a DataFetcher instance."""
         return DataFetcher(source=sample_endpoint, logger=logger)
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            None,
+            [],
+            "news",
+            {},
+            {"code": 500, "message": "err", "data": None},
+            {"code": 500, "data": {"news": ["item"]}},
+            {"code": "200", "data": {"news": ["item"]}},
+            {"code": 200.0, "data": {"news": ["item"]}},
+            {"code": None, "data": {"news": ["item"]}},
+            {"code": 200, "data": None},
+            {"code": 200, "data": []},
+            {"code": 200, "data": {"news": []}},
+            {"code": 200, "data": {"news": None}},
+            {"code": 200, "data": {"news": "item"}},
+            {"data": {"news": []}},
+        ],
+    )
+    def test_parse_news_rejects_unusable_payloads(
+        self, fetcher: DataFetcher, payload: Any
+    ) -> None:
+        """错误信封与不含非空新闻列表的响应不可用。"""
+        assert fetcher._parse_news_response(payload) is None
+
+    @respx.mock
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("include_code", [True, False])
+    async def test_fetch_accepts_fixture_envelope(
+        self, fetcher: DataFetcher, sample_endpoint: NewsSource, include_code: bool
+    ) -> None:
+        """现有新闻夹具与省略状态码的兼容信封均可获取。"""
+        fixture_path = Path(__file__).parents[1] / "data/news/60s_response.json"
+        payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+        if not include_code:
+            payload.pop("code")
+        respx.get(sample_endpoint.url).mock(return_value=Response(200, json=payload))
+
+        assert await fetcher.fetch() == payload
+        assert respx.calls.call_count == 1
 
     @respx.mock
     @pytest.mark.asyncio
@@ -105,12 +149,13 @@ class TestDataFetcher:
         source = NewsSource(url="https://api.example.com/news")
         fetcher = DataFetcher(source=source, logger=logger)
 
-        respx.get("https://api.example.com/news").mock(return_value=Response(200, json={"type": "news"}))
+        payload = {"code": 200, "data": {"news": ["item"]}}
+        respx.get(source.url).mock(return_value=Response(200, json=payload))
 
         result = await fetcher.fetch_all()
 
         assert "news" in result
-        assert result["news"]["type"] == "news"
+        assert result["news"] == payload
 
     @respx.mock
     @pytest.mark.asyncio
@@ -133,7 +178,9 @@ class TestDataFetcher:
         source = NewsSource(url="https://api.example.com/news", params={"key": "value", "limit": "10"})
         fetcher = DataFetcher(source=source, logger=logger)
 
-        mock_route = respx.get("https://api.example.com/news").mock(return_value=Response(200, json={"data": "test"}))
+        mock_route = respx.get("https://api.example.com/news").mock(
+            return_value=Response(200, json={"data": {"news": ["item"]}})
+        )
 
         await fetcher.fetch()
 
@@ -266,6 +313,39 @@ class TestCachedDataFetcher:
         # Should return local cache, not API data
         assert result == yesterday_data
         assert result["news"]["data"]["news"] == ["item1"]  # Original cache
+
+    @respx.mock
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("cache_date", "api_date", "use_api"),
+        [
+            ("2026-02-18", "2026-02-22", True),
+            ("2026-02-22", "2026-02-20", False),
+            ("unknown", "2026-02-22", True),
+            ("2026-02-22", "unknown", False),
+        ],
+    )
+    async def test_get_keeps_newer_news_when_api_is_not_today(
+        self,
+        cached_fetcher: CachedDataFetcher,
+        sample_source: NewsSource,
+        cache_date: str,
+        api_date: str,
+        use_api: bool,
+    ) -> None:
+        """API 未更新到今天时保留较新的新闻，缓存日期未知时采用 API。"""
+        cached_data = self._make_news_data(cache_date)
+        api_data = self._make_news_data(api_date)
+        cached_fetcher.save_cache(cached_data)
+        respx.get(sample_source.url).mock(
+            return_value=Response(200, json=api_data["news"])
+        )
+
+        result = await cached_fetcher.get()
+
+        expected = api_data if use_api else cached_data
+        assert result == expected
+        assert cached_fetcher.load_cache() == expected
 
     @respx.mock
     @pytest.mark.asyncio
@@ -560,6 +640,55 @@ class TestDataFetcherInstanceSwitching:
 
         assert result == payload
         assert inst2_route.call_count == 0
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_error_envelope_switches_to_available_instance(
+        self, fetcher: DataFetcher, source: NewsSource
+    ) -> None:
+        """HTTP 成功但业务失败的主源信封仍触发公共实例回退。"""
+        payload = {"code": 200, "data": {"news": ["实例新闻"]}}
+        respx.get(source.url).mock(
+            return_value=Response(200, json={"code": 500, "message": "err", "data": None})
+        )
+        instance_route = respx.get("https://inst1.example.com/v2/60s").mock(
+            return_value=Response(200, json=payload)
+        )
+        inst2_route = respx.get("https://inst2.example.com/prefix/v2/60s")
+
+        assert await fetcher.fetch() == payload
+        assert instance_route.call_count == 1
+        assert inst2_route.call_count == 0
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_error_envelopes_fall_back_to_static_mirror(
+        self, fetcher: DataFetcher, source: NewsSource
+    ) -> None:
+        """所有 API 端点返回错误信封时仍尝试并采用静态镜像。"""
+        endpoints = (
+            source.url,
+            "https://inst1.example.com/v2/60s",
+            "https://inst2.example.com/prefix/v2/60s",
+        )
+        routes = [
+            respx.get(url).mock(
+                return_value=Response(200, json={"code": 500, "data": None})
+            )
+            for url in endpoints
+        ]
+        payload = {"date": today_business().isoformat(), "news": ["镜像新闻"]}
+        mirror_route = respx.get(
+            _NEWS_STATIC_CDN_URLS[0].format(date=payload["date"])
+        ).mock(return_value=Response(200, json=payload))
+
+        assert await fetcher.fetch() == {
+            "code": 200,
+            "message": "success",
+            "data": payload,
+        }
+        assert all(route.call_count == 1 for route in routes)
+        assert mirror_route.call_count == 1
 
     @respx.mock
     @pytest.mark.asyncio

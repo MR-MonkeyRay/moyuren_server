@@ -32,6 +32,7 @@ https://api.monkeyray.net/api/v1/moyuren
   - 主源与公共实例均不可用时，继续回退到 60s 静态镜像
     （`cdn.jsdmirror.com` → `60s-static.viki.moe` → GitHub raw → `network.ghproxy_urls` 代理前缀），
     避免新闻长期停留在旧日期
+  - 错误信封、空新闻与解析失败均触发后续数据源回退；API 未更新到今天时，按新闻日期保留 API 与本地缓存中较新的数据
 - 农历信息与节气（干支年、生肖、二十四节气）
   - 数据源：[tyme4py](https://github.com/6tail/tyme4py)
 - 节日倒计时整合（法定假日 + 农历/公历节日）

@@ -100,7 +100,7 @@ class DataFetcher:
         result = await self._router.fetch_json(
             client,
             str(self.source.url),
-            parse=lambda data: data if isinstance(data, dict) else None,
+            parse=self._parse_news_response,
             params=self.source.params,
             timeout=httpx.Timeout(self.source.timeout_sec),
         )
@@ -111,6 +111,23 @@ class DataFetcher:
             f"All news endpoints unavailable for {self.source.type}, trying static mirror"
         )
         return await self._fetch_static_with_client(client)
+
+    @staticmethod
+    def _parse_news_response(data: Any) -> dict[str, Any] | None:
+        """校验新闻信封，仅接受成功状态与非空新闻列表。"""
+        if not isinstance(data, dict):
+            return None
+        if "code" in data:
+            code = data["code"]
+            if not isinstance(code, int) or code != 200:
+                return None
+        payload = data.get("data")
+        if not isinstance(payload, dict):
+            return None
+        news_items = payload.get("news")
+        if not isinstance(news_items, list) or not news_items:
+            return None
+        return data
 
     def _build_static_urls(self, target_date: date) -> list[str]:
         """构建指定日期的静态镜像地址列表。
@@ -308,7 +325,7 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
            b. 如果缓存新闻日期 == 今天日期，直接返回缓存
            c. 否则调 API 获取新数据
               - 如果 API 新闻日期 == 今天日期，保存并返回新数据
-              - 如果 API 新闻日期 != 今天日期（API 未更新），返回本地缓存（不覆盖）
+              - 如果 API 新闻日期 != 今天日期，比较日期并保留较新的数据
            d. API 调用失败时，返回本地缓存（降级策略）
 
         Args:
@@ -395,6 +412,11 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
 
             # 无法解析 API 日期
             if api_news_date is None:
+                if cached_news_date is not None:
+                    self.logger.warning(
+                        "无法从 API 响应中提取日期，保留日期已知的本地缓存"
+                    )
+                    return cached_data
                 self.logger.warning(
                     "无法从 API 响应中提取日期，保存到缓存（无法判断是否为今天）"
                 )
@@ -417,18 +439,20 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
                 today.isoformat(),
             )
 
-            # 如果有本地缓存，返回本地缓存（不覆盖）
-            if cached_data is not None:
+            # 本地缓存日期已知且不早于 API 时，保留本地缓存
+            if cached_news_date is not None and api_news_date <= cached_news_date:
                 self.logger.info(
                     "Keeping local cache for %s (not overwriting with stale API data)",
                     self.namespace,
                 )
                 return cached_data
 
-            # 如果没有本地缓存，保存 API 数据（总比没有好）
+            # API 日期更新或缓存日期未知时，保存 API 数据
             self.logger.info(
-                "No local cache, saving API data for %s (better than nothing)",
+                "Saving newer API data for %s (api_news_date=%s, cached_news_date=%s)",
                 self.namespace,
+                api_news_date.isoformat(),
+                cached_news_date.isoformat() if cached_news_date else None,
             )
             self.save_cache(fresh_data)
             return fresh_data

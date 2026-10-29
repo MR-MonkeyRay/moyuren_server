@@ -44,6 +44,7 @@ class TestGoldPriceServiceParseResponse:
     def test_parse_missing_metals(self) -> None:
         """Test parsing response with missing or invalid metals field."""
         service = self._make_service()
+        assert service._parse_response({"data": None}) is None
         assert service._parse_response({"data": {}}) is None
         assert service._parse_response({"data": {"metals": "not a list"}}) is None
 
@@ -280,6 +281,49 @@ class TestGoldPriceServiceFetch:
             result = await service.fetch_gold_price()
 
         assert result == {"today_price": "680.00", "sell_price": "670.00", "unit": "元/克"}
+
+    @respx.mock
+    async def test_null_primary_data_switches_to_public_instance(self) -> None:
+        """主源数据为空时回退到可用的公共实例。"""
+        config = GoldPriceSource(url="https://api.example.com/gold", timeout_sec=5)
+        instances = InstancesConfig(urls=["https://inst.example.com"])
+        primary_route = respx.get("https://api.example.com/gold").mock(
+            return_value=Response(200, json={"data": None})
+        )
+        instance_route = respx.get("https://inst.example.com/gold").mock(
+            return_value=Response(
+                200,
+                json={
+                    "data": {
+                        "metals": [
+                            {
+                                "name": "今日金价",
+                                "today_price": "681.00",
+                                "sell_price": "671.00",
+                                "unit": "元/克",
+                            }
+                        ]
+                    }
+                },
+            )
+        )
+
+        async with httpx.AsyncClient() as client:
+            service = GoldPriceService(
+                config,
+                http_client=client,
+                logger=logging.getLogger("test"),
+                instances=instances,
+            )
+            result = await service.fetch_gold_price()
+
+        assert result == {
+            "today_price": "681.00",
+            "sell_price": "671.00",
+            "unit": "元/克",
+        }
+        assert primary_route.called
+        assert instance_route.called
 
     @respx.mock
     async def test_fetch_returns_none_when_all_endpoints_unusable(self) -> None:

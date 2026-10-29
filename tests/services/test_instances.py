@@ -1,6 +1,7 @@
 """Tests for app/services/instances.py - public instance discovery and routing."""
 
 import logging
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -297,6 +298,40 @@ class TestInstanceRouterOrdering:
 
 class TestInstanceRouterFetchJson:
     """Tests for InstanceRouter.fetch_json."""
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_parser_exception_tries_next_endpoint(
+        self, logger: logging.Logger, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """解析异常计入端点失败并继续回退，日志中的 URL 保持脱敏。"""
+        primary_url = "https://api.example.com/v2/60s?token=private-token"
+        instance_url = "https://inst.example.com/v2/60s?token=private-token"
+        router = InstanceRouter(
+            logger, InstancesConfig(urls=["https://inst.example.com"])
+        )
+        respx.get(primary_url).mock(return_value=Response(200, json={"data": None}))
+        instance_route = respx.get(instance_url).mock(
+            return_value=Response(200, json={"data": {"kfc": "V我50"}})
+        )
+
+        with patch.object(router, "mark_failure", wraps=router.mark_failure) as failure:
+            async with httpx.AsyncClient() as client:
+                result = await router.fetch_json(
+                    client,
+                    primary_url,
+                    parse=lambda data: data.get("data", {}).get("kfc"),
+                )
+
+        assert result == (instance_url, "V我50")
+        assert instance_route.call_count == 1
+        failure.assert_called_once_with(primary_url)
+        router_logs = "\n".join(
+            record.getMessage() for record in caplog.records if record.name == logger.name
+        )
+        assert "Failed to parse response" in router_logs
+        assert "AttributeError" in router_logs
+        assert "private-token" not in router_logs
 
     @respx.mock
     @pytest.mark.asyncio

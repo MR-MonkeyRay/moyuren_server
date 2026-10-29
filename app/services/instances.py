@@ -395,7 +395,16 @@ class InstanceRouter:
                 self.mark_failure(url)
                 continue
 
-            parsed = parse(data)
+            try:
+                parsed = parse(data)
+            except Exception as e:
+                self._logger.warning(
+                    "Failed to parse response from %s: %s",
+                    redact_url(url),
+                    safe_exception_for_log(e, url),
+                )
+                self.mark_failure(url)
+                continue
             if parsed is None:
                 self._logger.warning("Unusable response from %s", redact_url(url))
                 self.mark_failure(url)

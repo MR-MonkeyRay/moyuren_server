@@ -122,6 +122,10 @@ class FunContentService:
         Returns:
             去空白后的文案字符串; 缺失或为空时返回 None.
         """
+        if not isinstance(data, dict):
+            logger.debug(f"No valid content from {endpoint.name}")
+            return None
+
         content = self._extract_by_path(data, endpoint.data_path)
         if isinstance(content, str) and content.strip():
             return content.strip()
@@ -129,14 +133,14 @@ class FunContentService:
         return None
 
     def _extract_by_path(self, data: Any, path: str) -> Any:
-        """Extract value from nested dict using dot-separated path.
+        """按点分隔路径从嵌套字典中提取值。
 
         Args:
-            data: The data to extract from (typically a dict, but may become other types during recursion).
-            path: Dot-separated path like 'data.content'.
+            data: 待提取的数据；路径中间值可能为任意类型。
+            path: 点分隔路径，例如 ``data.content``。
 
         Returns:
-            The extracted value or None if path is invalid.
+            提取到的值；路径无效或中间结构不可用时返回 None。
         """
         for key in path.split("."):
             if isinstance(data, dict):

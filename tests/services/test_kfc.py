@@ -129,6 +129,25 @@ class TestKfcService:
 
         assert result is None
 
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            None,
+            [],
+            {},
+            {"data": None},
+            {"data": []},
+            {"data": {"kfc": None}},
+            {"data": {"kfc": []}},
+            {"text": {"value": "V我50"}},
+        ],
+    )
+    def test_parse_kfc_response_rejects_unusable_shapes(
+        self, service: KfcService, payload: object
+    ) -> None:
+        """空值与结构异常的响应返回 None，不抛出异常。"""
+        assert service._parse_kfc_response(payload) is None
+
     @respx.mock
     @pytest.mark.asyncio
     async def test_fetch_kfc_copy_invalid_json(self, service: KfcService) -> None:

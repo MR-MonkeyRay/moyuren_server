@@ -66,7 +66,12 @@ class GoldPriceService:
                 f"Gold price API returned non-dict response: {type(data).__name__}"
             )
             return None
-        metals = data.get("data", {}).get("metals")
+        data_field = data.get("data")
+        if not isinstance(data_field, dict):
+            self._logger.warning("Unexpected gold price API response structure")
+            return None
+
+        metals = data_field.get("metals")
         if not isinstance(metals, list):
             self._logger.warning("Unexpected gold price API response structure")
             return None
