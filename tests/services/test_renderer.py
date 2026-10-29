@@ -1,5 +1,6 @@
 """Tests for app/services/renderer.py - image rendering service."""
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -20,6 +21,7 @@ from app.core.config import (
     TemplatesConfig,
     ViewportConfig,
 )
+from app.core.errors import RenderError
 from app.services.renderer import ImageRenderer, format_datetime, nl2br
 
 
@@ -302,9 +304,134 @@ class TestImageRenderer:
         page = AsyncMock()
         page.evaluate = AsyncMock(side_effect=TimeoutError("font wait"))
 
-        await renderer._wait_for_render_ready(page, "test")
+        assert await renderer._wait_for_render_ready(page, "test") is False
 
         page.evaluate.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("status", "ready"),
+        [("ready", True), ("unsupported", True), ("timeout", False), ("error", False)],
+    )
+    async def test_wait_for_render_ready_reports_status(
+        self, renderer: ImageRenderer, status: str, ready: bool
+    ) -> None:
+        """Test readiness reports when pending fonts need to be aborted."""
+        page = AsyncMock()
+        page.evaluate.return_value = status
+
+        assert await renderer._wait_for_render_ready(page, "test") is ready
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("cache_enabled", "font_url"),
+        [
+            (False, "https://fonts.gstatic.com/test.woff2"),
+            (True, "https://fonts.gstatic.com/test.woff2"),
+            (True, "https://example.com/test.woff2"),
+        ],
+    )
+    async def test_render_aborts_pending_and_late_fonts_before_screenshot(
+        self, renderer: ImageRenderer, cache_enabled: bool, font_url: str
+    ) -> None:
+        """Test readiness expiry cancels font fetches before capturing fallbacks."""
+        renderer.render_config.remote_resource_cache_enabled = cache_enabled
+        renderer.render_config.page_load_timeout_sec = 3.25
+        page = AsyncMock()
+        page.on = MagicMock()
+        page.evaluate.side_effect = ["timeout", 600]
+        route = AsyncMock()
+        route.request = MagicMock(url=font_url, resource_type="font")
+        late_route = AsyncMock()
+        late_route.request = MagicMock(url=font_url, resource_type="font")
+        started = asyncio.Event()
+        cancelled = asyncio.Event()
+        handlers: list[asyncio.Task[None]] = []
+
+        async def hanging_fetch(*args: object, **kwargs: object) -> None:
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+        async def load_html(*args: object, **kwargs: object) -> None:
+            handle_route = page.route.call_args.args[1]
+            handlers.append(asyncio.create_task(handle_route(route)))
+            await asyncio.wait_for(started.wait(), timeout=1)
+
+        async def capture(**kwargs: object) -> bytes:
+            route.abort.assert_awaited_once()
+            assert cancelled.is_set()
+            await page.route.call_args.args[1](late_route)
+            late_route.abort.assert_awaited_once()
+            late_route.fetch.assert_not_awaited()
+            return b"fallback jpeg"
+
+        route.fetch.side_effect = hanging_fetch
+        page.set_content.side_effect = load_html
+        page.screenshot.side_effect = capture
+        with (
+            patch.object(renderer, "_get_remote_resource", side_effect=hanging_fetch),
+            patch("app.services.renderer.browser_manager") as manager,
+        ):
+            manager.create_page = AsyncMock(return_value=page)
+            manager.release_page = AsyncMock()
+            try:
+                filename = await asyncio.wait_for(renderer.render({}), timeout=2)
+            finally:
+                await asyncio.gather(*handlers)
+
+        assert (renderer.images_dir / filename).read_bytes() == b"fallback jpeg"
+        page.route.assert_awaited_once()
+        page.screenshot.assert_awaited_once_with(
+            type="jpeg", quality=90, full_page=True, timeout=3250
+        )
+        route.fulfill.assert_not_awaited()
+        route.continue_.assert_not_awaited()
+        manager.release_page.assert_awaited_once_with(page)
+
+    @pytest.mark.asyncio
+    async def test_font_cleanup_failure_preserves_render_error(
+        self, renderer: ImageRenderer, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test abort failures during cleanup preserve the original render failure."""
+        renderer.render_config.remote_resource_cache_enabled = False
+        page = AsyncMock()
+        page.on = MagicMock()
+        page.evaluate.side_effect = ["ready", RuntimeError("layout failed")]
+        route = AsyncMock()
+        route.request = MagicMock(
+            url="https://example.com/font.woff2", resource_type="font"
+        )
+        route.abort.side_effect = RuntimeError("route already closed")
+        started = asyncio.Event()
+        handlers: list[asyncio.Task[None]] = []
+
+        async def hanging_fetch(**kwargs: object) -> None:
+            started.set()
+            await asyncio.Event().wait()
+
+        async def load_html(*args: object, **kwargs: object) -> None:
+            handlers.append(
+                asyncio.create_task(page.route.call_args.args[1](route))
+            )
+            await asyncio.wait_for(started.wait(), timeout=1)
+
+        route.fetch.side_effect = hanging_fetch
+        page.set_content.side_effect = load_html
+        with patch("app.services.renderer.browser_manager") as manager:
+            manager.create_page = AsyncMock(return_value=page)
+            manager.release_page = AsyncMock()
+            try:
+                with pytest.raises(RenderError, match="layout failed"):
+                    await asyncio.wait_for(renderer.render({}), timeout=2)
+            finally:
+                await asyncio.gather(*handlers)
+
+        assert "Failed to abort font request" in caplog.text
+        route.abort.assert_awaited_once()
+        manager.release_page.assert_awaited_once_with(page)
 
     def test_log_pending_render_resources_includes_resource_url(
         self, renderer: ImageRenderer, caplog
@@ -511,13 +638,58 @@ class TestImageRenderer:
     async def test_install_resource_cache_routes_disabled(
         self, renderer: ImageRenderer
     ) -> None:
-        """Test cache routes are skipped when disabled by config."""
+        """Test fonts remain abortable while other requests bypass a disabled cache."""
         renderer.render_config.remote_resource_cache_enabled = False
         page = AsyncMock()
 
-        await renderer._install_resource_cache_routes(page)
+        fonts = await renderer._install_resource_cache_routes(page)
 
-        page.route.assert_not_called()
+        page.route.assert_awaited_once()
+        handle_route = page.route.call_args.args[1]
+        stylesheet = AsyncMock()
+        stylesheet.request = MagicMock(
+            url="https://fonts.googleapis.com/style.css", resource_type="stylesheet"
+        )
+        font = AsyncMock()
+        font.request = MagicMock(
+            url="https://example.com/font.woff2", resource_type="font"
+        )
+        response = MagicMock()
+        font.fetch.return_value = response
+
+        with patch.object(renderer, "_get_remote_resource") as get_resource:
+            await handle_route(stylesheet)
+            await handle_route(font)
+            await fonts.abort_pending()
+
+        stylesheet.continue_.assert_awaited_once()
+        stylesheet.fetch.assert_not_awaited()
+        font.fetch.assert_awaited_once_with(timeout=10000)
+        font.fulfill.assert_awaited_once_with(response=response)
+        font.abort.assert_not_awaited()
+        get_resource.assert_not_awaited()
+        assert not fonts.pending
+
+    @pytest.mark.asyncio
+    async def test_uncached_font_fetch_failure_aborts_route(
+        self, renderer: ImageRenderer
+    ) -> None:
+        """Test failed font fetches settle the browser request with fallback fonts."""
+        renderer.render_config.remote_resource_cache_enabled = False
+        page = AsyncMock()
+        fonts = await renderer._install_resource_cache_routes(page)
+        route = AsyncMock()
+        route.request = MagicMock(
+            url="https://example.com/font.woff2", resource_type="font"
+        )
+        route.fetch.side_effect = TimeoutError("font fetch timed out")
+
+        await page.route.call_args.args[1](route)
+        await fonts.abort_pending()
+
+        route.abort.assert_awaited_once()
+        route.fulfill.assert_not_awaited()
+        assert not fonts.pending
 
     def test_rewrite_css_urls_matches_standard_syntax(
         self, renderer: ImageRenderer

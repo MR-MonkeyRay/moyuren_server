@@ -1,5 +1,6 @@
 """Image rendering service module."""
 
+import asyncio
 import hashlib
 import inspect
 import json
@@ -8,7 +9,7 @@ import os
 import re
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -61,6 +62,32 @@ class _TrackedResource:
     url: str
     resource_type: str
     started_at: float
+
+
+@dataclass
+class _FontRequests:
+    """Keep font routes abortable until their responses are available."""
+
+    logger: logging.Logger
+    stopped: bool = False
+    pending: dict[Any, asyncio.Task[Any]] = field(default_factory=dict)
+
+    async def abort_pending(self) -> None:
+        """Abort pending fonts and prevent subsequent font fetches."""
+        self.stopped = True
+        pending = list(self.pending.items())
+        self.pending.clear()
+        for _, task in pending:
+            task.cancel()
+        await asyncio.gather(*(task for _, task in pending), return_exceptions=True)
+        results = await asyncio.gather(
+            *(route.abort() for route, _ in pending), return_exceptions=True
+        )
+        for result in results:
+            if isinstance(result, Exception):
+                self.logger.warning(
+                    f"Failed to abort font request: {safe_exception_for_log(result)}"
+                )
 
 
 def format_datetime(value: str | datetime | int | float | None) -> str:
@@ -293,6 +320,7 @@ class ImageRenderer:
             RenderError: If screenshot generation fails.
         """
         page = None
+        font_requests: _FontRequests | None = None
         tracked_resources: dict[int, _TrackedResource] = {}
         try:
             self.logger.info(
@@ -307,7 +335,7 @@ class ImageRenderer:
                 }
             )
             tracked_resources = self._track_page_requests(page)
-            await self._install_resource_cache_routes(page)
+            font_requests = await self._install_resource_cache_routes(page)
 
             # Set HTML content without waiting for network idle. Remote font/CDN requests
             # can keep the network busy long enough to fail otherwise valid renders.
@@ -321,7 +349,11 @@ class ImageRenderer:
                 wait_until="domcontentloaded",
                 timeout=page_load_timeout_ms,
             )
-            await self._wait_for_render_ready(page, template_name, tracked_resources)
+            ready = await self._wait_for_render_ready(
+                page, template_name, tracked_resources
+            )
+            if not ready:
+                await font_requests.abort_pending()
             self.logger.info(
                 f"Browser content loaded for '{template_name}' "
                 f"({time.monotonic() - set_content_start:.1f}s)"
@@ -357,6 +389,7 @@ class ImageRenderer:
                 type="jpeg",
                 quality=jpeg_quality,
                 full_page=use_full_page,
+                timeout=page_load_timeout_ms,
             )
             self.logger.info(
                 f"Screenshot captured for '{template_name}' "
@@ -373,7 +406,11 @@ class ImageRenderer:
             ) from e
         finally:
             if page is not None:
-                await browser_manager.release_page(page)
+                try:
+                    if font_requests is not None:
+                        await font_requests.abort_pending()
+                finally:
+                    await browser_manager.release_page(page)
 
     def _timeout_ms(self, timeout_sec: float) -> int:
         """Convert seconds to Playwright timeout milliseconds."""
@@ -450,7 +487,7 @@ class ImageRenderer:
         page: Any,
         template_name: str,
         tracked_resources: dict[int, _TrackedResource] | None = None,
-    ) -> None:
+    ) -> bool:
         """Wait briefly for fonts and layout callbacks without blocking rendering."""
         timeout_ms = self._timeout_ms(self.render_config.font_ready_timeout_sec)
         try:
@@ -481,7 +518,7 @@ class ImageRenderer:
             )
             if tracked_resources is not None:
                 self._log_pending_render_resources(template_name, tracked_resources)
-            return
+            return False
 
         if result == "timeout":
             self.logger.warning(
@@ -494,19 +531,21 @@ class ImageRenderer:
             self.logger.warning(
                 f"Font readiness wait failed for {template_name}; continuing"
             )
+        return result not in ("timeout", "error")
 
-    async def _install_resource_cache_routes(self, page: Any) -> None:
-        """Intercept remote font resources and serve them from a TTL cache."""
-        if not self.render_config.remote_resource_cache_enabled:
-            self.logger.info("Remote render resource cache disabled")
-            return
-
+    async def _install_resource_cache_routes(self, page: Any) -> _FontRequests:
+        """Keep font requests abortable and optionally cache remote resources."""
+        fonts = _FontRequests(logger=self.logger)
+        cache_enabled = self.render_config.remote_resource_cache_enabled
         ttl = self.render_config.remote_resource_cache_ttl_sec
         timeout = self.render_config.remote_resource_timeout_sec
-        self.logger.info(
-            f"Remote render resource cache enabled "
-            f"(dir={self.resource_cache_dir}, ttl={ttl}s, timeout={timeout}s)"
-        )
+        if cache_enabled:
+            self.logger.info(
+                f"Remote render resource cache enabled "
+                f"(dir={self.resource_cache_dir}, ttl={ttl}s, timeout={timeout}s)"
+            )
+        else:
+            self.logger.info("Remote render resource cache disabled")
 
         async def handle_route(route: Any) -> None:
             """处理 Playwright 路由并优先使用远程资源缓存。
@@ -521,24 +560,63 @@ class ImageRenderer:
             request = route.request
             url = request.url
             resource_type = getattr(request, "resource_type", "")
-            if not self._should_cache_resource(url, resource_type):
+            is_font = resource_type == "font"
+            if is_font and fonts.stopped:
+                await route.abort()
+                return
+            cacheable = cache_enabled and self._should_cache_resource(url, resource_type)
+            if not cacheable and not is_font:
                 await route.continue_()
                 return
 
-            request_headers = self._content_negotiation_headers(request)
+            async def fetch_resource() -> Any:
+                """Fetch through the cache or preserve the browser request settings."""
+                if not cacheable:
+                    return await route.fetch(
+                        timeout=self._timeout_ms(self.render_config.page_load_timeout_sec)
+                    )
+                request_headers = self._content_negotiation_headers(request)
+                try:
+                    return await self._get_remote_resource(
+                        url,
+                        ttl=ttl,
+                        timeout=timeout,
+                        request_headers=request_headers,
+                    )
+                except ValueError:
+                    # Size limit exceeded - treat as unavailable
+                    self.logger.warning(
+                        f"Render resource rejected (size limit exceeded): {self._sanitize_url_for_log(url)}"
+                    )
+                    return None
+
             try:
-                cached = await self._get_remote_resource(
-                    url,
-                    ttl=ttl,
-                    timeout=timeout,
-                    request_headers=request_headers,
-                )
-            except ValueError:
-                # Size limit exceeded - treat as unavailable
+                if is_font:
+                    task = asyncio.create_task(fetch_resource())
+                    fonts.pending[route] = task
+                    try:
+                        cached = await task
+                    except asyncio.CancelledError:
+                        if not fonts.stopped:
+                            raise
+                        return
+                    finally:
+                        fonts.pending.pop(route, None)
+                    if fonts.stopped:
+                        return
+                else:
+                    cached = await fetch_resource()
+            except Exception as e:
+                if not is_font:
+                    raise
                 self.logger.warning(
-                    f"Render resource rejected (size limit exceeded): {self._sanitize_url_for_log(url)}"
+                    f"Font resource fetch failed: {safe_exception_for_log(e)}"
                 )
-                cached = None
+                await route.abort()
+                return
+            if not cacheable:
+                await route.fulfill(response=cached)
+                return
             if cached is not None:
                 self.logger.info(
                     f"Render resource {cached.cache_state}: {self._sanitize_url_for_log(url)}"
@@ -572,6 +650,7 @@ class ImageRenderer:
             await route.abort()
 
         await page.route("**/*", handle_route)
+        return fonts
 
     def _content_negotiation_headers(self, request: Any) -> dict[str, str] | None:
         """Select safe browser headers that affect the CDN response representation."""
