@@ -2,6 +2,7 @@
 
 import json
 import logging
+from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.v1.moyuren import router
+from app.core.services import AppServices
 from app.services.generator import GenerationBusyError
 
 
@@ -43,7 +45,7 @@ class TestMoyurenAPI:
         }
 
     @pytest.fixture
-    def app(self, tmp_path: Path, sample_data: dict) -> FastAPI:
+    def app(self, tmp_path: Path, sample_data: dict, mock_services: AppServices) -> FastAPI:
         """Create a test FastAPI app."""
         app = FastAPI()
         app.include_router(router)
@@ -69,6 +71,7 @@ class TestMoyurenAPI:
         mock_config.server.base_domain = "http://localhost:8000"
 
         app.state.config = mock_config
+        app.state.services = mock_services
         app.state.logger = logging.getLogger("test")
 
         return app
@@ -79,13 +82,13 @@ class TestMoyurenAPI:
         return TestClient(app)
 
     @pytest.fixture
-    def mock_today(self):
+    def mock_today(self) -> Iterator[MagicMock]:
         """Mock today_business to return fixed date."""
         with patch("app.api.v1.moyuren.today_business") as mock:
             mock.return_value = date(2026, 2, 10)
             yield mock
 
-    def test_get_moyuren_json_simple(self, client: TestClient, mock_today) -> None:
+    def test_get_moyuren_json_simple(self, client: TestClient, mock_today: MagicMock) -> None:
         """Test GET /api/v1/moyuren with default parameters (encode=json, detail=false)."""
         response = client.get("/api/v1/moyuren")
 
@@ -99,7 +102,7 @@ class TestMoyurenAPI:
         assert "weekday" not in data
         assert "fun_content" not in data
 
-    def test_get_moyuren_json_detail(self, client: TestClient, mock_today) -> None:
+    def test_get_moyuren_json_detail(self, client: TestClient, mock_today: MagicMock) -> None:
         """Test GET /api/v1/moyuren?detail=true."""
         response = client.get("/api/v1/moyuren?detail=true")
 
@@ -115,7 +118,7 @@ class TestMoyurenAPI:
         assert "guide" in data
         assert "news_list" in data
 
-    def test_get_moyuren_text(self, client: TestClient, mock_today) -> None:
+    def test_get_moyuren_text(self, client: TestClient, mock_today: MagicMock) -> None:
         """Test GET /api/v1/moyuren?encode=text."""
         response = client.get("/api/v1/moyuren?encode=text")
 
@@ -126,7 +129,7 @@ class TestMoyurenAPI:
         assert "更新时间: 2026/02/10 07:22:32" in text
         assert "图片: http://localhost:8000/static/moyuren_20260210_072232.jpg" in text
 
-    def test_get_moyuren_markdown(self, client: TestClient, mock_today) -> None:
+    def test_get_moyuren_markdown(self, client: TestClient, mock_today: MagicMock) -> None:
         """Test GET /api/v1/moyuren?encode=markdown."""
         response = client.get("/api/v1/moyuren?encode=markdown")
 
@@ -137,7 +140,7 @@ class TestMoyurenAPI:
         assert "**更新时间**: 2026/02/10 07:22:32" in markdown
         assert "![摸鱼日历](http://localhost:8000/static/moyuren_20260210_072232.jpg)" in markdown
 
-    def test_get_moyuren_image(self, client: TestClient, mock_today) -> None:
+    def test_get_moyuren_image(self, client: TestClient, mock_today: MagicMock) -> None:
         """Test GET /api/v1/moyuren?encode=image."""
         response = client.get("/api/v1/moyuren?encode=image")
 
@@ -145,7 +148,9 @@ class TestMoyurenAPI:
         assert response.headers["content-type"] == "image/jpeg"
         assert response.content == b"fake image content"
 
-    def test_get_moyuren_with_date_parameter(self, tmp_path: Path, mock_today) -> None:
+    def test_get_moyuren_with_date_parameter(
+        self, tmp_path: Path, mock_today: MagicMock, mock_services: AppServices
+    ) -> None:
         """Test GET /api/v1/moyuren?date=2026-02-09."""
         app = FastAPI()
         app.include_router(router)
@@ -177,6 +182,7 @@ class TestMoyurenAPI:
         mock_config.server.base_domain = "http://localhost:8000"
 
         app.state.config = mock_config
+        app.state.services = mock_services
 
         client = TestClient(app)
         response = client.get("/api/v1/moyuren?date=2026-02-09")
@@ -189,7 +195,7 @@ class TestMoyurenAPI:
         assert "Cache-Control" in response.headers
         assert "immutable" in response.headers["Cache-Control"]
 
-    def test_get_moyuren_invalid_date_format(self, client: TestClient, mock_today) -> None:
+    def test_get_moyuren_invalid_date_format(self, client: TestClient, mock_today: MagicMock) -> None:
         """Test GET /api/v1/moyuren?date=invalid returns 400."""
         response = client.get("/api/v1/moyuren?date=invalid")
 
@@ -198,7 +204,7 @@ class TestMoyurenAPI:
         assert data["error"]["code"] == "API_7001"
         assert "Invalid date format" in data["error"]["message"]
 
-    def test_get_moyuren_invalid_encode(self, client: TestClient, mock_today) -> None:
+    def test_get_moyuren_invalid_encode(self, client: TestClient, mock_today: MagicMock) -> None:
         """Test GET /api/v1/moyuren?encode=invalid returns 400."""
         response = client.get("/api/v1/moyuren?encode=invalid")
 
@@ -207,7 +213,7 @@ class TestMoyurenAPI:
         assert data["error"]["code"] == "API_7002"
         assert "Invalid encode parameter" in data["error"]["message"]
 
-    def test_get_moyuren_date_not_found(self, client: TestClient, mock_today) -> None:
+    def test_get_moyuren_date_not_found(self, client: TestClient, mock_today: MagicMock) -> None:
         """Test GET /api/v1/moyuren?date=2025-01-01 returns 404 when data doesn't exist."""
         response = client.get("/api/v1/moyuren?date=2025-01-01")
 
@@ -216,7 +222,7 @@ class TestMoyurenAPI:
         assert data["error"]["code"] == "API_7005"
         assert "No data available for date" in data["error"]["message"]
 
-    def test_get_moyuren_cache_headers_today(self, client: TestClient, mock_today) -> None:
+    def test_get_moyuren_cache_headers_today(self, client: TestClient, mock_today: MagicMock) -> None:
         """Test cache headers for today's data (ETag + Last-Modified)."""
         response = client.get("/api/v1/moyuren")
 
@@ -226,7 +232,7 @@ class TestMoyurenAPI:
         assert "Cache-Control" in response.headers
         assert "must-revalidate" in response.headers["Cache-Control"]
 
-    def test_get_moyuren_304_not_modified(self, client: TestClient, mock_today) -> None:
+    def test_get_moyuren_304_not_modified(self, client: TestClient, mock_today: MagicMock) -> None:
         """Test 304 Not Modified response with If-None-Match header."""
         # First request to get ETag
         response1 = client.get("/api/v1/moyuren")
@@ -238,7 +244,9 @@ class TestMoyurenAPI:
         assert response2.status_code == 304
         assert response2.content == b""
 
-    def test_get_moyuren_template_parameter(self, tmp_path: Path, mock_today) -> None:
+    def test_get_moyuren_template_parameter(
+        self, tmp_path: Path, mock_today: MagicMock, mock_services: AppServices
+    ) -> None:
         """Test GET /api/v1/moyuren?template=custom."""
         app = FastAPI()
         app.include_router(router)
@@ -273,6 +281,7 @@ class TestMoyurenAPI:
         mock_config.server.base_domain = "http://localhost:8000"
 
         app.state.config = mock_config
+        app.state.services = mock_services
 
         client = TestClient(app)
 
@@ -288,7 +297,7 @@ class TestMoyurenAPI:
         data2 = response2.json()
         assert "custom_20260210_072232.jpg" in data2["image"]
 
-    def test_get_moyuren_template_not_found(self, client: TestClient, mock_today) -> None:
+    def test_get_moyuren_template_not_found(self, client: TestClient, mock_today: MagicMock) -> None:
         """Test GET /api/v1/moyuren?template=nonexistent returns 500."""
         response = client.get("/api/v1/moyuren?template=nonexistent")
 
@@ -296,7 +305,9 @@ class TestMoyurenAPI:
         data = response.json()
         assert data["error"]["code"] == "API_7004"
 
-    def test_get_moyuren_image_path_traversal_protection(self, tmp_path: Path, mock_today) -> None:
+    def test_get_moyuren_image_path_traversal_protection(
+        self, tmp_path: Path, mock_today: MagicMock, mock_services: AppServices
+    ) -> None:
         """Test path traversal protection for encode=image."""
         app = FastAPI()
         app.include_router(router)
@@ -324,6 +335,7 @@ class TestMoyurenAPI:
         mock_config.server.base_domain = "http://localhost:8000"
 
         app.state.config = mock_config
+        app.state.services = mock_services
 
         client = TestClient(app)
         response = client.get("/api/v1/moyuren?encode=image")
@@ -334,7 +346,9 @@ class TestMoyurenAPI:
         assert data["error"]["code"] == "STORAGE_4002"
         assert "Invalid filename" in data["error"]["message"]
 
-    def test_get_moyuren_image_not_found(self, tmp_path: Path, mock_today) -> None:
+    def test_get_moyuren_image_not_found(
+        self, tmp_path: Path, mock_today: MagicMock, mock_services: AppServices
+    ) -> None:
         """Test GET /api/v1/moyuren?encode=image returns 404 when image file missing."""
         app = FastAPI()
         app.include_router(router)
@@ -363,6 +377,7 @@ class TestMoyurenAPI:
         mock_config.server.base_domain = "http://localhost:8000"
 
         app.state.config = mock_config
+        app.state.services = mock_services
 
         client = TestClient(app)
         with patch("app.api.v1.moyuren.generate_and_save_image", new_callable=AsyncMock) as generate:

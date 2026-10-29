@@ -12,10 +12,14 @@ import pytest
 from fastapi import FastAPI
 
 import app.main as main_module
+import app.core.bootstrap as bootstrap_module
+from app.core.services import AppServices
 
 
 @pytest.fixture
-def startup_app(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> FastAPI:
+def startup_app(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mock_services: AppServices
+) -> FastAPI:
     """Create an app with local configuration and mocked startup dependencies."""
     config = SimpleNamespace(
         paths=SimpleNamespace(cache_dir=str(tmp_path / "cache")),
@@ -35,7 +39,10 @@ def startup_app(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> FastAPI:
     app.state.browser_manager = SimpleNamespace(
         configure=MagicMock(), warmup=AsyncMock(), shutdown=AsyncMock(),
     )
-    app.state.holiday_service = SimpleNamespace(get=AsyncMock())
+    monkeypatch.setattr(mock_services.holiday_service, "get", AsyncMock())
+    monkeypatch.setattr(mock_services.generator, "generate", AsyncMock())
+    monkeypatch.setattr(mock_services.generator, "shutdown", AsyncMock())
+    app.state.services = mock_services
     app.state.http_client = SimpleNamespace(aclose=AsyncMock())
     app.state.scheduler = SimpleNamespace(
         add_hourly_job=MagicMock(), start=MagicMock(), shutdown=MagicMock(),
@@ -43,15 +50,11 @@ def startup_app(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> FastAPI:
     monkeypatch.setattr(main_module, "load_config", lambda: config)
     monkeypatch.setattr(main_module, "setup_logging", lambda *args, **kwargs: app.state.logger)
     monkeypatch.setattr(main_module, "init_timezones", lambda **kwargs: None)
-    monkeypatch.setattr(main_module, "today_business", lambda: date(2026, 2, 4))
+    monkeypatch.setattr(bootstrap_module, "today_business", lambda: date(2026, 2, 4))
     monkeypatch.setattr(main_module, "browser_manager", app.state.browser_manager)
     monkeypatch.setattr(main_module.httpx, "AsyncClient", lambda **kwargs: app.state.http_client)
-    monkeypatch.setattr(main_module, "CachedHolidayService", lambda **kwargs: app.state.holiday_service)
-    monkeypatch.setattr(main_module, "ImageRenderer", lambda **kwargs: MagicMock())
-    monkeypatch.setattr(main_module, "CacheCleaner", lambda **kwargs: MagicMock())
+    monkeypatch.setattr(main_module, "build_services", lambda *args: app.state.services)
     monkeypatch.setattr(main_module, "TaskScheduler", lambda *args, **kwargs: app.state.scheduler)
-    app.state.generate_image = AsyncMock()
-    monkeypatch.setattr(main_module, "generate_and_save_image", app.state.generate_image)
     return app
 
 
@@ -69,7 +72,7 @@ async def test_lifespan_yields_before_warmup_and_cancels_startup(startup_app: Fa
         assert startup_app.state.startup_task.cancelled()
 
     startup_app.state.scheduler.shutdown.side_effect = stop_scheduler
-    startup_app.state.holiday_service.get.side_effect = warmup
+    startup_app.state.services.holiday_service.get.side_effect = warmup
     async with asyncio.timeout(1), main_module.lifespan(startup_app):
         startup_app.state.scheduler.start.assert_called_once()
         assert startup_app.state.startup_state == "starting"
@@ -77,7 +80,7 @@ async def test_lifespan_yields_before_warmup_and_cancels_startup(startup_app: Fa
         assert startup_app.state.startup_completed_at is None
         await asyncio.wait_for(warmup_started.wait(), timeout=1)
         assert not startup_app.state.startup_task.done()
-        startup_app.state.generate_image.assert_not_awaited()
+        startup_app.state.services.generator.generate.assert_not_awaited()
 
     assert startup_app.state.startup_task.cancelled()
     startup_app.state.http_client.aclose.assert_awaited_once()
@@ -97,16 +100,17 @@ async def test_startup_warms_cache_before_generating_missing_data(startup_app: F
         warmup_started.set()
         await allow_warmup.wait()
 
-    async def generate(app: FastAPI) -> None:
+    async def generate(app: FastAPI, template_name: str | None = None) -> None:
         assert allow_warmup.is_set()
+        assert template_name is None
         generation_started.set()
         await allow_generation.wait()
 
-    startup_app.state.holiday_service.get.side_effect = warmup
-    startup_app.state.generate_image.side_effect = generate
+    startup_app.state.services.holiday_service.get.side_effect = warmup
+    startup_app.state.services.generator.generate.side_effect = generate
     async with asyncio.timeout(1), main_module.lifespan(startup_app):
         await asyncio.wait_for(warmup_started.wait(), timeout=1)
-        startup_app.state.generate_image.assert_not_awaited()
+        startup_app.state.services.generator.generate.assert_not_awaited()
         allow_warmup.set()
         await asyncio.wait_for(generation_started.wait(), timeout=1)
         assert startup_app.state.startup_state == "starting"
@@ -121,12 +125,14 @@ async def test_startup_source_failure_still_finishes_ready(
     startup_app: FastAPI, caplog: pytest.LogCaptureFixture
 ) -> None:
     """A source warmup error is logged without failing the startup task."""
-    startup_app.state.holiday_service.get.side_effect = RuntimeError("source unavailable")
+    startup_app.state.services.holiday_service.get.side_effect = RuntimeError("source unavailable")
     async with asyncio.timeout(1), main_module.lifespan(startup_app):
         await asyncio.wait_for(startup_app.state.startup_task, timeout=1)
         assert startup_app.state.startup_state == "ready"
         assert "Cache warmup [holiday] failed" in caplog.text
-        startup_app.state.generate_image.assert_awaited_once_with(startup_app)
+        startup_app.state.services.generator.generate.assert_awaited_once_with(
+            startup_app, None
+        )
 
 
 @pytest.mark.asyncio
@@ -135,7 +141,7 @@ async def test_unexpected_startup_failure_is_logged(
 ) -> None:
     """Unexpected task errors mark startup failed without escaping lifespan."""
     monkeypatch.setattr(
-        main_module, "_ensure_today_data", AsyncMock(side_effect=RuntimeError("unexpected failure"))
+        main_module, "ensure_today_data", AsyncMock(side_effect=RuntimeError("unexpected failure"))
     )
     async with asyncio.timeout(1), main_module.lifespan(startup_app):
         await asyncio.wait_for(startup_app.state.startup_task, timeout=1)
@@ -167,13 +173,16 @@ async def test_initial_generation_removes_invalid_data(
     else:
         data_file.write_text(invalid_data, encoding="utf-8")
 
-    async def generate(app: FastAPI) -> None:
+    async def generate(app: FastAPI, template_name: str | None = None) -> None:
+        assert template_name is None
         assert not data_file.exists()
 
-    startup_app.state.generate_image.side_effect = generate
+    startup_app.state.services.generator.generate.side_effect = generate
     async with asyncio.timeout(1), main_module.lifespan(startup_app):
         await asyncio.wait_for(startup_app.state.startup_task, timeout=1)
-        startup_app.state.generate_image.assert_awaited_once_with(startup_app)
+        startup_app.state.services.generator.generate.assert_awaited_once_with(
+            startup_app, None
+        )
         assert not data_file.exists()
         assert startup_app.state.startup_state == "ready"
 
@@ -192,11 +201,12 @@ async def test_startup_preserves_valid_cache(startup_app: FastAPI, cached_date: 
     async with asyncio.timeout(1), main_module.lifespan(startup_app):
         await asyncio.wait_for(startup_app.state.startup_task, timeout=1)
         assert data_file.exists()
-        assert not startup_app.state.is_refreshing
         if cached_date == "2026-02-04":
-            startup_app.state.generate_image.assert_not_awaited()
+            startup_app.state.services.generator.generate.assert_not_awaited()
         else:
-            startup_app.state.generate_image.assert_awaited_once_with(startup_app)
+            startup_app.state.services.generator.generate.assert_awaited_once_with(
+                startup_app, None
+            )
         assert startup_app.state.startup_state == "ready"
 
 
@@ -205,7 +215,9 @@ async def test_initial_generation_failure_still_finishes_ready(
     startup_app: FastAPI, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Expected generation errors retain on-demand fallback without failing startup."""
-    startup_app.state.generate_image.side_effect = RuntimeError("render unavailable")
+    startup_app.state.services.generator.generate.side_effect = RuntimeError(
+        "render unavailable"
+    )
     async with asyncio.timeout(1), main_module.lifespan(startup_app):
         await asyncio.wait_for(startup_app.state.startup_task, timeout=1)
         assert startup_app.state.startup_state == "ready"
@@ -224,12 +236,13 @@ async def test_expired_cache_refresh_failure_preserves_stale_data(
         json.dumps({"date": "2026-02-03", "updated_at": 1, "images": {"moyuren": "x.jpg"}}),
         encoding="utf-8",
     )
-    startup_app.state.generate_image.side_effect = RuntimeError("render unavailable")
+    startup_app.state.services.generator.generate.side_effect = RuntimeError(
+        "render unavailable"
+    )
     async with asyncio.timeout(1), main_module.lifespan(startup_app):
         await asyncio.wait_for(startup_app.state.startup_task, timeout=1)
         assert startup_app.state.startup_state == "ready"
         assert data_file.exists()
-        assert not startup_app.state.is_refreshing
         assert "Background refresh failed" in caplog.text
 
 
@@ -249,15 +262,15 @@ async def test_shutdown_cancels_initial_generation(
             encoding="utf-8",
         )
 
-    async def generate(app: FastAPI) -> None:
+    async def generate(app: FastAPI, template_name: str | None = None) -> None:
+        assert template_name is None
         generation_started.set()
         await allow_generation.wait()
 
     def stop_scheduler() -> None:
         assert startup_app.state.startup_task.cancelled()
-        assert not startup_app.state.is_refreshing
 
-    startup_app.state.generate_image.side_effect = generate
+    startup_app.state.services.generator.generate.side_effect = generate
     startup_app.state.scheduler.shutdown.side_effect = stop_scheduler
     async with asyncio.timeout(1), main_module.lifespan(startup_app):
         await asyncio.wait_for(generation_started.wait(), timeout=1)

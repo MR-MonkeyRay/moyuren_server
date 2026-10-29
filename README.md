@@ -107,7 +107,7 @@ sudo chown -R 1000:1000 cache logs
 | GET | `/api/v1/ops/cache/clean` | 清理过期缓存（需鉴权） |
 | GET | `/static/{filename}` | 静态图片文件 |
 
-> 注：当无可用图片时，API 会自动触发按需生成；若生成任务已在进行中，将返回 `503` 并附带 `Retry-After: 5` 响应头。Ops 端点需要 `Authorization: Bearer <api_key>` 鉴权。
+> 注：当无可用图片时，API 会自动触发按需生成；同一进程内的并发请求会等待当前生成任务，复用结果或依次生成未覆盖的模板。仅当其他进程持有生成锁或等待超时（90 秒）时返回 `503`，并附带 `Retry-After` 响应头（图片 API 为 5 秒，Ops 为 10 秒）。Ops 端点需要 `Authorization: Bearer <api_key>` 鉴权。
 
 ### 静态发布
 
@@ -314,7 +314,7 @@ sudo chown -R 1000:1000 cache logs
 | 404 | `API_7005` | 模板不存在 |
 | 404 | `STORAGE_4003` | 无可用图片 |
 | 500 | `GENERATION_5001` | 图片生成失败 |
-| 503 | `GENERATION_5002` | 图片生成中（Retry-After: 5） |
+| 503 | `GENERATION_5002` | 其他进程正在生成或等待超时（Retry-After: 5） |
 
 </details>
 

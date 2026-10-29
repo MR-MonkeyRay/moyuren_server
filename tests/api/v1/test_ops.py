@@ -11,10 +11,11 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.v1.ops import router as ops_router
 from app.core.errors import ErrorCode
+from app.core.services import AppServices
 
 
 @pytest.fixture
-def ops_app(tmp_path: Path) -> FastAPI:
+def ops_app(tmp_path: Path, mock_services: AppServices) -> FastAPI:
     """Create a test FastAPI app with ops router."""
     app = FastAPI()
     app.include_router(ops_router)
@@ -34,13 +35,15 @@ def ops_app(tmp_path: Path) -> FastAPI:
     (tmp_path / "cache" / "data").mkdir(parents=True)
     (tmp_path / "cache" / "images").mkdir(parents=True)
 
-    services = MagicMock()
-    services.cache_cleaner.cleanup.return_value = {
+    services = mock_services
+    cache_cleaner = MagicMock()
+    cache_cleaner.cleanup.return_value = {
         "deleted_files": 5,
         "freed_bytes": 1024000,
         "oldest_kept": "2026-01-15",
     }
-    services.cache_cleaner.retain_days = 30
+    cache_cleaner.retain_days = 30
+    services.cache_cleaner = cache_cleaner
 
     app.state.config = config
     app.state.services = services

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import os
 import tempfile
 import time
@@ -10,29 +11,15 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
+
+from app.core.errors import GenerationBusyError, StorageError
 from app.core.filelock import FileLockTimeout, async_file_lock
 from app.core.network import safe_exception_for_log
-
-from app.core.errors import StorageError
+from app.core.services import AppServices
+from app.services.cache import CacheCleaner
 from app.services.calendar import get_display_timezone, now_business
 
-
-class GenerationBusyError(Exception):
-    """生成任务正在进行中"""
-
-    pass
-
-
-# 进程内锁
-_async_lock: asyncio.Lock | None = None
-
-
-def _get_async_lock() -> asyncio.Lock:
-    """获取或创建异步锁（单例模式）"""
-    global _async_lock
-    if _async_lock is None:
-        _async_lock = asyncio.Lock()
-    return _async_lock
+INFLIGHT_WAIT_TIMEOUT_SEC = 90
 
 
 def _read_data_file(data_file: Path) -> dict | None:
@@ -98,7 +85,7 @@ def _read_latest_filename(data_file: Path, template_name: str | None = None) -> 
         return None
 
 
-async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
+async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict[str, Any]:
     """Fetch all data sources in parallel.
 
     Uses asyncio.gather to fetch data from multiple sources concurrently,
@@ -111,18 +98,17 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
     Returns:
         Dictionary containing all fetched data with appropriate defaults for failures.
     """
-    # 优先使用服务容器，兼容旧方式
-    services = getattr(app.state, "services", None)
-    data_fetcher = services.data_fetcher if services else getattr(app.state, "data_fetcher", None)
-    holiday_service = services.holiday_service if services else app.state.holiday_service
-    fun_content_service = services.fun_content_service if services else getattr(app.state, "fun_content_service", None)
-    kfc_service = services.kfc_service if services else app.state.kfc_service
-    stock_index_service = services.stock_index_service if services else app.state.stock_index_service
-    gold_price_service = services.gold_price_service if services else getattr(app.state, "gold_price_service", None)
-    daily_english_service = services.daily_english_service if services else getattr(app.state, "daily_english_service", None)
+    services: AppServices = app.state.services
+    data_fetcher = services.data_fetcher
+    holiday_service = services.holiday_service
+    fun_content_service = services.fun_content_service
+    kfc_service = services.kfc_service
+    stock_index_service = services.stock_index_service
+    gold_price_service = services.gold_price_service
+    daily_english_service = services.daily_english_service
 
     # Define fetch tasks
-    async def fetch_api_data():
+    async def fetch_api_data() -> dict[str, Any]:
         """获取基础 API 数据。
 
         Returns:
@@ -140,7 +126,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             logger.warning("Failed to fetch API data: %s", safe_exception_for_log(e))
             return {}
 
-    async def fetch_holidays():
+    async def fetch_holidays() -> list[Any]:
         """获取节假日数据。
 
         Returns:
@@ -156,7 +142,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             logger.warning("Failed to fetch holidays: %s", safe_exception_for_log(e))
             return []
 
-    async def fetch_fun_content():
+    async def fetch_fun_content() -> dict[str, Any] | None:
         """获取趣味内容。
 
         Returns:
@@ -173,7 +159,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             logger.warning("Failed to fetch fun content: %s", safe_exception_for_log(e))
             return None
 
-    async def fetch_kfc():
+    async def fetch_kfc() -> str | None:
         """获取疯狂星期四文案。
 
         Returns:
@@ -190,7 +176,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             logger.warning("Failed to fetch KFC content: %s", safe_exception_for_log(e))
             return None
 
-    async def fetch_stock_indices():
+    async def fetch_stock_indices() -> dict[str, Any] | None:
         """获取股票指数数据。
 
         Returns:
@@ -207,7 +193,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             logger.warning("Failed to fetch stock indices: %s", safe_exception_for_log(e))
             return None
 
-    async def fetch_gold_price():
+    async def fetch_gold_price() -> dict[str, Any] | None:
         """获取金价数据。
 
         Returns:
@@ -224,7 +210,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
             logger.warning("Failed to fetch gold price: %s", safe_exception_for_log(e))
             return None
 
-    async def fetch_daily_english():
+    async def fetch_daily_english() -> dict[str, Any] | None:
         """获取每日英语内容。
 
         Returns:
@@ -293,7 +279,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger) -> dict:
     return raw_data
 
 
-def _schedule_cache_cleanup(cache_cleaner, logger) -> None:
+def _schedule_cache_cleanup(cache_cleaner: CacheCleaner, logger: logging.Logger) -> None:
     """Schedule cache cleanup as a fire-and-forget background task.
 
     This function creates a background task for cache cleanup that doesn't
@@ -305,14 +291,14 @@ def _schedule_cache_cleanup(cache_cleaner, logger) -> None:
         logger: Logger instance for logging.
     """
 
-    async def _cleanup_task():
+    async def _cleanup_task() -> None:
         """在线程中执行缓存清理并记录结果。
 
         Side Effects:
             删除过期缓存文件，并在删除成功或失败时写入日志。
         """
         try:
-            result = await asyncio.to_thread(cache_cleaner.cleanup)
+            result: dict[str, Any] = await asyncio.to_thread(cache_cleaner.cleanup)
             if result.get("deleted_files", 0) > 0:
                 logger.info(
                     f"Cleaned up {result['deleted_files']} expired cache file(s), "
@@ -324,64 +310,102 @@ def _schedule_cache_cleanup(cache_cleaner, logger) -> None:
     asyncio.create_task(_cleanup_task())
 
 
-async def generate_and_save_image(
-    app: FastAPI, template_name: str | None = None
-) -> dict[str, str]:
-    """Generate images and update data file.
+class ImageGenerator:
+    """应用内共享图片生成任务，避免重复获取数据和渲染。"""
 
-    This function performs the complete image generation pipeline:
-    1. Fetch data from API endpoints
-    2. Compute template context
-    3. Render HTML to image for each template
-    4. Update cache/data/{date}.json atomically
+    def __init__(self) -> None:
+        """初始化当前任务及其覆盖的模板集合。"""
+        self._task: asyncio.Task[dict[str, str]] | None = None
+        self._templates: frozenset[str] = frozenset()
 
-    When template_name is None, all configured templates are rendered.
-    When template_name is specified, only that template is rendered.
+    async def generate(
+        self, app: FastAPI, template_name: str | None = None
+    ) -> dict[str, str]:
+        """共享覆盖所需模板的任务，或等待后生成尚未覆盖的模板。"""
+        deadline = asyncio.get_running_loop().time() + INFLIGHT_WAIT_TIMEOUT_SEC
+        while self._task is not None and not self._task.done():
+            task = self._task
+            covered = template_name is None or template_name in self._templates
+            wait_timeout = asyncio.timeout_at(deadline)
+            try:
+                async with wait_timeout:
+                    result = await asyncio.shield(task)
+            except TimeoutError as exc:
+                if not wait_timeout.expired():
+                    raise
+                app.state.logger.info("Image generation wait timed out (in-process)")
+                raise GenerationBusyError("Image generation wait timed out") from exc
+            if covered:
+                return result
 
-    Args:
-        app: FastAPI application instance with services in app.state.
-        template_name: Optional template name. None renders all templates.
+        templates_config = app.state.config.get_templates_config()
+        self._templates = frozenset(
+            [template_name] if template_name else (item.name for item in templates_config.items)
+        )
+        task = asyncio.create_task(self._generate_and_save_image(app, template_name))
+        self._task = task
+        task.add_done_callback(self._generation_done)
+        return await asyncio.shield(task)
 
-    Returns:
-        Dict mapping template names to generated image filenames.
-        Templates that failed to render will be omitted from the dict.
+    def _generation_done(self, task: asyncio.Task[dict[str, str]]) -> None:
+        """释放已完成的任务并接收取消调用方后遗留的异常。"""
+        if self._task is task:
+            self._task = None
+            self._templates = frozenset()
+        if not task.cancelled():
+            task.exception()
 
-    Raises:
-        StorageError: If no templates are configured or all templates fail to render.
-        GenerationBusyError: If generation is locked by another process.
-    """
-    logger = app.state.logger
-    config = app.state.config
-    cache_dir = Path(config.paths.cache_dir)
-    data_dir = cache_dir / "data"
-    images_dir = cache_dir / "images"
+    async def shutdown(self) -> None:
+        """关闭依赖服务前取消并等待当前生成任务。"""
+        task = self._task
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
-    # Determine which templates to render
-    templates_config = config.get_templates_config()
-    if template_name:
-        templates_to_render = [templates_config.get_template(template_name)]
-    else:
-        templates_to_render = list(templates_config.items)
+    async def _generate_and_save_image(
+        self, app: FastAPI, template_name: str | None = None
+    ) -> dict[str, str]:
+        """Generate images and update data file.
 
-    if not templates_to_render:
-        raise StorageError("No templates configured for rendering")
+        This function performs the complete image generation pipeline:
+        1. Fetch data from API endpoints
+        2. Compute template context
+        3. Render HTML to image for each template
+        4. Update cache/data/{date}.json atomically
 
-    # 获取进程内锁
-    async_lock = _get_async_lock()
+        When template_name is None, all configured templates are rendered.
+        When template_name is specified, only that template is rendered.
 
-    # 获取文件锁路径
-    lock_file = cache_dir / ".generation.lock"
+        Args:
+            app: FastAPI application instance with services in app.state.
+            template_name: Optional template name. None renders all templates.
 
-    # 快速获取进程内锁（避免请求排队）
-    acquired = False
-    try:
-        await asyncio.wait_for(async_lock.acquire(), timeout=0.1)
-        acquired = True
-    except TimeoutError as exc:
-        logger.info("Image generation skipped: another request is generating (in-process)")
-        raise GenerationBusyError("Image generation already in progress") from exc
+        Returns:
+            Dict mapping template names to generated image filenames.
+            Templates that failed to render will be omitted from the dict.
 
-    try:
+        Raises:
+            StorageError: If no templates are configured or all templates fail to render.
+            GenerationBusyError: If generation is locked by another process.
+        """
+        services: AppServices = app.state.services
+        logger = app.state.logger
+        config = app.state.config
+        cache_dir = Path(config.paths.cache_dir)
+        data_dir = cache_dir / "data"
+        images_dir = cache_dir / "images"
+
+        # Determine which templates to render
+        templates_config = config.get_templates_config()
+        if template_name:
+            templates_to_render = [templates_config.get_template(template_name)]
+        else:
+            templates_to_render = list(templates_config.items)
+
+        if not templates_to_render:
+            raise StorageError("No templates configured for rendering")
+
+        lock_file = cache_dir / ".generation.lock"
         try:
             async with async_file_lock(lock_file, timeout=5.0):
                 now = now_business()
@@ -421,7 +445,7 @@ async def generate_and_save_image(
                 raw_data = await _fetch_all_data_parallel(app, logger)
 
                 # 2. Compute template context (once for all templates)
-                template_data = app.state.data_computer.compute(raw_data, now=now)
+                template_data = services.data_computer.compute(raw_data, now=now)
                 logger.info("Template data computed")
 
                 # 3. Render each template and update data file
@@ -432,7 +456,7 @@ async def generate_and_save_image(
                     tname = template_item.name
                     try:
                         t_start = time.monotonic()
-                        filename = await app.state.image_renderer.render(
+                        filename = await services.image_renderer.render(
                             template_data,
                             template_name=tname,
                             now=now,
@@ -464,16 +488,20 @@ async def generate_and_save_image(
                     )
 
                 # 4. Clean up old cache (fire-and-forget, non-blocking)
-                _schedule_cache_cleanup(app.state.cache_cleaner, logger)
+                _schedule_cache_cleanup(services.cache_cleaner, logger)
 
                 return results
         except FileLockTimeout as exc:
             logger.warning("Image generation skipped: another process is generating")
             raise GenerationBusyError("Image generation locked by another process") from exc
-    finally:
-        if acquired:
-            async_lock.release()
 
+
+async def generate_and_save_image(
+    app: FastAPI, template_name: str | None = None
+) -> dict[str, str]:
+    """通过应用服务容器生成图片或等待已有任务。"""
+    services: AppServices = app.state.services
+    return await services.generator.generate(app, template_name)
 
 
 async def _update_data_file(

@@ -10,6 +10,28 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.core.services import AppServices
+from app.services.generator import ImageGenerator
+
+
+@pytest.fixture
+def mock_services() -> AppServices:
+    """Return a service container with isolated test doubles."""
+    return AppServices(
+        data_fetcher=None,
+        holiday_service=MagicMock(),
+        fun_content_service=None,
+        kfc_service=None,
+        stock_index_service=None,
+        gold_price_service=None,
+        daily_english_service=None,
+        image_renderer=MagicMock(),
+        data_computer=MagicMock(),
+        cache_cleaner=MagicMock(),
+        generator=ImageGenerator(),
+    )
+
+
 # --- Basic Utilities ---
 
 

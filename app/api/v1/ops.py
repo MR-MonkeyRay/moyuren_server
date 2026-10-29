@@ -10,6 +10,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
 from app.core.errors import ErrorCode, error_response, get_http_status
+from app.core.services import AppServices
 from app.services.calendar import today_business
 from app.services.generator import GenerationBusyError, generate_and_save_image
 
@@ -128,7 +129,8 @@ async def ops_cache_clean(
         )
 
     try:
-        cache_cleaner = request.app.state.services.cache_cleaner
+        services: AppServices = request.app.state.services
+        cache_cleaner = services.cache_cleaner
         if keep_days is not None:
             result = await asyncio.to_thread(cache_cleaner.cleanup, retain_days=keep_days)
         else:

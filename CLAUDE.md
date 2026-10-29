@@ -11,6 +11,7 @@
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | 入口 | `app/main.py` | 应用生命周期、定时任务注册 |
+| 启动 | `app/core/bootstrap.py` | 服务构建、定时任务注册、启动缓存验证 |
 | API | `app/api/v1/moyuren.py` | REST 端点 |
 | Ops API | `app/api/v1/ops.py` | 运维端点（手动生成、缓存清理） |
 | 模板 API | `app/api/v1/templates.py` | 模板列表查询 |

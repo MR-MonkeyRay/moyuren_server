@@ -6,10 +6,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 import httpx
-from app.core.network import httpx_client_kwargs, safe_exception_for_log
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,216 +17,61 @@ from app import __version__
 from app.api.v1.moyuren import router as moyuren_router
 from app.api.v1.ops import router as ops_router
 from app.api.v1.templates import router as templates_router
-from app.core.config import (
-    CrazyThursdaySource,
-    DailyEnglishSource,
-    FunContentSource,
-    GoldPriceSource,
-    HolidaySource,
-    NewsSource,
-    StockIndexSource,
-    load_config,
+from app.core.bootstrap import (
+    build_services,
+    ensure_today_data,
+    register_scheduled_jobs,
+    warmup_daily_cache,
 )
+from app.core.config import load_config
 from app.core.errors import AppError, error_response, get_http_status
 from app.core.logging import setup_logging
+from app.core.network import httpx_client_kwargs, safe_exception_for_log
 from app.core.scheduler import TaskScheduler
-from app.core.services import AppServices
 from app.services.browser import browser_manager
-from app.services.cache import CacheCleaner
 from app.services.calendar import get_business_timezone, init_timezones, today_business
-from app.services.compute import DataComputer, DomainDataAggregator, TemplateAdapter
-from app.services.daily_english import CachedDailyEnglishService, build_dict_backend
-from app.services.fetcher import CachedDataFetcher
-from app.services.fun_content import CachedFunContentService
 from app.services.generator import generate_and_save_image
-from app.services.holiday import CachedHolidayService
-from app.services.kfc import CachedKfcService
-from app.services.renderer import ImageRenderer
-from app.services.stock_index import StockIndexService
-from app.services.gold_price import CachedGoldPriceService
-
-
-async def _ensure_today_data(app: FastAPI) -> None:
-    """Validate today's cached data and generate an initial image if needed."""
-    config = app.state.config
-    logger = app.state.logger
-    data_dir = Path(config.paths.cache_dir) / "data"
-    today_str = today_business().isoformat()
-    data_file = data_dir / f"{today_str}.json"
-    need_regenerate = False
-    cache_is_valid_but_expired = (
-        False  # Track if cache is structurally valid but just expired
-    )
-
-    if not data_file.exists():
-        logger.info("No existing data file found for today")
-        need_regenerate = True
-    else:
-        # Validate data file content
-        try:
-            import json
-
-            with data_file.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-            if not isinstance(data, dict):
-                logger.warning("Data file is not a dictionary")
-                need_regenerate = True
-            elif not data.get("images"):
-                logger.warning("Data file missing images mapping")
-                need_regenerate = True
-            else:
-                # Check cache expiration
-                try:
-                    updated_at_ms = data.get("updated_at")
-                    if updated_at_ms is None:
-                        logger.warning("Data file missing 'updated_at' field")
-                        need_regenerate = True
-                    # Validate updated_at type and range
-                    elif not isinstance(updated_at_ms, (int, float)):
-                        logger.warning(
-                            f"Invalid updated_at type: {type(updated_at_ms).__name__}, expected int or float"
-                        )
-                        need_regenerate = True
-                    elif updated_at_ms < 0:
-                        logger.warning(
-                            f"Invalid updated_at value: {updated_at_ms} (negative timestamp)"
-                        )
-                        need_regenerate = True
-                    else:
-                        # 使用日期边界判断替代 TTL
-                        cached_date = data.get("date")
-                        if cached_date != today_str:
-                            logger.info(
-                                f"Cache date mismatch: {cached_date} != {today_str}"
-                            )
-                            need_regenerate = True
-                            cache_is_valid_but_expired = True
-                except (TypeError, ValueError, KeyError) as e:
-                    logger.warning(f"Failed to check cache expiration: {e}")
-                    need_regenerate = True
-        except (json.JSONDecodeError, OSError) as e:
-            logger.warning(f"Data file invalid or unreadable: {e}")
-            need_regenerate = True
-
-    if need_regenerate:
-        if cache_is_valid_but_expired:
-            # Strategy: Async background refresh (cache is valid but expired)
-            # User can temporarily use stale data while startup runs
-            logger.info("Cache expired but valid, triggering background refresh...")
-
-            async def _background_refresh() -> None:
-                """Background task wrapper with error handling and single-flight."""
-                if app.state.is_refreshing:
-                    logger.info("Background refresh already in progress, skipping")
-                    return
-                app.state.is_refreshing = True
-                try:
-                    await generate_and_save_image(app)
-                    logger.info("Background refresh completed successfully")
-                except asyncio.CancelledError:
-                    logger.info("Background refresh cancelled due to shutdown")
-                    raise
-                except Exception as e:
-                    logger.error(
-                        "Background refresh failed: %s",
-                        safe_exception_for_log(e, config.network.proxy_url),
-                    )
-                    logger.warning(
-                        "Stale cache will be used until next scheduled refresh"
-                    )
-                finally:
-                    app.state.is_refreshing = False
-
-            await _background_refresh()
-        else:
-            # Generate missing or invalid cache inside the startup task
-            if data_file.exists():
-                # Invalid cache exists, remove it before regenerating
-                logger.info("Removing invalid data file...")
-                try:
-                    if data_file.is_file():
-                        data_file.unlink()
-                    elif data_file.is_dir():
-                        logger.error(
-                            f"Data file path is a directory, not a file: {data_file}"
-                        )
-                        import shutil
-
-                        shutil.rmtree(data_file)
-                except (OSError, IsADirectoryError) as e:
-                    logger.error(f"Failed to remove invalid data file: {e}")
-
-            logger.info("No valid cache found, generating initial image...")
-            try:
-                await generate_and_save_image(app)
-                logger.info("Initial image generated successfully")
-            except Exception as e:
-                logger.error(
-                    "Initial image generation failed: %s",
-                    safe_exception_for_log(e, config.network.proxy_url),
-                )
-                logger.warning(
-                    "Service will start without cache, API will trigger on-demand generation"
-                )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Application lifespan manager.
-
-    Handles startup and shutdown events for the FastAPI application.
-    """
-    # ==================== Startup ====================
+    """Start and stop application services."""
     app.state.startup_state = "starting"
     app.state.startup_started_at = datetime.now(timezone.utc)
     app.state.startup_completed_at = None
-    print("Starting Moyuren API...")
 
-    # 1. Load configuration
     config = load_config()
     app.state.config = config
-
-    # 2. Setup logging
     logger = setup_logging(config.logging, logger_name="moyuren")
     app.state.logger = logger
+    logger.info("Starting Moyuren API...")
     logger.info("Configuration loaded successfully")
     logger.info("Logging initialized")
 
-    # 2.1 Configure browser manager
     browser_manager.configure(logger, proxy_url=config.network.proxy_url)
     app.state.browser_manager = browser_manager
-
-    # 2.2 Initialize timezones
     init_timezones(
         business_tz=config.timezone.business, display_tz=config.timezone.display
     )
 
-    # 3. Ensure required directories exist
     cache_dir = Path(config.paths.cache_dir)
     (cache_dir / "data").mkdir(parents=True, exist_ok=True)
     (cache_dir / "images").mkdir(parents=True, exist_ok=True)
     (cache_dir / "holidays").mkdir(parents=True, exist_ok=True)
     Path(config.logging.file).parent.mkdir(parents=True, exist_ok=True)
-
-    # 3.1 Mount static files from cache/images
     app.router.routes[:] = [
-        r
-        for r in app.router.routes
+        route
+        for route in app.router.routes
         if not (
-            isinstance(r, Mount)
-            and r.path == "/static"
-            and getattr(r, "name", None) == "static"
+            isinstance(route, Mount)
+            and route.path == "/static"
+            and getattr(route, "name", None) == "static"
         )
     ]
     app.mount(
         "/static", StaticFiles(directory=str(cache_dir / "images")), name="static"
     )
 
-    # 4. Initialize services
-    # 创建日级缓存目录
-    daily_cache_dir = cache_dir / "daily"
-
-    # 创建共享 HTTP 客户端（连接池复用）
     http_client = httpx.AsyncClient(
         **httpx_client_kwargs(
             timeout=httpx.Timeout(30.0),
@@ -237,358 +80,140 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
     )
     app.state.http_client = http_client
+    services = build_services(config, logger, http_client)
+    app.state.services = services
 
-    # 初始化带缓存的数据获取器
-    news_source = config.get_source(NewsSource)
-    if news_source:
-        data_fetcher = CachedDataFetcher(
-            source=news_source,
-            logger=logger,
-            cache_dir=daily_cache_dir,
-            http_client=http_client,
-            proxy_url=config.network.proxy_url,
-            ghproxy_urls=config.network.ghproxy_urls,
-            instances=config.instances,
-        )
-    else:
-        data_fetcher = None
-
-    # Initialize data computation components
-    domain_aggregator = DomainDataAggregator()
-    template_adapter = TemplateAdapter()
-    data_computer = DataComputer(domain_aggregator, template_adapter)
-
-    # 初始化节假日服务（原始数据目录保持不变）
-    holiday_raw_cache_dir = cache_dir / "holidays"
-    holiday_source = config.get_source(HolidaySource)
-    holiday_service = CachedHolidayService(
-        logger=logger,
-        cache_dir=daily_cache_dir,
-        raw_cache_dir=holiday_raw_cache_dir,
-        ghproxy_urls=config.network.ghproxy_urls,
-        timeout_sec=holiday_source.timeout_sec if holiday_source else 10,
-        proxy_url=config.network.proxy_url,
-    )
-
-    # 初始化带缓存的趣味内容服务
-    fun_content_source = config.get_source(FunContentSource)
-    if fun_content_source:
-        fun_content_service = CachedFunContentService(
-            config=fun_content_source,
-            logger=logger,
-            cache_dir=daily_cache_dir,
-            proxy_url=config.network.proxy_url,
-            instances=config.instances,
-        )
-    else:
-        fun_content_service = None
-
-    # 初始化带缓存的 KFC 服务
-    kfc_service = None
-    crazy_thursday_source = config.get_source(CrazyThursdaySource)
-    if crazy_thursday_source:
-        kfc_service = CachedKfcService(
-            config=crazy_thursday_source,
-            logger=logger,
-            cache_dir=daily_cache_dir,
-            proxy_url=config.network.proxy_url,
-            instances=config.instances,
-        )
-
-    # Initialize stock index service if config exists
-    stock_index_service = None
-    stock_index_source = config.get_source(StockIndexSource)
-    if stock_index_source:
-        stock_index_service = StockIndexService(
-            stock_index_source, proxy_url=config.network.proxy_url
-        )
-
-    # Initialize gold price service if config exists
-    gold_price_service = None
-    gold_price_source = config.get_source(GoldPriceSource)
-    if gold_price_source:
-        gold_price_service = CachedGoldPriceService(
-            config=gold_price_source,
-            logger=logger,
-            cache_dir=daily_cache_dir,
-            http_client=http_client,
-            proxy_url=config.network.proxy_url,
-            instances=config.instances,
-        )
-
-    # Initialize daily English service if config exists
-    daily_english_service = None
-    daily_english_source = config.get_source(DailyEnglishSource)
-    if daily_english_source and daily_english_source.enabled:
-        dict_backend = build_dict_backend(
-            cfg=daily_english_source.backend,
-            cache_dir=config.paths.cache_dir,
-            ghproxy_urls=config.network.ghproxy_urls,
-            logger=logger,
-            proxy_url=config.network.proxy_url,
-        )
-        daily_english_service = CachedDailyEnglishService(
-            config=daily_english_source,
-            backend=dict_backend,
-            logger=logger,
-            cache_dir=daily_cache_dir,
-            proxy_url=config.network.proxy_url,
-        )
-
-    # Get templates configuration
-    templates_config = config.get_templates_config()
-
-    image_renderer = ImageRenderer(
-        templates_config=templates_config,
-        images_dir=str(cache_dir / "images"),
-        render_config=config.templates.config,
-        logger=logger,
-        proxy_url=config.network.proxy_url,
-    )
-
-    cache_cleaner = CacheCleaner(
-        cache_dir=str(cache_dir),
-        retain_days=config.cache.retain_days,
-        max_images_per_template_per_day=config.cache.max_images_per_template_per_day,
-        logger=logger,
-    )
-
-    # 创建服务容器
-    app.state.services = AppServices(
-        data_fetcher=data_fetcher,
-        holiday_service=holiday_service,
-        fun_content_service=fun_content_service,
-        kfc_service=kfc_service,
-        stock_index_service=stock_index_service,
-        gold_price_service=gold_price_service,
-        daily_english_service=daily_english_service,
-        image_renderer=image_renderer,
-        data_computer=data_computer,
-        cache_cleaner=cache_cleaner,
-    )
-
-    # Store services in app.state for access in tasks (兼容层)
-    app.state.data_fetcher = data_fetcher
-    app.state.data_computer = data_computer
-    app.state.domain_aggregator = domain_aggregator
-    app.state.template_adapter = template_adapter
-    app.state.holiday_service = holiday_service
-    app.state.fun_content_service = fun_content_service
-    app.state.kfc_service = kfc_service
-    app.state.stock_index_service = stock_index_service
-    app.state.gold_price_service = gold_price_service
-    app.state.daily_english_service = daily_english_service
-    app.state.image_renderer = image_renderer
-    app.state.templates_config = templates_config
-    app.state.cache_cleaner = cache_cleaner
-    app.state.is_refreshing = False  # Initialize background refresh lock
-
-    # 启动预热日级缓存
-    async def warmup_daily_cache() -> None:
-        """预热日级缓存"""
-        logger.info("Warming up daily cache...")
-        named_tasks: list[tuple[str, Any]] = [("holiday", holiday_service.get())]
-        if data_fetcher:
-            named_tasks.append(("data_fetcher", data_fetcher.get()))
-        if fun_content_service:
-            named_tasks.append(("fun_content", fun_content_service.get()))
-        if kfc_service:
-            named_tasks.append(("kfc", kfc_service.get()))
-        if gold_price_service:
-            named_tasks.append(("gold_price", gold_price_service.get()))
-        if daily_english_service:
-            named_tasks.append(("daily_english", daily_english_service.get()))
-        names = [name for name, _ in named_tasks]
-        coros = [coro for _, coro in named_tasks]
-        results = await asyncio.gather(*coros, return_exceptions=True)
-        for name, result in zip(names, results):
-            if isinstance(result, Exception):
-                logger.warning(
-                    "Cache warmup [%s] failed: %s",
-                    name,
-                    safe_exception_for_log(result, config.network.proxy_url),
-                )
-        logger.info("Daily cache warmup completed")
-
-    # 5. Initialize and start scheduler
     scheduler = TaskScheduler(config.scheduler, logger, timezone=get_business_timezone())
 
-    # Add daily image generation task
     async def generate_image_task() -> None:
-        """Scheduled task: Generate moyuren calendar image."""
+        """Generate the scheduled calendar image."""
         try:
             await generate_and_save_image(app)
-        except Exception as e:
+        except Exception as exc:
             logger.error(
                 "Image generation task failed: %s",
-                safe_exception_for_log(e, config.network.proxy_url),
+                safe_exception_for_log(exc, config.network.proxy_url),
             )
 
-    if config.scheduler.mode == "hourly":
-        scheduler.add_hourly_job(
-            job_id="generate_moyuren_image",
-            func=generate_image_task,
-            minute=config.scheduler.minute_of_hour,
-        )
-        logger.info(
-            f"Scheduler mode: hourly (minute={config.scheduler.minute_of_hour:02d})"
-        )
-    else:
-        # Add daily image generation tasks for each configured time
-        for idx, time_str in enumerate(config.scheduler.daily_times):
-            try:
-                hour, minute = map(int, time_str.split(":"))
-                job_id = (
-                    f"generate_moyuren_image_{idx}"
-                    if len(config.scheduler.daily_times) > 1
-                    else "generate_moyuren_image"
-                )
-                scheduler.add_daily_job(
-                    job_id=job_id,
-                    func=generate_image_task,
-                    hour=hour,
-                    minute=minute,
-                )
-            except (ValueError, AttributeError) as e:
-                logger.warning(f"Invalid time format '{time_str}', skipping: {e}")
-        logger.info(f"Scheduler mode: daily (times={config.scheduler.daily_times})")
-
+    register_scheduled_jobs(scheduler, config, generate_image_task, logger)
     scheduler.start()
     app.state.scheduler = scheduler
     logger.info("Scheduler started")
 
-    # 6. Warm caches and generate initial data in the background
-    async def _startup() -> None:
+    async def startup() -> None:
         """Warm daily caches before validating the initial image cache."""
         try:
-            await warmup_daily_cache()
-            await _ensure_today_data(app)
+            await warmup_daily_cache(services, config, logger)
+            await ensure_today_data(app)
         except asyncio.CancelledError:
             logger.info("Startup task cancelled due to shutdown")
             raise
-        except Exception as e:
+        except Exception as exc:
             app.state.startup_state = "failed"
             logger.error(
                 "Startup task failed: %s",
-                safe_exception_for_log(e, config.network.proxy_url),
+                safe_exception_for_log(exc, config.network.proxy_url),
             )
         else:
             app.state.startup_state = "ready"
         finally:
             app.state.startup_completed_at = datetime.now(timezone.utc)
 
-    app.state.startup_task = asyncio.create_task(_startup())
+    app.state.startup_task = asyncio.create_task(startup())
 
-    # 7. Browser warmup (background, non-blocking)
-    async def _browser_warmup() -> None:
-        """Background task to pre-initialize browser."""
+    async def browser_warmup() -> None:
+        """Pre-initialize the browser in the background."""
         try:
             await browser_manager.warmup()
         except asyncio.CancelledError:
             logger.info("Browser warmup cancelled due to shutdown")
             raise
-        except Exception as e:
+        except Exception as exc:
             logger.warning(
                 "Browser warmup failed: %s",
-                safe_exception_for_log(e, config.network.proxy_url),
+                safe_exception_for_log(exc, config.network.proxy_url),
             )
 
-    app.state.browser_warmup_task = asyncio.create_task(_browser_warmup())
-
+    app.state.browser_warmup_task = asyncio.create_task(browser_warmup())
     logger.info("Moyuren API started successfully")
 
     try:
         yield
     finally:
-        # ==================== Shutdown ====================
         logger.info("Shutting down Moyuren API...")
-
-        # Cancel startup task before stopping dependencies
-        task = app.state.startup_task
-        if not task.done():
+        startup_task = app.state.startup_task
+        if not startup_task.done():
             logger.info("Cancelling startup task...")
-            task.cancel()
+            startup_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
-            await task
+            await startup_task
 
-        # Cancel browser warmup task if running
-        if hasattr(app.state, "browser_warmup_task"):
-            task = app.state.browser_warmup_task
-            if not task.done():
-                logger.info("Cancelling browser warmup task...")
-                task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await task
+        try:
+            await services.generator.shutdown()
+        except Exception as exc:
+            logger.warning(
+                "Failed to shutdown image generator: %s", safe_exception_for_log(exc)
+            )
 
-        # Stop scheduler
-        if hasattr(app.state, "scheduler"):
-            app.state.scheduler.shutdown()
+        warmup_task = app.state.browser_warmup_task
+        if not warmup_task.done():
+            logger.info("Cancelling browser warmup task...")
+            warmup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await warmup_task
 
-        # Close stock index private HTTP client
-        if (
-            hasattr(app.state, "stock_index_service")
-            and app.state.stock_index_service is not None
-        ):
+        scheduler.shutdown()
+        if services.stock_index_service is not None:
             try:
-                await app.state.stock_index_service.close()
-            except Exception as e:
+                await services.stock_index_service.close()
+            except Exception as exc:
                 logger.warning(
-                    "Failed to close stock index service: %s", safe_exception_for_log(e)
+                    "Failed to close stock index service: %s",
+                    safe_exception_for_log(exc),
                 )
-
-        # Shutdown browser manager
-        if hasattr(app.state, "browser_manager"):
-            try:
-                await app.state.browser_manager.shutdown()
-            except Exception as e:
-                logger.warning(
-                    "Failed to shutdown browser manager: %s", safe_exception_for_log(e)
-                )
-
-        # Close shared HTTP client
-        if hasattr(app.state, "http_client"):
-            try:
-                await app.state.http_client.aclose()
-            except Exception as e:
-                logger.warning(
-                    "Failed to close http client: %s", safe_exception_for_log(e)
-                )
-
+        try:
+            await browser_manager.shutdown()
+        except Exception as exc:
+            logger.warning(
+                "Failed to shutdown browser manager: %s", safe_exception_for_log(exc)
+            )
+        try:
+            await http_client.aclose()
+        except Exception as exc:
+            logger.warning(
+                "Failed to close http client: %s", safe_exception_for_log(exc)
+            )
         logger.info("Moyuren API stopped")
 
 
-async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
-    """全局 AppError 异常处理器"""
+async def app_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Handle application errors with the standard API response."""
+    if not isinstance(exc, AppError):
+        raise exc
     return JSONResponse(
         status_code=get_http_status(exc.code),
         content=error_response(exc.code, exc.message),
     )
 
 
-# Create FastAPI application
 app = FastAPI(
     title="Moyuren API",
     description="摸鱼日历 API 服务",
     version=__version__,
     lifespan=lifespan,
 )
-
 app.add_exception_handler(AppError, app_error_handler)
 
 
 @app.api_route("/healthz", methods=["GET", "HEAD"])
-async def healthz():
-    """返回基础存活状态.
-
-    Returns:
-        包含 ok 状态的健康检查响应.
-    """
+async def healthz() -> dict[str, str]:
+    """Return basic liveness status."""
     return {"status": "ok"}
 
 
 @app.api_route("/readyz", methods=["GET", "HEAD"])
 async def readyz(request: Request) -> JSONResponse:
-    """就绪检查 - 验证服务是否可以处理请求。"""
+    """Check whether the service can process requests."""
     config = getattr(request.app.state, "config", None)
     startup_state = getattr(request.app.state, "startup_state", "starting")
     manager = getattr(request.app.state, "browser_manager", None)
@@ -617,10 +242,6 @@ async def readyz(request: Request) -> JSONResponse:
     )
 
 
-# Mount static files directory (will be remounted in lifespan with config path)
-# Default mount for initial setup
-
-# Include API routers
 app.include_router(moyuren_router)
 app.include_router(ops_router)
 app.include_router(templates_router)

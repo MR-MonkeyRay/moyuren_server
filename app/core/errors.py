@@ -130,6 +130,10 @@ class StorageError(AppError):
         super().__init__(message, code)
 
 
+class GenerationBusyError(Exception):
+    """生成任务正在进行中"""
+
+
 def error_response(code: ErrorCode, message: str) -> dict[str, Any]:
     """
     Create standardized error response.

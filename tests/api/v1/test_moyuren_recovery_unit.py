@@ -1,6 +1,7 @@
 """Unit tests for missing-image recovery without a threaded HTTP client."""
 
 import json
+import logging
 from datetime import date
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -11,11 +12,12 @@ from fastapi.responses import FileResponse, Response
 
 from app.api.v1.moyuren import get_moyuren
 from app.core.errors import StorageError
+from app.core.services import AppServices
 from app.services.generator import GenerationBusyError
 
 
 @pytest.fixture
-def api_request(tmp_path: Path) -> Request:
+def api_request(tmp_path: Path, mock_services: AppServices) -> Request:
     """Create a request with cached metadata and a missing image."""
     app = FastAPI()
     config = MagicMock()
@@ -24,6 +26,8 @@ def api_request(tmp_path: Path) -> Request:
     config.get_templates_config.return_value.items = [MagicMock(name="moyuren")]
     config.get_templates_config.return_value.items[0].name = "moyuren"
     app.state.config = config
+    app.state.services = mock_services
+    app.state.logger = logging.getLogger("test.moyuren.recovery")
     (tmp_path / "images").mkdir()
     (tmp_path / "data").mkdir()
     _save_data(tmp_path, {"moyuren": "missing.jpg"})

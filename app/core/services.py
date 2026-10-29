@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from app.services.daily_english import CachedDailyEnglishService
     from app.services.fetcher import CachedDataFetcher
     from app.services.fun_content import CachedFunContentService
+    from app.services.generator import ImageGenerator
     from app.services.gold_price import CachedGoldPriceService
     from app.services.holiday import CachedHolidayService
     from app.services.kfc import CachedKfcService
@@ -28,3 +29,4 @@ class AppServices:
     image_renderer: "ImageRenderer"
     data_computer: "DataComputer"
     cache_cleaner: "CacheCleaner"
+    generator: "ImageGenerator"
