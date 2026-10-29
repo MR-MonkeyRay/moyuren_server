@@ -1,10 +1,12 @@
 """Tests for app/services/compute.py - normalize_datetime and data aggregation."""
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 import pytest
+from jinja2 import Environment, FileSystemLoader
 
 from app.services.compute import (
     DomainDataAggregator,
@@ -728,6 +730,88 @@ class TestComputeHolidays:
         assert "妇女节" in names
         assert all(h["is_legal_holiday"] is False for h in result)
 
+    @patch(
+        "app.services.compute.CalendarService.get_upcoming_solar_festivals",
+        return_value=[{"name": "植树节", "solar_date": "2026-03-12", "days_left": 36}],
+    )
+    @patch(
+        "app.services.compute.CalendarService.get_upcoming_lunar_festivals",
+        return_value=[{"name": "元宵节", "solar_date": "2026-03-03", "days_left": 27}],
+    )
+    def test_festivals_are_not_off_days_but_legal_holidays_keep_flag(
+        self, mock_lunar: Any, mock_solar: Any, aggregator: DomainDataAggregator, now: datetime
+    ) -> None:
+        """Test only legal holiday data can mark an entry as an off day."""
+        raw_data = {
+            "holidays": [
+                {
+                    "name": "春节",
+                    "start_date": "2026-02-17",
+                    "days_left": 13,
+                    "is_off_day": True,
+                },
+                {
+                    "name": "春节调休",
+                    "start_date": "2026-02-14",
+                    "days_left": 10,
+                    "is_off_day": False,
+                },
+            ]
+        }
+
+        result = aggregator._compute_holidays(now, raw_data)
+        by_name = {holiday["name"]: holiday for holiday in result}
+
+        assert by_name["元宵节"]["is_off_day"] is False
+        assert by_name["植树节"]["is_off_day"] is False
+        assert by_name["春节"]["is_off_day"] is True
+        assert by_name["春节调休"]["is_off_day"] is False
+
+    @pytest.mark.parametrize("reverse_order", [False, True])
+    @patch("app.services.compute.CalendarService.get_upcoming_solar_festivals", return_value=[])
+    @patch("app.services.compute.CalendarService.get_upcoming_lunar_festivals", return_value=[])
+    def test_duplicate_simplified_legal_names_keep_nearest_occurrence(
+        self,
+        mock_lunar: Any,
+        mock_solar: Any,
+        aggregator: DomainDataAggregator,
+        now: datetime,
+        reverse_order: bool,
+    ) -> None:
+        """Test simplified legal-name collisions retain the nearest row and its metadata."""
+        nearer = {
+            "name": "宁夏古尔邦节",
+            "start_date": "2026-06-01",
+            "end_date": "2026-06-02",
+            "duration": "2",
+            "days_left": "117",
+            "is_off_day": False,
+        }
+        farther = {
+            "name": "新疆古尔邦节",
+            "start_date": "2027-05-21",
+            "end_date": "2027-05-23",
+            "duration": 3,
+            "days_left": 471,
+            "is_off_day": True,
+        }
+        holidays = [farther, nearer] if reverse_order else [nearer, farther]
+
+        result = aggregator._compute_holidays(now, {"holidays": holidays})
+
+        assert result == [
+            {
+                "name": "古尔邦节",
+                "start_date": "2026-06-01",
+                "end_date": "2026-06-02",
+                "duration": 2,
+                "days_left": 117,
+                "is_legal_holiday": True,
+                "color": "#E67E22",
+                "is_off_day": False,
+            }
+        ]
+
     @patch("app.services.compute.CalendarService.get_upcoming_solar_festivals", return_value=[])
     @patch("app.services.compute.CalendarService.get_upcoming_lunar_festivals", return_value=[])
     def test_non_dict_entries_filtered(
@@ -806,6 +890,47 @@ class TestComputeHolidays:
         result = aggregator._compute_holidays(now, raw_data)
         assert result[0]["duration"] == 3
         assert result[0]["days_left"] == 25
+
+
+@pytest.mark.parametrize("template_name", ["moyuren.html", "moyuren_cute.html"])
+@pytest.mark.parametrize(("is_legal", "is_off_day"), [(False, False), (True, False), (True, True)])
+def test_holiday_templates_distinguish_festivals_from_makeup_work_days(
+    template_name: str, is_legal: bool, is_off_day: bool
+) -> None:
+    """Test both holiday layouts reserve makeup labels for legal work days."""
+    from app.services.compute import DataComputer
+    from app.services.renderer import format_datetime
+
+    now = datetime(2026, 3, 12, 10, tzinfo=timezone(timedelta(hours=8)))
+    data = DataComputer().compute({}, now=now)
+    data["holidays"] = [
+        {
+            "name": name,
+            "start_date": "2026-03-12",
+            "end_date": "2026-03-12",
+            "duration": 1,
+            "days_left": 0,
+            "is_legal_holiday": is_legal,
+            "is_off_day": is_off_day,
+        }
+        for name in ("植树节", "教师节")
+    ]
+    templates_dir = Path(__file__).resolve().parents[2] / "templates"
+    env = Environment(loader=FileSystemLoader(templates_dir), autoescape=True)
+    env.filters["format_datetime"] = format_datetime
+
+    html = env.get_template(template_name).render(data)
+
+    makeup_label = 'aria-label="补班"' if template_name == "moyuren.html" else ">补班</span>"
+    assert (makeup_label in html) is (is_legal and not is_off_day)
+    if template_name == "moyuren.html":
+        assert ('class="holiday-item workday' in html) is (is_legal and not is_off_day)
+        assert ("假期中" in html) is is_off_day
+        assert ("今日节日" in html) is (not is_legal)
+    else:
+        style = "normal" if not is_legal else ("legal" if is_off_day else "work")
+        assert f'class="holiday-hero hc-{style}"' in html
+        assert f'class="holiday-card hc-{style}"' in html
 
 
 class TestDataComputer:

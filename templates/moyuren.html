@@ -1022,10 +1022,10 @@
                     <h2>🏖️ 假期盼头</h2>
                     <div class="holiday-list">
                         {% for holiday in holidays %}
-                        <div class="holiday-item {{ 'workday' if holiday.is_off_day is false else ('legal' if holiday.is_legal_holiday else 'normal') }}{{ ' is-today' if holiday.days_left == 0 else '' }}">
+                        <div class="holiday-item {{ 'workday' if holiday.is_legal_holiday and holiday.is_off_day is false else ('legal' if holiday.is_legal_holiday else 'normal') }}{{ ' is-today' if holiday.days_left == 0 else '' }}">
                             <div class="h-info">
                                 <div class="h-name">
-                                    {% if holiday.is_off_day is false %}<span role="img" aria-label="补班">💼</span> {% elif holiday.is_legal_holiday %}<span role="img" aria-label="法定假日">🎉</span> {% endif %}{{ holiday.name }}
+                                    {% if holiday.is_legal_holiday and holiday.is_off_day is false %}<span role="img" aria-label="补班">💼</span> {% elif holiday.is_legal_holiday %}<span role="img" aria-label="法定假日">🎉</span> {% endif %}{{ holiday.name }}
                                 </div>
                                 <div class="h-date">
                                     {{ holiday.start_date }}
@@ -1036,12 +1036,15 @@
                             </div>
                             <div class="h-count-wrap">
                                 {% if holiday.days_left == 0 %}
-                                    {% if holiday.is_off_day is false %}
+                                    {% if holiday.is_legal_holiday and holiday.is_off_day is false %}
                                     <div class="h-num today" role="img" aria-label="今日补班">😭</div>
                                     <div class="h-unit">补班中</div>
-                                    {% else %}
+                                    {% elif holiday.is_off_day %}
                                     <div class="h-num today" role="img" aria-label="今日假期">🥳</div>
                                     <div class="h-unit">假期中</div>
+                                    {% else %}
+                                    <div class="h-num today" role="img" aria-label="今日节日">🎉</div>
+                                    <div class="h-unit">今日节日</div>
                                     {% endif %}
                                 {% else %}
                                 <div class="h-num {% if holiday.is_legal_holiday %}{% if holiday.days_left <= 7 %}urgent{% elif holiday.days_left <= 30 %}soon{% else %}later{% endif %}{% endif %}">{{ holiday.days_left }}</div>

@@ -158,6 +158,49 @@ class TestCalendarService:
         # New Year's Day should be a holiday
         assert isinstance(is_holiday, bool)
 
+    @pytest.mark.parametrize(
+        ("dt", "expected"),
+        [(date(2026, 2, 14), False), (date(2026, 2, 17), True), (date(2026, 3, 12), False)],
+    )
+    def test_is_holiday_excludes_makeup_work_days(self, dt: date, expected: bool) -> None:
+        """Test legal holidays exclude makeup work days and ordinary festivals."""
+        assert CalendarService.is_holiday(dt) is expected
+
+    @pytest.mark.parametrize(
+        ("dt", "name", "solar_date"),
+        [
+            (date(2026, 1, 1), "腊八节", "2026-01-26"),
+            (date(2026, 1, 1), "除夕", "2026-02-16"),
+            (date(2026, 1, 26), "腊八节", "2026-01-26"),
+            (date(2026, 6, 1), "端午节", "2026-06-19"),
+        ],
+    )
+    def test_upcoming_lunar_festivals(self, dt: date, name: str, solar_date: str) -> None:
+        """Test lunar festivals span the lunar year boundary and remain unique and sorted."""
+        festivals = CalendarService.get_upcoming_lunar_festivals(dt)
+
+        assert {
+            "name": name,
+            "solar_date": solar_date,
+            "days_left": (date.fromisoformat(solar_date) - dt).days,
+        } in festivals
+        dates = [festival["solar_date"] for festival in festivals]
+        names = [festival["name"] for festival in festivals]
+        assert dates == sorted(dates)
+        assert all(festival_date >= dt.isoformat() for festival_date in dates)
+        assert len(names) == len(set(names))
+        assert CalendarService.get_upcoming_lunar_festivals(dt, count=3) == festivals[:3]
+
+    def test_upcoming_solar_festivals_cross_year_boundary(self) -> None:
+        """Test late December includes the next January's solar festival."""
+        festivals = CalendarService.get_upcoming_solar_festivals(date(2026, 12, 31))
+
+        assert festivals[0] == {"name": "元旦", "solar_date": "2027-01-01", "days_left": 1}
+        dates = [festival["solar_date"] for festival in festivals]
+        names = [festival["name"] for festival in festivals]
+        assert dates == sorted(dates)
+        assert len(names) == len(set(names))
+
     def test_get_solar_term_info(self) -> None:
         """Test get solar term info."""
         # February 4 is typically around Lichun (Beginning of Spring)

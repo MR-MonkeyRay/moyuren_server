@@ -704,7 +704,7 @@
 
       {# === 首项：单独一行全宽显示 === #}
       {% set hero = holidays[0] %}
-      {% if hero.is_off_day is false %}
+      {% if hero.is_legal_holiday and hero.is_off_day is false %}
       <div class="holiday-hero hc-work">
         <div class="hc-info">
           <div class="hc-name font-cute"><span class="hc-icon">💼</span>{{ hero.name }}</div>
@@ -768,7 +768,7 @@
       <div class="holidays-grid">
         {% for holiday in holidays[1:] %}
 
-        {% if holiday.is_off_day is false %}
+        {% if holiday.is_legal_holiday and holiday.is_off_day is false %}
         <div class="holiday-card hc-work">
           <div class="hc-info">
             <div class="hc-name font-cute"><span class="hc-icon">💼</span>{{ holiday.name }}</div>

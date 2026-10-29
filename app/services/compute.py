@@ -635,7 +635,7 @@ class DomainDataAggregator:
                     else:
                         is_off_day = bool(is_off_day_raw) if is_off_day_raw is not None else True
 
-                    name_map[name] = {
+                    candidate = {
                         "name": name,
                         "start_date": start_date,
                         "end_date": h.get("end_date") or start_date,
@@ -645,6 +645,9 @@ class DomainDataAggregator:
                         "color": "#E67E22",
                         "is_off_day": is_off_day,
                     }
+                    existing = name_map.get(name)
+                    if existing is None or days_left < existing["days_left"]:
+                        name_map[name] = candidate
 
         # 检查名称是否与已有法定假日重复（基于核心词匹配）
         # 白名单：这些名称不进行规范化处理
@@ -705,7 +708,7 @@ class DomainDataAggregator:
                     "days_left": days_left,
                     "is_legal_holiday": False,
                     "color": None,
-                    "is_off_day": True,
+                    "is_off_day": False,
                 }
 
         # 加入公历节日（如果该名称没有）
@@ -734,7 +737,7 @@ class DomainDataAggregator:
                     "days_left": days_left,
                     "is_legal_holiday": False,
                     "color": None,
-                    "is_off_day": True,
+                    "is_off_day": False,
                 }
 
         # 按 days_left 排序并返回前10个

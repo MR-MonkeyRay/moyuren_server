@@ -472,12 +472,12 @@ class CalendarService:
             dt: The date to check.
 
         Returns:
-            True if it's a legal holiday, False otherwise.
+            True if it's a legal day off, False otherwise.
         """
         try:
             solar = SolarDay.from_ymd(dt.year, dt.month, dt.day)
             legal_holiday = solar.get_legal_holiday()
-            return legal_holiday is not None
+            return legal_holiday is not None and not legal_holiday.is_work()
         except Exception as e:
             logger.warning("Failed to check holiday for %s: %s", dt, e)
             return False
@@ -549,7 +549,8 @@ class CalendarService:
         """
         result = []
         try:
-            for year in (dt.year, dt.year + 1):
+            lunar_year = SolarDay.from_ymd(dt.year, dt.month, dt.day).get_lunar_day().get_year()
+            for year in range(lunar_year - 1, lunar_year + 2):
                 for idx in range(20):  # 每年最多20个节日
                     try:
                         festival = LunarFestival.from_index(year, idx)
