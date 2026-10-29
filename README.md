@@ -91,6 +91,10 @@ mkdir -p cache logs
 sudo chown -R 1000:1000 cache logs
 ```
 
+## 依赖管理
+
+`requirements.txt` 和 `requirements-dev.txt` 保留依赖最低版本，并限制在下一个主版本之前（Ruff 按次版本限制）。`.github/dependabot.yml` 配置 Dependabot 每周向 `develop` 提交 Python 依赖、GitHub Actions 和 Docker 基础镜像更新；Python 次版本/补丁更新合并为一个 PR，主版本升级单独评审。
+
 ## API
 
 | 方法 | 路径 | 说明 |
