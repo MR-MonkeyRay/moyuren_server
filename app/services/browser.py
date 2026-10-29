@@ -4,7 +4,7 @@ import asyncio
 import logging
 from typing import Any
 
-from playwright.async_api import Browser, Page, Playwright, async_playwright
+from playwright.async_api import Browser, Error as PlaywrightError, Page, Playwright, async_playwright
 
 from app.core.network import playwright_proxy_config, redact_url, safe_exception_for_log
 
@@ -30,6 +30,7 @@ class BrowserManager:
         self._logger = logger_instance or logger
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
+        self._browser_disconnected: bool = False
         self._lock = asyncio.Lock()
         self._active_pages: int = 0
         self._shutting_down: bool = False
@@ -54,6 +55,32 @@ class BrowserManager:
         await self._ensure_browser()
         self._logger.info("Browser warmup completed")
 
+    def _on_browser_disconnected(self, browser: Browser) -> None:
+        """Mark an unexpected disconnect for recovery on the next request."""
+        if self._shutting_down or self._browser is not browser or self._browser_disconnected:
+            return
+        self._browser_disconnected = True
+        self._logger.warning("Chromium browser disconnected; it will be relaunched on the next request")
+
+    async def _close_browser(self) -> None:
+        """Reset and close browser resources while the caller holds the lock."""
+        browser, playwright = self._browser, self._playwright
+        self._browser = None
+        self._playwright = None
+        self._browser_disconnected = False
+        try:
+            if browser is not None:
+                try:
+                    await browser.close()
+                except Exception as e:
+                    self._logger.warning(f"Failed to close browser: {safe_exception_for_log(e)}")
+        finally:
+            if playwright is not None:
+                try:
+                    await playwright.stop()
+                except Exception as e:
+                    self._logger.warning(f"Failed to stop Playwright: {safe_exception_for_log(e)}")
+
     async def _ensure_browser(self) -> None:
         """Ensure browser is initialized (lazy loading).
 
@@ -62,22 +89,28 @@ class BrowserManager:
         """
         if self._shutting_down:
             raise RuntimeError("Browser manager is shutting down")
-        if self._browser is not None:
+        if self._browser is not None and not self._browser_disconnected and self._browser.is_connected():
             return
         async with self._lock:
             if self._shutting_down:
                 raise RuntimeError("Browser manager is shutting down")
-            if self._browser is not None:
+            if self._browser is not None and not self._browser_disconnected and self._browser.is_connected():
                 return
+            await self._close_browser()
+            if self._shutting_down:
+                raise RuntimeError("Browser manager is shutting down")
             pw: Playwright | None = None
             try:
                 pw = await async_playwright().start()
+                if self._shutting_down:
+                    raise RuntimeError("Browser manager is shutting down")
                 proxy = playwright_proxy_config(self._proxy_url)
                 launch_kwargs: dict[str, Any] = {"headless": True}
                 if proxy:
                     launch_kwargs["proxy"] = proxy
                 self._browser = await pw.chromium.launch(**launch_kwargs)
                 self._playwright = pw
+                self._browser.on("disconnected", self._on_browser_disconnected)
                 if self._proxy_url:
                     self._logger.info("Chromium browser launched with proxy %s", redact_url(self._proxy_url))
                 else:
@@ -119,30 +152,58 @@ class BrowserManager:
         if self._shutting_down:
             raise RuntimeError("Browser manager is shutting down")
         await self._ensure_browser()
-        if self._browser is None:
-            raise RuntimeError("Browser is not initialized")
-
         async with self._lock:
             if self._shutting_down:
                 raise RuntimeError("Browser manager is shutting down")
+            if self._browser is None:
+                raise RuntimeError("Browser is not initialized")
+            browser = self._browser
             self._active_pages += 1
 
         try:
             width = viewport.get("width")
             height = viewport.get("height")
             device_scale_factor = viewport.get("device_scale_factor")
-            return await self._browser.new_page(
-                viewport={"width": width, "height": height},
-                device_scale_factor=device_scale_factor,
-            )
+            page_kwargs: dict[str, Any] = {
+                "viewport": {"width": width, "height": height},
+                "device_scale_factor": device_scale_factor,
+            }
+            retried = False
+            while True:
+                try:
+                    return await browser.new_page(**page_kwargs)
+                except Exception as e:
+                    browser_closed_error = isinstance(e, PlaywrightError) and any(
+                        message in str(e).lower()
+                        for message in (
+                            "browser has been closed",
+                            "browser is closed",
+                            "browser closed",
+                            "connection closed",
+                            "connection is closed",
+                        )
+                    )
+                    if retried or (not browser_closed_error and browser.is_connected()):
+                        raise
+                    async with self._lock:
+                        if self._browser is browser:
+                            self._browser_disconnected = True
+                    await self._ensure_browser()
+                    async with self._lock:
+                        if self._shutting_down:
+                            raise RuntimeError("Browser manager is shutting down")
+                        if self._browser is None:
+                            raise RuntimeError("Browser is not initialized")
+                        browser = self._browser
+                    retried = True
         except asyncio.CancelledError:
             # Handle cancellation - must rollback _active_pages counter
             async with self._lock:
-                self._active_pages -= 1
+                self._active_pages = max(0, self._active_pages - 1)
             raise
         except Exception:
             async with self._lock:
-                self._active_pages -= 1
+                self._active_pages = max(0, self._active_pages - 1)
             raise
 
     async def release_page(self, page: Page) -> None:
@@ -180,18 +241,7 @@ class BrowserManager:
             )
 
         async with self._lock:
-            if self._browser is not None:
-                try:
-                    await self._browser.close()
-                except Exception as e:
-                    self._logger.warning(f"Failed to close browser: {safe_exception_for_log(e)}")
-            if self._playwright is not None:
-                try:
-                    await self._playwright.stop()
-                except Exception as e:
-                    self._logger.warning(f"Failed to stop Playwright: {safe_exception_for_log(e)}")
-            self._browser = None
-            self._playwright = None
+            await self._close_browser()
             self._active_pages = 0
             self._shutting_down = False
             self._logger.info("Browser manager shutdown complete")

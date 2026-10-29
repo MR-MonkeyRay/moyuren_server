@@ -50,6 +50,7 @@ https://api.monkeyray.net/api/v1/moyuren
 - 周/月/年进度百分比计算
 - 多模板渲染：自动发现模板目录中的 HTML 文件，通过 meta 标签自描述渲染参数，错误隔离确保部分失败不影响其他模板
 - Playwright 高质量浏览器渲染
+  - Chromium 崩溃或断连后自动重启，创建页面遇到浏览器关闭错误时重试一次
 - 自动清理过期缓存
 - RESTful API + 静态文件服务
 - 静态发布到 Cloudflare Pages（GitHub Actions 定时推送）
