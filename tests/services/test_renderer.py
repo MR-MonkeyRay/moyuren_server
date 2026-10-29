@@ -7,9 +7,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
+from freezegun import freeze_time
 from markupsafe import Markup
 
 from app.core.config import (
@@ -122,6 +124,29 @@ class TestNl2br:
 
 class TestImageRenderer:
     """Tests for ImageRenderer class."""
+
+    def test_filename_defaults_to_business_time(self, renderer: ImageRenderer) -> None:
+        """Test that filenames use the business date when UTC is still yesterday."""
+        with (
+            freeze_time("2026-02-04T18:00:00+00:00"),
+            patch("app.services.calendar._business_timezone", ZoneInfo("Asia/Shanghai")),
+        ):
+            assert renderer._generate_filename("test") == "test_20260205_020000.jpg"
+
+    @pytest.mark.asyncio
+    async def test_render_filename_uses_snapshot(self, renderer: ImageRenderer) -> None:
+        """Test that rendering preserves the provided timestamp in the filename."""
+        snapshot = datetime(2026, 2, 5, 2, tzinfo=ZoneInfo("Asia/Shanghai"))
+        with (
+            freeze_time("2026-02-06T00:00:00+00:00"),
+            patch.object(renderer, "_generate_screenshot", new=AsyncMock(return_value=b"jpeg")),
+            patch("app.services.renderer.now_business") as mock_now,
+        ):
+            filename = await renderer.render({"title": "test"}, "test", now=snapshot)
+
+        assert filename == "test_20260205_020000.jpg"
+        assert (renderer.images_dir / filename).read_bytes() == b"jpeg"
+        mock_now.assert_not_called()
 
     @pytest.fixture
     def templates_config(self, tmp_path: Path) -> TemplatesConfig:

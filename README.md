@@ -379,6 +379,8 @@ cache/
 
 ### 配置示例
 
+每次生成固定一次业务时间，用于日历、星期四判断、JSON 日期和图片文件名；跨午夜完成时仍保留开始生成的业务日期。服务写入 JSON 时，`updated` 按显示时区记录实际写入时间，`updated_at` 使用该写入时刻的毫秒时间戳。静态发布的历史 Markdown/TXT 引用当天图片，`latest.*` 引用 `latest.jpg`。
+
 ```yaml
 server:
   host: "0.0.0.0"

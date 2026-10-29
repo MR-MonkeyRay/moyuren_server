@@ -1,19 +1,25 @@
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from datetime import datetime, time, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from typing import AsyncIterator
+from unittest.mock import AsyncMock, MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
+from freezegun import freeze_time
 
 from app.core.errors import StorageError
 from app.core.filelock import FileLockTimeout
+from app.services.compute import DataComputer
 from app.services.generator import (
     GenerationBusyError,
     _get_async_lock,
     _read_latest_filename,
     generate_and_save_image,
 )
+from app.services.renderer import ImageRenderer
 
 
 class TestGenerationBusyError:
@@ -444,11 +450,9 @@ class TestUpdateDataFile:
         fixed_now = datetime(2026, 2, 5, 9, 30, 0, tzinfo=timezone.utc)
 
         with (
-            patch("app.services.generator.today_business", return_value=business_date),
+            patch("app.services.generator.now_business", return_value=fixed_now),
             patch("app.services.generator.get_display_timezone", return_value=timezone.utc),
-            patch("app.services.generator.datetime") as mock_datetime,
         ):
-            mock_datetime.now.return_value = fixed_now
             await _update_data_file(
                 data_dir=str(data_dir),
                 filename="moyuren_20260205.jpg",
@@ -467,22 +471,19 @@ class TestUpdateDataFile:
 
     @pytest.mark.asyncio
     async def test_raises_storage_error_on_replace_failure(self, tmp_path: Path) -> None:
-        from datetime import date, datetime, timezone
+        from datetime import datetime, timezone
 
         from app.core.errors import StorageError
         from app.services.generator import _update_data_file
 
         data_dir = tmp_path / "data"
-        business_date = date(2026, 2, 6)
         fixed_now = datetime(2026, 2, 6, 10, 0, 0, tzinfo=timezone.utc)
 
         with (
-            patch("app.services.generator.today_business", return_value=business_date),
+            patch("app.services.generator.now_business", return_value=fixed_now),
             patch("app.services.generator.get_display_timezone", return_value=timezone.utc),
-            patch("app.services.generator.datetime") as mock_datetime,
             patch("app.services.generator.os.replace", side_effect=OSError("disk full")),
         ):
-            mock_datetime.now.return_value = fixed_now
             with pytest.raises(StorageError):
                 await _update_data_file(
                     data_dir=str(data_dir),
@@ -496,6 +497,71 @@ class TestUpdateDataFile:
 
 class TestGenerateAndSaveImageNormalFlow:
     """Tests for generate_and_save_image normal generation flow."""
+
+    @pytest.mark.parametrize(
+        ("snapshot_iso", "write_iso", "expected_thursday", "expected_updated"),
+        [
+            ("2026-02-04T23:59:59+08:00", "2026-02-05T00:00:30+08:00", False, "2026/02/04 16:00:30"),
+            ("2026-02-05T23:59:59+08:00", "2026-02-06T00:00:30+08:00", True, "2026/02/05 16:00:30"),
+            ("2026-02-05T02:00:00+08:00", "2026-02-05T02:00:30+08:00", True, "2026/02/04 18:00:30"),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_uses_snapshot_through_render_and_write(
+        self,
+        tmp_path: Path,
+        snapshot_iso: str,
+        write_iso: str,
+        expected_thursday: bool,
+        expected_updated: str,
+    ) -> None:
+        """Keep the snapshot date and weekday while timestamping the actual write."""
+        app = TestGenerationBusyErrorExceptionChain._build_app(tmp_path)
+        snapshot = datetime.fromisoformat(snapshot_iso)
+        computer = DataComputer()
+        app.state.data_computer.compute.side_effect = computer.compute
+        renderer = ImageRenderer.__new__(ImageRenderer)
+
+        @asynccontextmanager
+        async def fake_file_lock(*args: object, **kwargs: object) -> AsyncIterator[None]:
+            yield
+
+        with (
+            freeze_time(snapshot_iso) as clock,
+            patch("app.services.calendar._business_timezone", ZoneInfo("Asia/Shanghai")),
+            patch("app.services.generator.get_display_timezone", return_value=timezone.utc),
+            patch("app.services.generator.now_business", wraps=lambda: snapshot) as mock_now,
+            patch("app.services.generator._get_async_lock", return_value=asyncio.Lock()),
+            patch("app.services.generator.async_file_lock", new=fake_file_lock),
+            patch("app.services.generator._fetch_all_data_parallel", new=AsyncMock(return_value={})),
+            patch("app.services.generator._schedule_cache_cleanup"),
+        ):
+            async def render(data: dict, template_name: str, *, now: datetime) -> str:
+                assert data["date"]["day"] == str(snapshot.day)
+                assert data["date"]["week_cn"] == ("星期四" if expected_thursday else "星期三")
+                clock.move_to(write_iso)
+                return renderer._generate_filename(template_name, now=now)
+
+            app.state.image_renderer.render = AsyncMock(side_effect=render)
+            results = await generate_and_save_image(app)
+            saved_at_write = json.loads(
+                (tmp_path / "cache" / "data" / f"{snapshot.date()}.json").read_text()
+            )
+            from app.services.generator import _is_recently_updated
+
+            assert _is_recently_updated(saved_at_write, threshold_sec=10)
+
+        data_dir = tmp_path / "cache" / "data"
+        saved = json.loads((data_dir / f"{snapshot.date()}.json").read_text())
+        assert list(data_dir.glob("*.json")) == [data_dir / f"{snapshot.date()}.json"]
+        assert saved["date"] == snapshot.date().isoformat()
+        assert saved["is_crazy_thursday"] is expected_thursday
+        assert saved["updated"] == expected_updated
+        assert saved["updated_at"] == int(datetime.fromisoformat(write_iso).timestamp() * 1000)
+        assert results == {"moyuren": f"moyuren_{snapshot:%Y%m%d_%H%M%S}.jpg"}
+        assert saved["images"] == results
+        app.state.data_computer.compute.assert_called_once_with({}, now=snapshot)
+        mock_now.assert_called_once_with()
 
     @pytest.mark.asyncio
     async def test_runs_full_pipeline(self, tmp_path: Path) -> None:
@@ -551,7 +617,7 @@ class TestGenerateAndSaveImageNormalFlow:
         with (
             patch("app.services.generator._get_async_lock", return_value=async_lock),
             patch("app.services.generator.async_file_lock", new=_fake_file_lock),
-            patch("app.services.generator.today_business", return_value=business_date),
+            patch("app.services.generator.now_business", return_value=datetime.combine(business_date, time(12), tzinfo=timezone.utc)),
             patch("app.services.generator._read_data_file", return_value={"updated_at": 1}),
             patch("app.services.generator._is_recently_updated", return_value=True),
             patch("app.services.generator._read_latest_filename", return_value=None),
@@ -563,7 +629,9 @@ class TestGenerateAndSaveImageNormalFlow:
 
         assert results == {"moyuren": "moyuren_20260205.jpg"}
         mock_fetch.assert_awaited_once()
-        data_computer.compute.assert_called_once_with(raw_data)
+        data_computer.compute.assert_called_once_with(
+            raw_data, now=datetime.combine(business_date, time(12), tzinfo=timezone.utc)
+        )
         image_renderer.render.assert_awaited_once()
         mock_update.assert_awaited_once()
         mock_cleanup.assert_called_once()
@@ -602,7 +670,7 @@ class TestGenerateAndSaveImageNormalFlow:
         with (
             patch("app.services.generator._get_async_lock", return_value=async_lock),
             patch("app.services.generator.async_file_lock", new=_fake_file_lock),
-            patch("app.services.generator.today_business", return_value=business_date),
+            patch("app.services.generator.now_business", return_value=datetime.combine(business_date, time(12), tzinfo=timezone.utc)),
             patch("app.services.generator._read_data_file", return_value={"updated_at": 999}),
             patch("app.services.generator._is_recently_updated", return_value=True),
             patch("app.services.generator._read_latest_filename", return_value="moyuren_cached.jpg"),
@@ -670,7 +738,7 @@ class TestGenerateAndSaveImageNormalFlow:
         with (
             patch("app.services.generator._get_async_lock", return_value=async_lock),
             patch("app.services.generator.async_file_lock", new=_fake_file_lock),
-            patch("app.services.generator.today_business", return_value=business_date),
+            patch("app.services.generator.now_business", return_value=datetime.combine(business_date, time(12), tzinfo=timezone.utc)),
             patch("app.services.generator._read_data_file", return_value={"updated_at": 1}),
             patch("app.services.generator._is_recently_updated", return_value=True),
             patch("app.services.generator._read_latest_filename", return_value=None),
@@ -738,7 +806,7 @@ class TestGenerateAndSaveImageNormalFlow:
         with (
             patch("app.services.generator._get_async_lock", return_value=async_lock),
             patch("app.services.generator.async_file_lock", new=_fake_file_lock),
-            patch("app.services.generator.today_business", return_value=business_date),
+            patch("app.services.generator.now_business", return_value=datetime.combine(business_date, time(12), tzinfo=timezone.utc)),
             patch("app.services.generator._read_data_file", return_value={"updated_at": 1}),
             patch("app.services.generator._is_recently_updated", return_value=True),
             patch("app.services.generator._read_latest_filename", return_value=None),
@@ -810,7 +878,7 @@ class TestGenerateAndSaveImageNormalFlow:
         with (
             patch("app.services.generator._get_async_lock", return_value=async_lock),
             patch("app.services.generator.async_file_lock", new=_fake_file_lock),
-            patch("app.services.generator.today_business", return_value=business_date),
+            patch("app.services.generator.now_business", return_value=datetime.combine(business_date, time(12), tzinfo=timezone.utc)),
             patch("app.services.generator._read_data_file", return_value={"updated_at": 999}),
             patch("app.services.generator._is_recently_updated", return_value=True),
             patch("app.services.generator._read_latest_filename", side_effect=fake_read_latest),

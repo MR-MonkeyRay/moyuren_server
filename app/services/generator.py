@@ -14,7 +14,7 @@ from app.core.filelock import FileLockTimeout, async_file_lock
 from app.core.network import safe_exception_for_log
 
 from app.core.errors import StorageError
-from app.services.calendar import get_display_timezone, today_business
+from app.services.calendar import get_display_timezone, now_business
 
 
 class GenerationBusyError(Exception):
@@ -371,9 +371,11 @@ async def generate_and_save_image(
     try:
         try:
             async with async_file_lock(lock_file, timeout=5.0):
+                now = now_business()
+                business_date = now.date()
                 pre_cached: dict[str, str] = {}
                 # 二次检查：获取锁后检查是否已有新生成的文件
-                today_str = today_business().isoformat()
+                today_str = business_date.isoformat()
                 data_file = data_dir / f"{today_str}.json"
                 if data_file.exists():
                     data = _read_data_file(data_file)
@@ -406,7 +408,7 @@ async def generate_and_save_image(
                 raw_data = await _fetch_all_data_parallel(app, logger)
 
                 # 2. Compute template context (once for all templates)
-                template_data = app.state.data_computer.compute(raw_data)
+                template_data = app.state.data_computer.compute(raw_data, now=now)
                 logger.info("Template data computed")
 
                 # 3. Render each template and update data file
@@ -420,6 +422,7 @@ async def generate_and_save_image(
                         filename = await app.state.image_renderer.render(
                             template_data,
                             template_name=tname,
+                            now=now,
                         )
                         t_elapsed = time.monotonic() - t_start
                         logger.info(f"Image rendered for '{tname}': {filename} ({t_elapsed:.1f}s)")
@@ -431,6 +434,7 @@ async def generate_and_save_image(
                             raw_data=raw_data,
                             config=config,
                             template_name=tname,
+                            now=now,
                         )
                         results[tname] = filename
                     except Exception:
@@ -466,6 +470,7 @@ async def _update_data_file(
     raw_data: dict,
     config: Any,
     template_name: str,
+    now: datetime | None = None,
 ) -> None:
     """Atomically update the daily data file with latest image information.
 
@@ -476,12 +481,17 @@ async def _update_data_file(
         raw_data: Raw data dictionary containing original API responses.
         config: Application config.
         template_name: Template name used for rendering.
+        now: Optional business-time snapshot for this generation.
 
     Raises:
         StorageError: If file write fails.
     """
 
-    def _write_data():
+    if now is None:
+        now = now_business()
+    business_date = now.date()
+
+    def _write_data() -> None:
         """同步构建并原子写入业务日期的数据文件。
 
         Raises:
@@ -493,8 +503,6 @@ async def _update_data_file(
         dir_path = Path(data_dir)
         dir_path.mkdir(parents=True, exist_ok=True)
 
-        now = datetime.now(get_display_timezone())
-        business_date = today_business()
         data_file = dir_path / f"{business_date.isoformat()}.json"
 
         # Extract data from template_data
@@ -522,9 +530,10 @@ async def _update_data_file(
         if kfc_content_raw and isinstance(kfc_content_raw, dict):
             kfc_content = kfc_content_raw.get("content")
 
-        # Timestamps
-        updated_str = now.strftime("%Y/%m/%d %H:%M:%S")
-        updated_at_ms = int(now.timestamp() * 1000)
+        # Cache freshness tracks write time; business fields keep the snapshot.
+        written_at = datetime.now(get_display_timezone())
+        updated_str = written_at.strftime("%Y/%m/%d %H:%M:%S")
+        updated_at_ms = int(written_at.timestamp() * 1000)
 
         # Read existing data file to merge images mapping
         existing_images: dict[str, str] = {}

@@ -8,7 +8,7 @@ import os
 import shutil
 import sys
 import tempfile
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 
 # Add project root to path
@@ -27,7 +27,7 @@ from app.core.config import (
 from app.core.logging import setup_logging
 from app.core.network import safe_exception_for_log
 from app.services.browser import browser_manager
-from app.services.calendar import get_display_timezone, init_timezones
+from app.services.calendar import get_display_timezone, init_timezones, now_business
 from app.services.compute import DataComputer
 from app.services.fetcher import DataFetcher
 from app.services.fun_content import FunContentService
@@ -37,6 +37,18 @@ from app.services.kfc import KfcService
 from app.services.renderer import ImageRenderer
 from app.services.stock_index import StockIndexService
 from app.services.daily_english import DailyEnglishService, build_dict_backend
+
+
+def _build_timestamp_fields(now: datetime) -> dict[str, str | int | bool]:
+    """Build output timestamps from one business-time snapshot."""
+    display_now = now.astimezone(get_display_timezone())
+    business_date = now.date()
+    return {
+        "date": business_date.isoformat(),
+        "updated": display_now.strftime("%Y/%m/%d %H:%M:%S"),
+        "updated_at": int(now.timestamp() * 1000),
+        "is_crazy_thursday": business_date.weekday() == 3,
+    }
 
 
 def parse_args():
@@ -103,7 +115,9 @@ def copy_atomic(src_path: Path, target_path: Path):
         raise
 
 
-def generate_txt(data: dict, base_url: str) -> str:
+def generate_txt(
+    data: dict, base_url: str, image_path: str = "latest.jpg"
+) -> str:
     """Generate TXT format artifact."""
     lines = []
 
@@ -163,13 +177,15 @@ def generate_txt(data: dict, base_url: str) -> str:
 
     # Footer
     lines.append(f"更新时间: {data['updated']}")
-    lines.append(f"图片: {base_url}/latest.jpg")
+    lines.append(f"图片: {base_url}/{image_path}")
     lines.append("")
 
     return "\n".join(lines)
 
 
-def generate_md(data: dict, base_url: str) -> str:
+def generate_md(
+    data: dict, base_url: str, image_path: str = "latest.jpg"
+) -> str:
     """Generate Markdown format artifact."""
     lines = []
 
@@ -190,7 +206,7 @@ def generate_md(data: dict, base_url: str) -> str:
         lines.append("")
 
     # Image
-    lines.append(f"![摸鱼日历]({base_url}/latest.jpg)")
+    lines.append(f"![摸鱼日历]({base_url}/{image_path})")
     lines.append("")
 
     # Holidays countdown
@@ -263,6 +279,8 @@ async def main():
         init_timezones(
             business_tz=config.timezone.business, display_tz=config.timezone.display
         )
+        now = now_business()
+        business_date = now.date()
 
         # Ensure directories exist
         cache_dir = Path(config.paths.cache_dir)
@@ -367,7 +385,7 @@ async def main():
 
             # 1.2 Fetch fun content
             try:
-                fun_content = await fun_content_service.fetch_content(date.today())
+                fun_content = await fun_content_service.fetch_content(business_date)
                 raw_data["fun_content"] = fun_content
                 logger.info(f"Fetched fun content: {fun_content.get('title')}")
             except Exception as e:
@@ -378,7 +396,7 @@ async def main():
 
             # 1.3 Fetch KFC Crazy Thursday content (Only on Thursday)
             raw_data["kfc_copy"] = None
-            if kfc_service and date.today().weekday() == 3:
+            if kfc_service and business_date.weekday() == 3:
                 try:
                     kfc_copy = await kfc_service.fetch_kfc_copy()
                     raw_data["kfc_copy"] = kfc_copy
@@ -437,11 +455,11 @@ async def main():
                     )
 
             # 2. Compute template context
-            template_data = data_computer.compute(raw_data)
+            template_data = data_computer.compute(raw_data, now=now)
             logger.info("Template data computed")
 
             # 3. Render image
-            filename = await image_renderer.render(template_data)
+            filename = await image_renderer.render(template_data, now=now)
             logger.info(f"Image rendered: {filename}")
 
         except Exception as e:
@@ -452,8 +470,8 @@ async def main():
             sys.exit(10)
 
         # 4. Build data dict (same as render_once.py:150-202)
-        now = datetime.now(get_display_timezone())
-        today_str = now.strftime("%Y-%m-%d")
+        timestamp_fields = _build_timestamp_fields(now)
+        today_str = business_date.isoformat()
 
         # Extract data from template_data
         date_info = template_data.get("date", {})
@@ -487,15 +505,12 @@ async def main():
             kfc_content = kfc_content_raw.get("content")
 
         data = {
-            "date": now.strftime("%Y-%m-%d"),
-            "updated": now.strftime("%Y/%m/%d %H:%M:%S"),
-            "updated_at": int(now.timestamp() * 1000),
+            **timestamp_fields,
             "images": {"moyuren": "moyuren.jpg"},
             # New content fields
             "weekday": date_info.get("week_cn", ""),
             "lunar_date": date_info.get("lunar_date", ""),
             "fun_content": fun_content,
-            "is_crazy_thursday": now.weekday() == 3,
             "kfc_content": kfc_content,
             # Full rendering data fields
             "date_info": template_data.get("date"),
@@ -543,17 +558,20 @@ async def main():
             )
 
             # TXT artifacts
-            txt_content = generate_txt(data, base_url)
-            write_atomic(txt_content, date_dir / "data.txt")
-            write_atomic(txt_content, output_dir / "latest.txt")
+            dated_image_path = f"{today_str}/moyuren.jpg"
+            dated_txt_content = generate_txt(data, base_url, dated_image_path)
+            latest_txt_content = generate_txt(data, base_url)
+            write_atomic(dated_txt_content, date_dir / "data.txt")
+            write_atomic(latest_txt_content, output_dir / "latest.txt")
             logger.info(
                 f"TXT artifacts written: {date_dir / 'data.txt'}, {output_dir / 'latest.txt'}"
             )
 
             # Markdown artifacts
-            md_content = generate_md(data, base_url)
-            write_atomic(md_content, date_dir / "data.md")
-            write_atomic(md_content, output_dir / "latest.md")
+            dated_md_content = generate_md(data, base_url, dated_image_path)
+            latest_md_content = generate_md(data, base_url)
+            write_atomic(dated_md_content, date_dir / "data.md")
+            write_atomic(latest_md_content, output_dir / "latest.md")
             logger.info(
                 f"Markdown artifacts written: {date_dir / 'data.md'}, {output_dir / 'latest.md'}"
             )

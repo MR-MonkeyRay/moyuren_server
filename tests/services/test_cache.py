@@ -5,6 +5,7 @@ import logging
 from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -13,6 +14,25 @@ from app.services.cache import CacheCleaner
 
 class TestCacheCleaner:
     """Tests for CacheCleaner class."""
+
+    def test_render_resource_cutoff_uses_business_midnight(self, tmp_path: Path) -> None:
+        """Test that the resource retention boundary is midnight in business time."""
+        cleaner = CacheCleaner(str(tmp_path), retain_days=0, logger=logging.getLogger("test"))
+        cutoff = datetime(2026, 2, 5, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp()
+        for name, fetched_at in [("expired", cutoff - 1), ("boundary", cutoff), ("recent", cutoff + 1)]:
+            (cleaner.render_resources_dir / f"{name}.body").write_bytes(b"font")
+            (cleaner.render_resources_dir / f"{name}.meta").write_text(json.dumps({"fetched_at": fetched_at}))
+
+        with (
+            patch("app.services.cache.today_business", return_value=date(2026, 2, 5)),
+            patch("app.services.cache.get_business_timezone", return_value=ZoneInfo("Asia/Shanghai")),
+        ):
+            result = cleaner.cleanup()
+
+        assert result["deleted_files"] == 1
+        assert not (cleaner.render_resources_dir / "expired.body").exists()
+        assert (cleaner.render_resources_dir / "boundary.body").exists()
+        assert (cleaner.render_resources_dir / "recent.body").exists()
 
     @pytest.fixture
     def logger(self) -> logging.Logger:

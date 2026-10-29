@@ -34,6 +34,11 @@ class TestNormalizeDatetime:
         result = normalize_datetime("2026-02-04T10:00:00", default_tz=default_tz)
         assert result == "2026-02-04T10:00:00+08:00"
 
+    def test_naive_datetime_preserves_utc_business_timezone(self) -> None:
+        """Test that a zero business offset is preserved for naive inputs."""
+        with patch("app.services.compute.get_business_timezone", return_value=timezone.utc):
+            assert normalize_datetime("2026-02-04 10:00:00") == "2026-02-04T10:00:00+00:00"
+
     # --- Space-separated formats ---
 
     def test_space_separated_datetime(self) -> None:
@@ -805,6 +810,19 @@ class TestComputeHolidays:
 
 class TestDataComputer:
     """Tests for DataComputer backward-compatible wrapper."""
+
+    def test_compute_uses_provided_snapshot(self) -> None:
+        """Test that computation uses the supplied date without reading the clock."""
+        from app.services.compute import DataComputer
+
+        snapshot = datetime(2026, 2, 5, 2, tzinfo=timezone(timedelta(hours=8)))
+        with patch("app.services.compute.now_business") as mock_now:
+            result = DataComputer().compute({"kfc_copy": "Thursday content"}, now=snapshot)
+
+        assert result["date"]["day"] == "5"
+        assert result["date"]["week_cn"] == "星期四"
+        assert result["kfc_content"]["content"] == "Thursday content"
+        mock_now.assert_not_called()
 
     def test_default_init(self) -> None:
         """Test default initialization creates DomainDataAggregator and TemplateAdapter."""

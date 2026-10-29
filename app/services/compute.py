@@ -68,7 +68,7 @@ def normalize_datetime(value: str, default_tz: timezone | None = None) -> str | 
     if default_tz is None:
         biz_tz = get_business_timezone()
         offset = biz_tz.utcoffset(datetime.now(biz_tz))
-        default_tz = timezone(offset if offset else timedelta(hours=8))
+        default_tz = timezone(offset if offset is not None else timedelta(hours=8))
 
     # 尝试直接解析 ISO 格式（处理 Z 结尾）
     try:
@@ -163,18 +163,22 @@ class DomainDataAggregator:
         {"num": 5, "text": "工作中遇到困难时，深呼吸，放轻松。"},
     ]
 
-    def aggregate(self, raw_data: dict[str, Any]) -> dict[str, Any]:
+    def aggregate(
+        self, raw_data: dict[str, Any], now: datetime | None = None
+    ) -> dict[str, Any]:
         """Aggregate raw API data into domain data.
 
         Args:
             raw_data: Dictionary mapping endpoint names to their fetched data.
                       Values can be dict, list, or None depending on endpoint.
+            now: Optional business-time snapshot for this generation.
 
         Returns:
             A complete template context dictionary with all required variables.
         """
         # 使用业务时区的当前时间（用于节假日/节气/周末判断）
-        now = now_business()
+        if now is None:
+            now = now_business()
 
         # 计算各模块数据
         news_list = self._compute_news_list(raw_data)
@@ -812,16 +816,19 @@ class DataComputer:
         self._aggregator = aggregator or DomainDataAggregator()
         self._adapter = adapter or TemplateAdapter()
 
-    def compute(self, raw_data: dict[str, Any]) -> dict[str, Any]:
+    def compute(
+        self, raw_data: dict[str, Any], now: datetime | None = None
+    ) -> dict[str, Any]:
         """Compute template context from raw data.
 
         Args:
             raw_data: Raw API data dictionary.
+            now: Optional business-time snapshot for this generation.
 
         Returns:
             Template context dictionary.
         """
-        domain_data = self._aggregator.aggregate(raw_data)
+        domain_data = self._aggregator.aggregate(raw_data, now=now)
         return self._adapter.adapt(domain_data)
 
     @property

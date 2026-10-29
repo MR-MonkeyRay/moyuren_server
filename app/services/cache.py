@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from app.services.calendar import today_business
+from app.services.calendar import get_business_timezone, today_business
 
 
 class CacheCleaner:
@@ -107,7 +107,9 @@ class CacheCleaner:
                 self.logger.warning(f"Failed to process image file {file_path.name}: {e}")
 
         # Clean render resource cache files
-        cutoff_timestamp = datetime.combine(cutoff_date, datetime.min.time()).timestamp()
+        cutoff_timestamp = datetime.combine(
+            cutoff_date, datetime.min.time(), tzinfo=get_business_timezone()
+        ).timestamp()
         for meta_path in self.render_resources_dir.glob("*.meta"):
             cache_key = meta_path.stem
             body_path = self.render_resources_dir / f"{cache_key}.body"

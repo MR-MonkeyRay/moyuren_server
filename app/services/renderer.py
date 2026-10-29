@@ -27,6 +27,7 @@ from app.core.config import (
 from app.core.network import create_async_client, safe_exception_for_log
 from app.core.errors import RenderError
 from app.services.browser import browser_manager
+from app.services.calendar import now_business
 
 _CACHEABLE_RESOURCE_TYPES = {"stylesheet", "font"}
 _CACHEABLE_HOST_SUFFIXES = (
@@ -178,12 +179,15 @@ class ImageRenderer:
         self,
         data: dict[str, Any],
         template_name: str | None = None,
+        *,
+        now: datetime | None = None,
     ) -> str:
         """Render HTML template and generate screenshot image.
 
         Args:
             data: Template context data.
             template_name: Template name to use.
+            now: Optional business-time snapshot for the output filename.
 
         Returns:
             The filename of the generated image (e.g., "moyuren_moyuren_20260127_060001.jpg").
@@ -191,6 +195,8 @@ class ImageRenderer:
         Raises:
             RenderError: If template rendering or screenshot generation fails.
         """
+        if now is None:
+            now = now_business()
         self._render_degraded = False
         template_item = self.templates_config.get_template(template_name)
         render_start = time.monotonic()
@@ -220,7 +226,7 @@ class ImageRenderer:
         )
 
         # Step 3: Atomically write to file
-        filename = self._generate_filename(template_item.name)
+        filename = self._generate_filename(template_item.name, now=now)
         self._write_file_atomic(filename, image_bytes)
 
         self.logger.info(
@@ -968,16 +974,21 @@ class ImageRenderer:
             return f"{sanitized}?{parsed.query[:240]}"
         return sanitized
 
-    def _generate_filename(self, template_name: str) -> str:
+    def _generate_filename(
+        self, template_name: str, now: datetime | None = None
+    ) -> str:
         """Generate unique filename for the output image.
 
         Args:
             template_name: Template name to include in filename.
+            now: Optional business-time snapshot for the output filename.
 
         Returns:
             Filename in format "{template}_{timestamp}.jpg".
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if now is None:
+            now = now_business()
+        timestamp = now.strftime("%Y%m%d_%H%M%S")
         return f"{template_name}_{timestamp}.jpg"
 
     def _write_file_atomic(self, filename: str, content: bytes) -> None:
