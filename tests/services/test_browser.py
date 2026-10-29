@@ -22,6 +22,22 @@ class TestBrowserManager:
         """Test browser manager initialization."""
         assert manager._browser is None
         assert manager._playwright is None
+        assert manager.is_ready is False
+
+    def test_is_ready_with_connected_browser(self, manager: BrowserManager) -> None:
+        """Test readiness reports a connected browser without launching one."""
+        manager._browser = MagicMock()
+        manager._browser.is_connected.return_value = True
+
+        assert manager.is_ready is True
+        manager._browser.is_connected.assert_called_once_with()
+
+    def test_is_ready_with_disconnected_browser(self, manager: BrowserManager) -> None:
+        """Test readiness rejects a disconnected browser."""
+        manager._browser = MagicMock()
+        manager._browser.is_connected.return_value = False
+
+        assert manager.is_ready is False
 
     def test_configure(self, manager: BrowserManager) -> None:
         """Test configure with logger."""

@@ -36,6 +36,11 @@ class BrowserManager:
         self._shutting_down: bool = False
         self._proxy_url: str | None = None
 
+    @property
+    def is_ready(self) -> bool:
+        """Return whether the managed browser exists and is connected."""
+        return self._browser is not None and self._browser.is_connected()
+
     def configure(self, logger_instance: logging.Logger, proxy_url: str | None = None) -> None:
         """Configure the browser manager with logger and optional proxy settings."""
         if self._browser is not None and proxy_url != self._proxy_url:

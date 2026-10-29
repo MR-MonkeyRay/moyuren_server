@@ -100,7 +100,7 @@ sudo chown -R 1000:1000 cache logs
 | 方法 | 路径 | 说明 |
 | ---- | ---- | ---- |
 | GET | `/healthz` | 健康检查 |
-| GET | `/readyz` | 就绪检查 |
+| GET/HEAD | `/readyz` | 就绪检查（启动进度、当天数据与浏览器状态） |
 | GET | `/api/v1/moyuren` | 统一端点：图片元信息/详情/文本/Markdown/图片 |
 | GET | `/api/v1/templates` | 获取支持的模板列表 |
 | GET | `/api/v1/ops/generate` | 手动触发图片生成（需鉴权） |
@@ -153,7 +153,9 @@ sudo chown -R 1000:1000 cache logs
 <details>
 <summary>GET /readyz - 就绪检查</summary>
 
-验证服务是否可以处理请求，支持 GET 和 HEAD 方法。
+验证服务是否可以处理请求，支持 GET 和 HEAD 方法。启动阶段的网络缓存预热和初始图片生成在后台依次执行，不阻塞 HTTP 服务启动；浏览器预热由单独的后台任务执行。
+
+检查项包括配置是否已加载（`config`）、缓存与数据目录是否存在（`cache_dir`）、后台启动任务状态（`startup`）、当天业务日期的数据文件是否存在（`today_data`）以及浏览器是否已连接（`browser`）。配置或缓存目录缺失、或后台启动任务仍为 `starting` 时返回 HTTP `503` 和 `not_ready`。启动任务结束后返回 HTTP `200`：当天数据与浏览器都可用时状态为 `ready`，否则为 `degraded`，API 仍可通过按需生成提供服务。
 
 **响应示例**：
 
@@ -162,7 +164,10 @@ sudo chown -R 1000:1000 cache logs
   "status": "ready",
   "checks": {
     "config": true,
-    "cache_dir": true
+    "cache_dir": true,
+    "startup": "ready",
+    "today_data": true,
+    "browser": true
   }
 }
 ```

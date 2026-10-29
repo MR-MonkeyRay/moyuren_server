@@ -2,7 +2,9 @@
 
 import asyncio
 import contextlib
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -46,13 +48,140 @@ from app.services.stock_index import StockIndexService
 from app.services.gold_price import CachedGoldPriceService
 
 
+async def _ensure_today_data(app: FastAPI) -> None:
+    """Validate today's cached data and generate an initial image if needed."""
+    config = app.state.config
+    logger = app.state.logger
+    data_dir = Path(config.paths.cache_dir) / "data"
+    today_str = today_business().isoformat()
+    data_file = data_dir / f"{today_str}.json"
+    need_regenerate = False
+    cache_is_valid_but_expired = (
+        False  # Track if cache is structurally valid but just expired
+    )
+
+    if not data_file.exists():
+        logger.info("No existing data file found for today")
+        need_regenerate = True
+    else:
+        # Validate data file content
+        try:
+            import json
+
+            with data_file.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                logger.warning("Data file is not a dictionary")
+                need_regenerate = True
+            elif not data.get("images"):
+                logger.warning("Data file missing images mapping")
+                need_regenerate = True
+            else:
+                # Check cache expiration
+                try:
+                    updated_at_ms = data.get("updated_at")
+                    if updated_at_ms is None:
+                        logger.warning("Data file missing 'updated_at' field")
+                        need_regenerate = True
+                    # Validate updated_at type and range
+                    elif not isinstance(updated_at_ms, (int, float)):
+                        logger.warning(
+                            f"Invalid updated_at type: {type(updated_at_ms).__name__}, expected int or float"
+                        )
+                        need_regenerate = True
+                    elif updated_at_ms < 0:
+                        logger.warning(
+                            f"Invalid updated_at value: {updated_at_ms} (negative timestamp)"
+                        )
+                        need_regenerate = True
+                    else:
+                        # 使用日期边界判断替代 TTL
+                        cached_date = data.get("date")
+                        if cached_date != today_str:
+                            logger.info(
+                                f"Cache date mismatch: {cached_date} != {today_str}"
+                            )
+                            need_regenerate = True
+                            cache_is_valid_but_expired = True
+                except (TypeError, ValueError, KeyError) as e:
+                    logger.warning(f"Failed to check cache expiration: {e}")
+                    need_regenerate = True
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Data file invalid or unreadable: {e}")
+            need_regenerate = True
+
+    if need_regenerate:
+        if cache_is_valid_but_expired:
+            # Strategy: Async background refresh (cache is valid but expired)
+            # User can temporarily use stale data while startup runs
+            logger.info("Cache expired but valid, triggering background refresh...")
+
+            async def _background_refresh() -> None:
+                """Background task wrapper with error handling and single-flight."""
+                if app.state.is_refreshing:
+                    logger.info("Background refresh already in progress, skipping")
+                    return
+                app.state.is_refreshing = True
+                try:
+                    await generate_and_save_image(app)
+                    logger.info("Background refresh completed successfully")
+                except asyncio.CancelledError:
+                    logger.info("Background refresh cancelled due to shutdown")
+                    raise
+                except Exception as e:
+                    logger.error(
+                        "Background refresh failed: %s",
+                        safe_exception_for_log(e, config.network.proxy_url),
+                    )
+                    logger.warning(
+                        "Stale cache will be used until next scheduled refresh"
+                    )
+                finally:
+                    app.state.is_refreshing = False
+
+            await _background_refresh()
+        else:
+            # Generate missing or invalid cache inside the startup task
+            if data_file.exists():
+                # Invalid cache exists, remove it before regenerating
+                logger.info("Removing invalid data file...")
+                try:
+                    if data_file.is_file():
+                        data_file.unlink()
+                    elif data_file.is_dir():
+                        logger.error(
+                            f"Data file path is a directory, not a file: {data_file}"
+                        )
+                        import shutil
+
+                        shutil.rmtree(data_file)
+                except (OSError, IsADirectoryError) as e:
+                    logger.error(f"Failed to remove invalid data file: {e}")
+
+            logger.info("No valid cache found, generating initial image...")
+            try:
+                await generate_and_save_image(app)
+                logger.info("Initial image generated successfully")
+            except Exception as e:
+                logger.error(
+                    "Initial image generation failed: %s",
+                    safe_exception_for_log(e, config.network.proxy_url),
+                )
+                logger.warning(
+                    "Service will start without cache, API will trigger on-demand generation"
+                )
+
+
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan manager.
 
     Handles startup and shutdown events for the FastAPI application.
     """
     # ==================== Startup ====================
+    app.state.startup_state = "starting"
+    app.state.startup_started_at = datetime.now(timezone.utc)
+    app.state.startup_completed_at = None
     print("Starting Moyuren API...")
 
     # 1. Load configuration
@@ -255,7 +384,7 @@ async def lifespan(app: FastAPI):
     app.state.is_refreshing = False  # Initialize background refresh lock
 
     # 启动预热日级缓存
-    async def warmup_daily_cache():
+    async def warmup_daily_cache() -> None:
         """预热日级缓存"""
         logger.info("Warming up daily cache...")
         named_tasks: list[tuple[str, Any]] = [("holiday", holiday_service.get())]
@@ -281,13 +410,11 @@ async def lifespan(app: FastAPI):
                 )
         logger.info("Daily cache warmup completed")
 
-    await warmup_daily_cache()
-
     # 5. Initialize and start scheduler
     scheduler = TaskScheduler(config.scheduler, logger, timezone=get_business_timezone())
 
     # Add daily image generation task
-    async def generate_image_task():
+    async def generate_image_task() -> None:
         """Scheduled task: Generate moyuren calendar image."""
         try:
             await generate_and_save_image(app)
@@ -330,131 +457,30 @@ async def lifespan(app: FastAPI):
     app.state.scheduler = scheduler
     logger.info("Scheduler started")
 
-    # 6. Validate and generate initial image if needed
-    data_dir = cache_dir / "data"
-    today_str = today_business().isoformat()
-    data_file = data_dir / f"{today_str}.json"
-    need_regenerate = False
-    cache_is_valid_but_expired = (
-        False  # Track if cache is structurally valid but just expired
-    )
-
-    if not data_file.exists():
-        logger.info("No existing data file found for today")
-        need_regenerate = True
-    else:
-        # Validate data file content
+    # 6. Warm caches and generate initial data in the background
+    async def _startup() -> None:
+        """Warm daily caches before validating the initial image cache."""
         try:
-            import json
-
-            with data_file.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-            if not isinstance(data, dict):
-                logger.warning("Data file is not a dictionary")
-                need_regenerate = True
-            elif not data.get("images"):
-                logger.warning("Data file missing images mapping")
-                need_regenerate = True
-            else:
-                # Check cache expiration
-                try:
-                    updated_at_ms = data.get("updated_at")
-                    if updated_at_ms is None:
-                        logger.warning("Data file missing 'updated_at' field")
-                        need_regenerate = True
-                    # Validate updated_at type and range
-                    elif not isinstance(updated_at_ms, (int, float)):
-                        logger.warning(
-                            f"Invalid updated_at type: {type(updated_at_ms).__name__}, expected int or float"
-                        )
-                        need_regenerate = True
-                    elif updated_at_ms < 0:
-                        logger.warning(
-                            f"Invalid updated_at value: {updated_at_ms} (negative timestamp)"
-                        )
-                        need_regenerate = True
-                    else:
-                        # 使用日期边界判断替代 TTL
-                        cached_date = data.get("date")
-                        if cached_date != today_str:
-                            logger.info(
-                                f"Cache date mismatch: {cached_date} != {today_str}"
-                            )
-                            need_regenerate = True
-                            cache_is_valid_but_expired = True
-                except (TypeError, ValueError, KeyError) as e:
-                    logger.warning(f"Failed to check cache expiration: {e}")
-                    need_regenerate = True
-        except (json.JSONDecodeError, OSError) as e:
-            logger.warning(f"Data file invalid or unreadable: {e}")
-            need_regenerate = True
-
-    if need_regenerate:
-        if cache_is_valid_but_expired:
-            # Strategy: Async background refresh (cache is valid but expired)
-            # User can temporarily use stale data, fast startup
-            logger.info("Cache expired but valid, triggering background refresh...")
-
-            async def _background_refresh():
-                """Background task wrapper with error handling and single-flight."""
-                if app.state.is_refreshing:
-                    logger.info("Background refresh already in progress, skipping")
-                    return
-                app.state.is_refreshing = True
-                try:
-                    await generate_and_save_image(app)
-                    logger.info("Background refresh completed successfully")
-                except asyncio.CancelledError:
-                    logger.info("Background refresh cancelled due to shutdown")
-                    raise
-                except Exception as e:
-                    logger.error(
-                        "Background refresh failed: %s",
-                        safe_exception_for_log(e, config.network.proxy_url),
-                    )
-                    logger.warning(
-                        "Stale cache will be used until next scheduled refresh"
-                    )
-                finally:
-                    app.state.is_refreshing = False
-
-            task = asyncio.create_task(_background_refresh())
-            app.state.background_refresh_task = task  # Save reference for shutdown
-            logger.info("Background refresh task created, service starting immediately")
+            await warmup_daily_cache()
+            await _ensure_today_data(app)
+        except asyncio.CancelledError:
+            logger.info("Startup task cancelled due to shutdown")
+            raise
+        except Exception as e:
+            app.state.startup_state = "failed"
+            logger.error(
+                "Startup task failed: %s",
+                safe_exception_for_log(e, config.network.proxy_url),
+            )
         else:
-            # Strategy: Sync generation (cache is missing or invalid)
-            # Must generate now to ensure data availability
-            if data_file.exists():
-                # Invalid cache exists, remove it before regenerating
-                logger.info("Removing invalid data file...")
-                try:
-                    if data_file.is_file():
-                        data_file.unlink()
-                    elif data_file.is_dir():
-                        logger.error(
-                            f"Data file path is a directory, not a file: {data_file}"
-                        )
-                        import shutil
+            app.state.startup_state = "ready"
+        finally:
+            app.state.startup_completed_at = datetime.now(timezone.utc)
 
-                        shutil.rmtree(data_file)
-                except (OSError, IsADirectoryError) as e:
-                    logger.error(f"Failed to remove invalid data file: {e}")
-
-            logger.info("No valid cache found, generating initial image...")
-            try:
-                await generate_and_save_image(app)
-                logger.info("Initial image generated successfully")
-            except Exception as e:
-                logger.error(
-                    "Initial image generation failed: %s",
-                    safe_exception_for_log(e, config.network.proxy_url),
-                )
-                logger.warning(
-                    "Service will start without cache, API will trigger on-demand generation"
-                )
+    app.state.startup_task = asyncio.create_task(_startup())
 
     # 7. Browser warmup (background, non-blocking)
-    async def _browser_warmup():
+    async def _browser_warmup() -> None:
         """Background task to pre-initialize browser."""
         try:
             await browser_manager.warmup()
@@ -477,20 +503,19 @@ async def lifespan(app: FastAPI):
         # ==================== Shutdown ====================
         logger.info("Shutting down Moyuren API...")
 
+        # Cancel startup task before stopping dependencies
+        task = app.state.startup_task
+        if not task.done():
+            logger.info("Cancelling startup task...")
+            task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
         # Cancel browser warmup task if running
         if hasattr(app.state, "browser_warmup_task"):
             task = app.state.browser_warmup_task
             if not task.done():
                 logger.info("Cancelling browser warmup task...")
-                task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await task
-
-        # Cancel background refresh task if running
-        if hasattr(app.state, "background_refresh_task"):
-            task = app.state.background_refresh_task
-            if not task.done():
-                logger.info("Cancelling background refresh task...")
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
@@ -562,19 +587,33 @@ async def healthz():
 
 
 @app.api_route("/readyz", methods=["GET", "HEAD"])
-async def readyz(request: Request):
+async def readyz(request: Request) -> JSONResponse:
     """就绪检查 - 验证服务是否可以处理请求。"""
-    checks = {"config": True, "cache_dir": False}
-    try:
-        cache_dir = Path(request.app.state.config.paths.cache_dir)
-        checks["cache_dir"] = cache_dir.exists() and (cache_dir / "data").exists()
-    except Exception:  # nosec B110 - readyz check: keep cache_dir=False on failure
-        pass
+    config = getattr(request.app.state, "config", None)
+    startup_state = getattr(request.app.state, "startup_state", "starting")
+    manager = getattr(request.app.state, "browser_manager", None)
+    checks: dict[str, bool | str] = {
+        "config": config is not None,
+        "cache_dir": False,
+        "startup": startup_state,
+        "today_data": False,
+        "browser": manager is not None and manager.is_ready,
+    }
+    if config is not None:
+        try:
+            cache_dir = Path(config.paths.cache_dir)
+            checks["cache_dir"] = cache_dir.exists() and (cache_dir / "data").exists()
+            checks["today_data"] = (
+                cache_dir / "data" / f"{today_business().isoformat()}.json"
+            ).is_file()
+        except Exception:  # nosec B110 - readyz checks remain false on failure
+            pass
 
-    all_ready = all(checks.values())
+    can_serve = checks["config"] and checks["cache_dir"] and startup_state != "starting"
+    status = "ready" if checks["today_data"] and checks["browser"] else "degraded"
     return JSONResponse(
-        content={"status": "ready" if all_ready else "not_ready", "checks": checks},
-        status_code=200 if all_ready else 503,
+        content={"status": status if can_serve else "not_ready", "checks": checks},
+        status_code=200 if can_serve else 503,
     )
 
 
