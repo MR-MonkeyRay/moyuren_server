@@ -66,6 +66,144 @@ class TestCacheCleaner:
         assert result["deleted_files"] == 0
         assert result["freed_bytes"] == 0
         assert result["oldest_kept"] == "2026-02-10"
+        assert result["pruned_images"] == 0
+
+    def test_cleanup_prunes_images_per_template_and_day(self, tmp_path: Path) -> None:
+        """Test pruning keeps the newest images separately for each template and date."""
+        cleaner = CacheCleaner(
+            str(tmp_path), 30, logging.getLogger("test"), max_images_per_template_per_day=3
+        )
+        for template, count in [("moyuren", 5), ("moyuren_cute", 4), ("moyuren-cute", 4)]:
+            for hour in reversed(range(count)):
+                image = cleaner.images_dir / f"{template}_20260210_{hour:02d}0000.jpg"
+                image.write_bytes(b"image")
+        other_day = cleaner.images_dir / "moyuren_20260209_000000.jpg"
+        other_day.write_bytes(b"image")
+        expired = cleaner.images_dir / "moyuren_20260110_000000.jpg"
+        expired.write_bytes(b"expired")
+
+        with patch("app.services.cache.today_business", return_value=date(2026, 2, 10)):
+            result = cleaner.cleanup()
+
+        assert {path.name for path in cleaner.images_dir.glob("*.jpg")} == {
+            *(f"moyuren_20260210_{hour:02d}0000.jpg" for hour in range(2, 5)),
+            *(f"moyuren_cute_20260210_{hour:02d}0000.jpg" for hour in range(1, 4)),
+            *(f"moyuren-cute_20260210_{hour:02d}0000.jpg" for hour in range(1, 4)),
+            other_day.name,
+        }
+        assert result["pruned_images"] == 4
+        assert result["deleted_files"] == 5
+        assert result["freed_bytes"] == 4 * len(b"image") + len(b"expired")
+        assert result["oldest_kept"] == "2026-02-09"
+
+    @pytest.mark.parametrize("reference_count", [1, 4])
+    def test_cleanup_preserves_references_from_any_data_file(
+        self, tmp_path: Path, reference_count: int
+    ) -> None:
+        """Test all referenced images count toward the limit, even across data dates."""
+        cleaner = CacheCleaner(str(tmp_path), 30, logging.getLogger("test"))
+        filenames = [f"moyuren_20260210_{hour:02d}0000.jpg" for hour in range(5)]
+        for filename in filenames:
+            (cleaner.images_dir / filename).write_bytes(b"image")
+        for index, filename in enumerate(filenames[:reference_count]):
+            data_path = cleaner.data_dir / f"2026-02-{10 - index:02d}.json"
+            data_path.write_text(json.dumps({"images": {"moyuren": filename}}))
+
+        with patch("app.services.cache.today_business", return_value=date(2026, 2, 10)):
+            result = cleaner.cleanup()
+
+        expected = set(filenames[:reference_count])
+        if reference_count < 3:
+            expected.update(filenames[-(3 - reference_count):])
+        assert {path.name for path in cleaner.images_dir.glob("*.jpg")} == expected
+        assert result["pruned_images"] == 5 - len(expected)
+        assert result["deleted_files"] == result["pruned_images"]
+
+    @pytest.mark.parametrize("data_filename", ["2025-12-01.json", "backup.json"])
+    def test_cleanup_preserves_references_from_other_data_files(
+        self, tmp_path: Path, data_filename: str
+    ) -> None:
+        """Test expired and non-daily data files also protect referenced images."""
+        cleaner = CacheCleaner(
+            str(tmp_path), 30, logging.getLogger("test"), max_images_per_template_per_day=1
+        )
+        referenced = cleaner.images_dir / "moyuren_20260210_000000.jpg"
+        newer = cleaner.images_dir / "moyuren_20260210_010000.jpg"
+        referenced.write_bytes(b"referenced")
+        newer.write_bytes(b"newer")
+        data_file = cleaner.data_dir / data_filename
+        data_file.write_text(json.dumps({"images": {"moyuren": referenced.name}}))
+        data_size = data_file.stat().st_size
+
+        with patch("app.services.cache.today_business", return_value=date(2026, 2, 10)):
+            result = cleaner.cleanup()
+
+        expired_data = data_filename == "2025-12-01.json"
+        assert referenced.exists()
+        assert not newer.exists()
+        assert result["pruned_images"] == 1
+        assert result["deleted_files"] == 1 + int(expired_data)
+        assert result["freed_bytes"] == len(b"newer") + (data_size if expired_data else 0)
+
+    @pytest.mark.parametrize(
+        "contents", ["{invalid", "[]", '{"images": []}', '{"images": {"moyuren": null}}', "\xff"]
+    )
+    def test_cleanup_skips_pruning_for_invalid_data(
+        self, tmp_path: Path, contents: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test invalid data preserves that date's images while other dates are pruned."""
+        cleaner = CacheCleaner(str(tmp_path), 30, logging.getLogger("test"))
+        for day in [9, 10]:
+            for hour in range(5):
+                image = cleaner.images_dir / f"moyuren_202602{day:02d}_{hour:02d}0000.jpg"
+                image.write_bytes(b"image")
+        (cleaner.data_dir / "2026-02-10.json").write_bytes(contents.encode("latin-1"))
+
+        with patch("app.services.cache.today_business", return_value=date(2026, 2, 10)):
+            result = cleaner.cleanup()
+
+        assert len(list(cleaner.images_dir.glob("moyuren_20260210_*.jpg"))) == 5
+        assert len(list(cleaner.images_dir.glob("moyuren_20260209_*.jpg"))) == 3
+        assert result["pruned_images"] == 2
+        assert "Skipping image pruning for 2026-02-10" in caplog.text
+
+    def test_cleanup_skips_pruning_for_unreadable_data(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test unreadable daily data prevents pruning for its date."""
+        cleaner = CacheCleaner(str(tmp_path), 30, logging.getLogger("test"))
+        (cleaner.data_dir / "2026-02-10.json").write_text("{}")
+        for hour in range(5):
+            (cleaner.images_dir / f"moyuren_20260210_{hour:02d}0000.jpg").write_bytes(b"image")
+
+        with (
+            patch("app.services.cache.today_business", return_value=date(2026, 2, 10)),
+            patch.object(Path, "read_text", side_effect=OSError("unreadable")),
+        ):
+            result = cleaner.cleanup()
+
+        assert len(list(cleaner.images_dir.glob("*.jpg"))) == 5
+        assert result["pruned_images"] == 0
+        assert result["deleted_files"] == 0
+        assert "Skipping image pruning for 2026-02-10" in caplog.text
+
+    def test_cleanup_preserves_valid_references_in_invalid_mapping(self, tmp_path: Path) -> None:
+        """Test a malformed mapping still protects valid references to other dates."""
+        cleaner = CacheCleaner(str(tmp_path), 30, logging.getLogger("test"))
+        filenames = [f"moyuren_20260210_{hour:02d}0000.jpg" for hour in range(5)]
+        for filename in filenames:
+            (cleaner.images_dir / filename).write_bytes(b"image")
+        (cleaner.data_dir / "2026-02-09.json").write_text(
+            json.dumps({"images": {"moyuren": filenames[0], "invalid": None}})
+        )
+
+        with patch("app.services.cache.today_business", return_value=date(2026, 2, 10)):
+            result = cleaner.cleanup()
+
+        assert {path.name for path in cleaner.images_dir.glob("*.jpg")} == {
+            filenames[0], filenames[3], filenames[4]
+        }
+        assert result["pruned_images"] == 2
 
     def test_cleanup_expired_data_files(
         self, cleaner: CacheCleaner, cache_dir: Path, mock_today

@@ -219,6 +219,7 @@ async def lifespan(app: FastAPI):
     cache_cleaner = CacheCleaner(
         cache_dir=str(cache_dir),
         retain_days=config.cache.retain_days,
+        max_images_per_template_per_day=config.cache.max_images_per_template_per_day,
         logger=logger,
     )
 

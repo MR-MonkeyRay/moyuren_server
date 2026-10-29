@@ -120,6 +120,7 @@ class CacheConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     retain_days: int = 30
+    max_images_per_template_per_day: int = 3
 
     @field_validator("retain_days")
     @classmethod
@@ -137,6 +138,24 @@ class CacheConfig(BaseModel):
         """
         if value <= 0:
             raise ValueError("retain_days must be positive")
+        return value
+
+    @field_validator("max_images_per_template_per_day")
+    @classmethod
+    def validate_max_images_per_template_per_day(cls, value: int) -> int:
+        """校验每个模板每天保留的最大图片数.
+
+        Args:
+            value: 每个模板每天保留的最大图片数.
+
+        Returns:
+            通过校验的最大图片数.
+
+        Raises:
+            ValueError: 最大图片数小于 1 时抛出.
+        """
+        if value < 1:
+            raise ValueError("max_images_per_template_per_day must be at least 1")
         return value
 
 

@@ -18,6 +18,7 @@ scheduler:
 
 cache:
   retain_days: 30
+  max_images_per_template_per_day: 3  # 每个模板每天最多保留的图片数
 
 ops:
   api_key: ""

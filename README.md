@@ -330,6 +330,7 @@ sudo chown -R 1000:1000 cache logs
 | `templates.config.font_ready_timeout_sec` | - | 字体 readiness 等待上限（秒，默认 2） |
 | `templates.items[].viewport` | - | 各模板视口尺寸（width/height） |
 | `cache.retain_days` | `MOYUREN_CACHE_RETAIN_DAYS` | 缓存保留天数（默认 30） |
+| `cache.max_images_per_template_per_day` | `MOYUREN_CACHE_MAX_IMAGES_PER_TEMPLATE_PER_DAY` | 每个模板每天保留的最大图片数（默认 3） |
 | `ops.api_key` | `MOYUREN_OPS_API_KEY` | 运维 API Key（留空则禁用 ops 端点，所有请求返回 401） |
 | `logging.level` | `MOYUREN_LOGGING_LEVEL` | 日志级别 |
 | `logging.file` | `MOYUREN_LOGGING_FILE` | 日志文件路径（空字符串表示只输出到标准输出） |
@@ -377,6 +378,8 @@ cache/
 │   └── 2026.json
 └── .generation.lock   # 生成锁文件
 ```
+
+保留期内的图片按模板和日期清理，`cache.max_images_per_template_per_day` 默认为 3（最小为 1），按文件名时间保留最新图片。所有数据 JSON 引用的图片优先保留并计入数量，即使引用数超过上限也不会裁剪；数据 JSON 无法读取或格式无效时，跳过对应日期的图片裁剪。
 
 ### 配置示例
 

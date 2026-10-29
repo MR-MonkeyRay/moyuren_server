@@ -73,7 +73,7 @@ def _fake_config(tmp_path):
         ),
         instances=SimpleNamespace(list_url=None, urls=None),
         templates=SimpleNamespace(config=SimpleNamespace()),
-        cache=SimpleNamespace(retain_days=30),
+        cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
         scheduler=SimpleNamespace(mode="hourly", minute_of_hour=0, daily_times=[]),
         get_source=get_source,
         get_templates_config=lambda: SimpleNamespace(

@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.config import (
+    AppConfig,
     CacheConfig,
     CrazyThursdaySource,
     FunContentEndpoint,
@@ -89,6 +90,33 @@ class TestCacheConfig:
         """Test valid retain_days."""
         config = CacheConfig(retain_days=30)
         assert config.retain_days == 30
+
+    def test_default_max_images_per_template_per_day(self) -> None:
+        """Test the default daily image limit."""
+        config = CacheConfig()
+        assert config.max_images_per_template_per_day == 3
+
+    def test_valid_max_images_per_template_per_day(self) -> None:
+        """Test a positive daily image limit."""
+        config = CacheConfig(max_images_per_template_per_day=5)
+        assert config.max_images_per_template_per_day == 5
+
+    @pytest.mark.parametrize("limit", [0, -1])
+    def test_invalid_max_images_per_template_per_day_raises_error(
+        self, limit: int
+    ) -> None:
+        """Test non-positive daily image limits are rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            CacheConfig(max_images_per_template_per_day=limit)
+        assert "must be at least 1" in str(exc_info.value)
+
+    def test_max_images_per_template_per_day_env_override(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test the daily image limit can be overridden by environment."""
+        monkeypatch.setenv("MOYUREN_CACHE_MAX_IMAGES_PER_TEMPLATE_PER_DAY", "7")
+        config = AppConfig.from_yaml("config.yaml")
+        assert config.cache.max_images_per_template_per_day == 7
 
     def test_zero_retain_days_raises_error(self) -> None:
         """Test zero retain_days raises error."""
