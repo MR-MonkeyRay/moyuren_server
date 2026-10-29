@@ -313,33 +313,35 @@ sudo chown -R 1000:1000 cache logs
 
 | 配置项 | 环境变量 | 说明 |
 | ------ | -------- | ---- |
-| `server.host` | `SERVER_HOST` | 监听地址 |
-| `server.port` | `SERVER_PORT` | 服务端口 |
-| `server.base_domain` | `SERVER_BASE_DOMAIN` | 图片 URL 前缀 |
-| `paths.cache_dir` | `PATHS_CACHE_DIR` | 缓存根目录（默认 `cache`） |
-| `scheduler.mode` | `SCHEDULER_MODE` | 调度模式（`daily` 或 `hourly`） |
-| `scheduler.daily_times` | `SCHEDULER_DAILY_TIMES` | 生成时间（JSON 数组，如 `'["06:00","18:00"]'`） |
-| `scheduler.minute_of_hour` | `SCHEDULER_MINUTE_OF_HOUR` | 每小时模式下的触发分钟（0-59） |
+| `server.host` | `MOYUREN_SERVER_HOST` | 监听地址 |
+| `server.port` | `MOYUREN_SERVER_PORT` | 服务端口 |
+| `server.base_domain` | `MOYUREN_SERVER_BASE_DOMAIN` | 图片 URL 前缀 |
+| `paths.cache_dir` | `MOYUREN_PATHS_CACHE_DIR` | 缓存根目录（默认 `cache`） |
+| `scheduler.mode` | `MOYUREN_SCHEDULER_MODE` | 调度模式（`daily` 或 `hourly`） |
+| `scheduler.daily_times` | `MOYUREN_SCHEDULER_DAILY_TIMES` | 生成时间（JSON 数组，如 `'["06:00","18:00"]'`） |
+| `scheduler.minute_of_hour` | `MOYUREN_SCHEDULER_MINUTE_OF_HOUR` | 每小时模式下的触发分钟（0-59） |
 | `templates.config.device_scale_factor` | - | 缩放因子（默认 3） |
 | `templates.config.jpeg_quality` | - | JPEG 质量（1-100，默认 100） |
 | `templates.config.use_china_cdn` | - | 字体 CDN 开关（true: 大陆 CDN, false: 国际 CDN） |
 | `templates.config.page_load_timeout_sec` | - | 浏览器 DOM 加载超时（秒，默认 10） |
 | `templates.config.font_ready_timeout_sec` | - | 字体 readiness 等待上限（秒，默认 2） |
 | `templates.items[].viewport` | - | 各模板视口尺寸（width/height） |
-| `cache.retain_days` | `CACHE_RETAIN_DAYS` | 缓存保留天数（默认 30） |
-| `ops.api_key` | `OPS_API_KEY` | 运维 API Key（留空则禁用 ops 端点） |
-| `logging.level` | `LOGGING_LEVEL` | 日志级别 |
-| `logging.file` | `LOGGING_FILE` | 日志文件路径（空字符串表示只输出到标准输出） |
-| `timezone.business` | - | 业务时区（节假日/节气/周末判断） |
-| `timezone.display` | - | 显示时区（图片时间戳、API 响应时间；支持 `local`） |
-| `network.proxy_url` | - | 全局出站代理 URL，默认空；支持 `http://`、`socks5://`，可包含代理账号密码；同时用于应用和脚本的 HTTPX 请求及 Playwright 浏览器启动 |
-| `network.ghproxy_urls` | - | GitHub 代理 URL 列表（用于加速节假日数据、ECDICT 下载和新闻静态镜像回退） |
+| `cache.retain_days` | `MOYUREN_CACHE_RETAIN_DAYS` | 缓存保留天数（默认 30） |
+| `ops.api_key` | `MOYUREN_OPS_API_KEY` | 运维 API Key（留空则禁用 ops 端点，所有请求返回 401） |
+| `logging.level` | `MOYUREN_LOGGING_LEVEL` | 日志级别 |
+| `logging.file` | `MOYUREN_LOGGING_FILE` | 日志文件路径（空字符串表示只输出到标准输出） |
+| `timezone.business` | `MOYUREN_TIMEZONE_BUSINESS` | 业务时区（节假日/节气/周末判断） |
+| `timezone.display` | `MOYUREN_TIMEZONE_DISPLAY` | 显示时区（图片时间戳、API 响应时间；支持 `local`） |
+| `network.proxy_url` | `MOYUREN_NETWORK_PROXY_URL` | 全局出站代理 URL，默认空；支持 `http://`、`socks5://`，可包含代理账号密码；同时用于应用和脚本的 HTTPX 请求及 Playwright 浏览器启动 |
+| `network.ghproxy_urls` | `MOYUREN_NETWORK_GHPROXY_URLS` | GitHub 代理 URL 列表（JSON 数组，用于加速节假日数据、ECDICT 下载和新闻静态镜像回退） |
 | `data_sources` | - | 外部数据源配置列表（新闻、趣味内容等） |
 | `data_sources[].type` | - | 数据源类型（news/fun_content/crazy_thursday/holiday/stock_index/gold_price/daily_english） |
-| `instances.list_url` | - | 60s 公共实例列表文档地址（Markdown），由 news/fun_content/crazy_thursday/gold_price 共享；`null` 关闭自动发现 |
-| `instances.urls` | - | 额外/兜底的实例基地址列表（可选，优先于自动发现结果；端点路径沿用各数据源的 `url`） |
+| `instances.list_url` | `MOYUREN_INSTANCES_LIST_URL` | 60s 公共实例列表文档地址（Markdown），由 news/fun_content/crazy_thursday/gold_price 共享；`null` 关闭自动发现 |
+| `instances.urls` | `MOYUREN_INSTANCES_URLS` | 额外/兜底的实例基地址 JSON 数组（可选，优先于自动发现结果；端点路径沿用各数据源的 `url`） |
 | `templates.default` | - | 默认模板名 |
 | `templates.dir` | - | 模板目录（默认 `templates`，自动扫描 HTML 文件） |
+
+环境变量按进程环境、当前工作目录的 `.env`、`config.yaml` 的顺序覆盖。进程环境和 `.env` 内均以 `MOYUREN_` 前缀名称为准；同一来源同时设置新旧名称时，新名称优先。已知配置项的旧无前缀名称仍可用，但已弃用，使用时会记录警告；无关或未知名称会被忽略。
 
 ### 调度配置说明
 
@@ -347,7 +349,7 @@ sudo chown -R 1000:1000 cache logs
 - 当 `mode=hourly` 时，任务会在每小时的 `scheduler.minute_of_hour` 分触发
 - 当 `mode=daily` 时，任务会按 `scheduler.daily_times` 中每个 `HH:MM` 时间触发
 - `mode=hourly` 时 `daily_times` 会被忽略，建议保留以便快速回退到 `daily`
-- 环境变量覆盖：`SCHEDULER_MODE`、`SCHEDULER_DAILY_TIMES`、`SCHEDULER_MINUTE_OF_HOUR`
+- 环境变量覆盖：`MOYUREN_SCHEDULER_MODE`、`MOYUREN_SCHEDULER_DAILY_TIMES`、`MOYUREN_SCHEDULER_MINUTE_OF_HOUR`
 
 ### 缓存目录结构
 

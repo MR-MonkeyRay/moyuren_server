@@ -3,7 +3,7 @@
 import re
 import logging
 from pathlib import Path
-from typing import Annotated, Any, Literal, TypeVar
+from typing import Annotated, Any, Literal, TypeVar, cast
 
 import yaml
 from pydantic import (
@@ -15,8 +15,10 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
+    EnvSettingsSource,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
@@ -1009,11 +1011,64 @@ class TimezoneConfig(BaseModel):
 T = TypeVar("T", bound=DataSourceBase)
 
 
+class _FilteredEnvSettingsSource(PydanticBaseSettingsSource):
+    """Filter environment names and migrate known legacy keys before parsing."""
+
+    def __init__(self, source: EnvSettingsSource) -> None:
+        super().__init__(source.settings_cls)
+        self.source = source
+
+    def get_field_value(
+        self, field: FieldInfo, field_name: str
+    ) -> tuple[Any, str, bool]:
+        return self.source.get_field_value(field, field_name)
+
+    def __call__(self) -> dict[str, Any]:
+        source = self.source
+        prefix = source.env_prefix
+        canonical_names: set[str] = set()
+        legacy_fields: dict[str, tuple[str, str]] = {}
+        for section, field in self.settings_cls.model_fields.items():
+            canonical_names.add(f"{prefix}{section}")
+            model = field.annotation
+            if isinstance(model, type) and issubclass(model, BaseModel):
+                for key in model.model_fields:
+                    name = f"{section}_{key}"
+                    legacy_fields[name] = (section, key)
+                    canonical_names.add(f"{prefix}{name}")
+
+        if not source.case_sensitive:
+            canonical_names = {name.lower() for name in canonical_names}
+
+        filtered = {
+            name: value
+            for name, value in source.env_vars.items()
+            if name in canonical_names
+        }
+        for name, (section, key) in legacy_fields.items():
+            canonical = f"{prefix}{name}"
+            if not source.case_sensitive:
+                canonical = canonical.lower()
+            if name not in source.env_vars or canonical in filtered:
+                continue
+            if key in self.current_state.get(section, {}):
+                continue
+            filtered[canonical] = source.env_vars[name]
+            logging.getLogger("moyuren").warning(
+                "Environment variable %s is deprecated; use %s instead.",
+                name.upper(),
+                canonical.upper(),
+            )
+        source.env_vars = filtered
+        return source()
+
+
 class AppConfig(BaseSettings):
     """Main application configuration."""
 
     model_config = SettingsConfigDict(
         extra="forbid",
+        env_prefix="MOYUREN_",
         env_nested_delimiter="_",
         env_nested_max_split=1,
         env_file=".env",
@@ -1068,7 +1123,12 @@ class AppConfig(BaseSettings):
         Returns:
             按优先级排列的配置源元组.
         """
-        return env_settings, dotenv_settings, init_settings, file_secret_settings
+        return (
+            _FilteredEnvSettingsSource(cast(EnvSettingsSource, env_settings)),
+            _FilteredEnvSettingsSource(cast(EnvSettingsSource, dotenv_settings)),
+            init_settings,
+            file_secret_settings,
+        )
 
     def get_source(self, source_type: type[T]) -> T | None:
         """按配置类型获取已启用的数据源.

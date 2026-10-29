@@ -55,7 +55,7 @@ Docker：`docker-compose up -d`
 
 ## 配置
 
-主配置：`config.yaml`，支持环境变量覆盖（`SERVER_HOST`、`SERVER_PORT` 等）
+主配置：`config.yaml`，支持 `MOYUREN_` 前缀环境变量覆盖（`MOYUREN_SERVER_HOST`、`MOYUREN_SERVER_PORT` 等）
 
 关键配置项：
 - `server.*`：服务器配置（host/port/base_domain）
@@ -63,7 +63,7 @@ Docker：`docker-compose up -d`
 - `paths.*`：路径配置（cache_dir）
 - `scheduler.daily_times`：每日生成时间（如 `["06:00", "18:00"]`）
 - `cache.retain_days`：缓存保留天数（默认 30 天）
-- `ops.api_key`：Ops API 鉴权密钥（留空则禁用鉴权）
+- `ops.api_key`：Ops API 鉴权密钥（留空则禁用 Ops 端点，所有请求返回 401）
 - `templates.dir`：模板目录路径（默认 `templates`，自动扫描 `*.html`）
 - `logging.*`：日志配置
 - `network.ghproxy_urls`：GitHub 代理 URL 列表（加速节假日数据/ECDICT 下载）

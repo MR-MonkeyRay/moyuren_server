@@ -79,8 +79,8 @@ jobs:
           mkdir -p output && chmod 0755 output
           docker run --rm \
             --user "$(id -u):$(id -g)" \
-            -e PATHS_CACHE_DIR=/tmp/cache \
-            -e LOGGING_FILE= \
+            -e MOYUREN_PATHS_CACHE_DIR=/tmp/cache \
+            -e MOYUREN_LOGGING_FILE= \
             -v "${GITHUB_WORKSPACE}/output:/output" \
             -v "${GITHUB_WORKSPACE}/scripts:/app/scripts:ro" \
             "${IMAGE}" \
