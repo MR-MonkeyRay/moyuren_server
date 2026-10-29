@@ -2,30 +2,47 @@
 
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, tzinfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 
 from app.core.config import SchedulerConfig
+from app.services.calendar import get_business_timezone
+
+MISFIRE_GRACE_TIME_SECONDS = 300
 
 
 class TaskScheduler:
     """Async task scheduler using APScheduler."""
 
-    def __init__(self, config: SchedulerConfig, logger: logging.Logger) -> None:
+    def __init__(
+        self,
+        config: SchedulerConfig,
+        logger: logging.Logger,
+        timezone: tzinfo | None = None,
+    ) -> None:
         """Initialize the task scheduler.
 
         Args:
             config: Scheduler configuration including default times.
             logger: Logger instance for logging scheduler events.
+            timezone: Scheduling timezone. If None, uses the business timezone.
         """
         self.config = config
         self.logger = logger
+        self.timezone = timezone if timezone is not None else get_business_timezone()
 
-        # Initialize AsyncIOScheduler with local timezone
-        self.scheduler = AsyncIOScheduler()
+        # Initialize AsyncIOScheduler with business timezone and job defaults
+        self.scheduler = AsyncIOScheduler(
+            timezone=self.timezone,
+            job_defaults={
+                "coalesce": True,
+                "max_instances": 1,
+                "misfire_grace_time": MISFIRE_GRACE_TIME_SECONDS,
+            },
+        )
 
     def add_daily_job(
         self,
@@ -55,7 +72,7 @@ class TaskScheduler:
                 minute = minute if minute is not None else 0
 
         # Create cron trigger for daily execution
-        trigger = CronTrigger(hour=hour, minute=minute)
+        trigger = CronTrigger(hour=hour, minute=minute, timezone=self.timezone)
 
         # Add job to scheduler
         self.scheduler.add_job(
@@ -66,7 +83,9 @@ class TaskScheduler:
             replace_existing=True,
         )
 
-        self.logger.info(f"Added daily job '{job_id}' at {hour:02d}:{minute:02d}")
+        self.logger.info(
+            f"Added daily job '{job_id}' at {hour:02d}:{minute:02d} ({self.timezone})"
+        )
 
     def add_hourly_job(
         self,
@@ -84,7 +103,7 @@ class TaskScheduler:
         if minute is None:
             minute = self.config.minute_of_hour
 
-        trigger = CronTrigger(minute=minute)
+        trigger = CronTrigger(minute=minute, timezone=self.timezone)
 
         self.scheduler.add_job(
             func,
@@ -94,13 +113,15 @@ class TaskScheduler:
             replace_existing=True,
         )
 
-        self.logger.info(f"Added hourly job '{job_id}' at minute {minute:02d}")
+        self.logger.info(
+            f"Added hourly job '{job_id}' at minute {minute:02d} ({self.timezone})"
+        )
 
     def start(self) -> None:
         """Start the scheduler."""
         if not self.scheduler.running:
             self.scheduler.start()
-            self.logger.info("Task scheduler started")
+            self.logger.info(f"Task scheduler started ({self.timezone})")
         else:
             self.logger.warning("Task scheduler is already running")
 
@@ -130,7 +151,7 @@ class TaskScheduler:
             # Add a one-time job that runs immediately
             self.scheduler.add_job(
                 job.func,
-                trigger=DateTrigger(run_date=datetime.now()),
+                trigger=DateTrigger(run_date=datetime.now(self.timezone)),
                 id=f"{job_id}_immediate",
                 name=f"{job_id}_immediate",
                 replace_existing=True,

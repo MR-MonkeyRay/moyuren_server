@@ -33,7 +33,7 @@ from app.core.scheduler import TaskScheduler
 from app.core.services import AppServices
 from app.services.browser import browser_manager
 from app.services.cache import CacheCleaner
-from app.services.calendar import init_timezones, today_business
+from app.services.calendar import get_business_timezone, init_timezones, today_business
 from app.services.compute import DataComputer, DomainDataAggregator, TemplateAdapter
 from app.services.daily_english import CachedDailyEnglishService, build_dict_backend
 from app.services.fetcher import CachedDataFetcher
@@ -283,7 +283,7 @@ async def lifespan(app: FastAPI):
     await warmup_daily_cache()
 
     # 5. Initialize and start scheduler
-    scheduler = TaskScheduler(config.scheduler, logger)
+    scheduler = TaskScheduler(config.scheduler, logger, timezone=get_business_timezone())
 
     # Add daily image generation task
     async def generate_image_task():

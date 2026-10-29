@@ -351,6 +351,8 @@ sudo chown -R 1000:1000 cache logs
 ### 调度配置说明
 
 - `scheduler.mode` 支持 `daily` 与 `hourly`
+- 调度时间按 `timezone.business` 业务时区解释，不受宿主机时区影响
+- 错过的触发允许延迟 300 秒执行，多次错过合并为一次执行，每个任务最多同时运行一个实例
 - 当 `mode=hourly` 时，任务会在每小时的 `scheduler.minute_of_hour` 分触发
 - 当 `mode=daily` 时，任务会按 `scheduler.daily_times` 中每个 `HH:MM` 时间触发
 - `mode=hourly` 时 `daily_times` 会被忽略，建议保留以便快速回退到 `daily`
