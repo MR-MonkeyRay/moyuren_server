@@ -117,6 +117,7 @@ pytest -m "not e2e"
 | GET/HEAD | `/readyz` | 就绪检查（启动进度、当天数据与浏览器状态） |
 | GET | `/metrics` | Prometheus 文本指标（`metrics.enabled=true` 时可用，否则 404） |
 | GET | `/api/v1/moyuren` | 统一端点：图片元信息/详情/文本/Markdown/图片；详情包含数据新鲜度 |
+| GET/HEAD | `/api/v1/feed.xml` | 最近每日图片的 RSS 2.0 订阅源（`feed.enabled=true` 时可用） |
 | GET | `/api/v1/templates` | 获取支持的模板列表 |
 | POST | `/api/v1/ops/generate` | 手动触发图片生成（需鉴权） |
 | POST | `/api/v1/ops/cache/clean` | 清理过期缓存（需鉴权） |
@@ -136,6 +137,12 @@ pytest -m "not e2e"
 | `moyuren_build_info` | `version` | 应用版本，值为 1 |
 
 实例标签仅保留 `scheme://host[:port]`，移除凭据、路径与查询参数；同一源地址由最近一次健康更新覆盖。新闻 API 数据被接受时计为 fresh，即使内容日期并非当天；因 API 日期未知或较旧而保留旧缓存时计为 stale。指标仅保存在当前进程内，重启后重新累计。
+
+### RSS 订阅源
+
+`GET /api/v1/feed.xml` 返回 RSS 2.0 XML，按日期从新到旧列出最近的每日 JPEG 图片。可选 `template` 参数选择模板，省略时使用默认模板；可选 `limit` 参数限制条目数，范围为 1 到 `feed.max_items`。每个条目包含图片链接、稳定的日期与生成时间标识、RFC 822 发布时间、JPEG enclosure，以及带图片、农历、前 5 条新闻和过期数据提示的 HTML 描述。无可用数据时仍返回包含零个条目的有效订阅源；无效数据文件和缺少所选模板图片的数据会被跳过。
+
+订阅源支持 `HEAD`、`ETag`、`Last-Modified`、`If-None-Match` 和 `If-Modified-Since` 条件请求，缓存策略为 `public, max-age=300, must-revalidate`。设置 `feed.enabled=false` 后端点返回 404。
 
 ### 静态发布
 
@@ -397,6 +404,8 @@ pytest -m "not e2e"
 | `cache.max_images_per_template_per_day` | `MOYUREN_CACHE_MAX_IMAGES_PER_TEMPLATE_PER_DAY` | 每个模板每天保留的最大图片数（默认 3） |
 | `ops.api_key` | `MOYUREN_OPS_API_KEY` | 运维 API Key（留空则禁用 ops 端点，所有请求返回 401） |
 | `metrics.enabled` | `MOYUREN_METRICS_ENABLED` | 是否对外提供根路径 `/metrics`，默认 `false`；修改后重启应用，指标记录始终开启 |
+| `feed.enabled` | `MOYUREN_FEED_ENABLED` | 是否提供 `/api/v1/feed.xml`，默认 `true`；关闭时返回 404 |
+| `feed.max_items` | `MOYUREN_FEED_MAX_ITEMS` | RSS 条目上限，默认 7，范围 1–60 |
 | `logging.level` | `MOYUREN_LOGGING_LEVEL` | 日志级别 |
 | `logging.file` | `MOYUREN_LOGGING_FILE` | 日志文件路径（空字符串表示只输出到标准输出） |
 | `timezone.business` | `MOYUREN_TIMEZONE_BUSINESS` | 业务时区（节假日/节气/周末判断） |
@@ -507,6 +516,11 @@ scheduler:
     - "06:00"
     - "18:00"
   minute_of_hour: 0
+
+# RSS 2.0 订阅源
+# feed:
+#   enabled: true
+#   max_items: 7
 
 # 每小时模式示例（每小时第 0 分执行）
 # scheduler:

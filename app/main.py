@@ -15,6 +15,7 @@ from starlette.routing import Mount
 
 from app import __version__
 from app.api.metrics import router as metrics_router
+from app.api.v1.feed import router as feed_router
 from app.api.v1.moyuren import router as moyuren_router
 from app.api.v1.ops import router as ops_router
 from app.api.v1.templates import router as templates_router
@@ -243,6 +244,7 @@ async def readyz(request: Request) -> JSONResponse:
     )
 
 
+app.include_router(feed_router)
 app.include_router(moyuren_router)
 app.include_router(ops_router)
 app.include_router(templates_router)

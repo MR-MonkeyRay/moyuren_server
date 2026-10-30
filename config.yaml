@@ -27,6 +27,11 @@ ops:
 # metrics:
 #   enabled: false  # 环境变量：MOYUREN_METRICS_ENABLED
 
+# RSS 2.0 订阅源；关闭后 /api/v1/feed.xml 返回 404
+# feed:
+#   enabled: true  # 环境变量：MOYUREN_FEED_ENABLED
+#   max_items: 7  # 1–60；环境变量：MOYUREN_FEED_MAX_ITEMS
+
 network:
   proxy_url: null  # Optional: "http://proxy.example:8080" or "socks5://proxy.example:1080"
   ghproxy_urls:

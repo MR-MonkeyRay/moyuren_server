@@ -17,6 +17,8 @@
 | API | `app/api/v1/moyuren.py` | REST 端点 |
 | Ops API | `app/api/v1/ops.py` | 运维端点（手动生成、缓存清理） |
 | 模板 API | `app/api/v1/templates.py` | 模板列表查询 |
+| RSS API | `app/api/v1/feed.py` | 最近每日图片 RSS 2.0 订阅源、条件请求与缓存 |
+| API 公共工具 | `app/api/v1/common.py` | 图片 URL、ETag 与条件请求校验 |
 | 服务容器 | `app/core/services.py` | AppServices 服务容器 |
 | 日级缓存 | `app/services/daily_cache.py` | 日级缓存抽象基类（自动过期、降级） |
 | 缓存清理 | `app/services/cache.py` | 缓存清理服务 |
@@ -53,6 +55,7 @@ Docker：`docker-compose up -d`
 | GET | `/readyz` | 就绪检查（含依赖验证） |
 | GET | `/metrics` | Prometheus 文本指标；`metrics.enabled` 默认 false，未启用时返回 404 |
 | GET | `/api/v1/moyuren` | 获取最新图片元数据（缓存不存在时自动生成）；`detail=true` 返回 `is_stale` / `source_date` |
+| GET/HEAD | `/api/v1/feed.xml` | 最近每日图片 RSS 2.0 订阅源；支持模板、条目上限与条件请求 |
 | GET | `/api/v1/templates` | 获取可用模板列表 |
 | POST | `/api/v1/ops/generate` | 手动触发图片生成（需鉴权） |
 | POST | `/api/v1/ops/cache/clean` | 清理过期缓存（需鉴权） |
@@ -70,6 +73,7 @@ Docker：`docker-compose up -d`
 - `cache.retain_days`：缓存保留天数（默认 30 天）
 - `ops.api_key`：Ops API 鉴权密钥（留空则禁用 Ops 端点，所有请求返回 401）
 - `metrics.enabled`：默认 false；环境变量 `MOYUREN_METRICS_ENABLED`；只控制 `/metrics` 是否对外提供，指标记录始终开启
+- `feed.enabled` / `feed.max_items`：RSS 订阅源默认启用、最多 7 条（范围 1–60）；环境变量 `MOYUREN_FEED_ENABLED` / `MOYUREN_FEED_MAX_ITEMS`
 - `templates.dir`：模板目录路径（默认 `templates`，自动扫描 `*.html`）
 - `templates.config.local_fonts_dir`：本地 WOFF2 字体目录（默认 `templates/fonts`；与 `templates.dir` 一样，相对路径基于进程工作目录，通常为项目根目录）
 - `templates.config.remote_font_fallback`：是否启用 Google Fonts 缺字回退（默认 true，离线部署可关闭）

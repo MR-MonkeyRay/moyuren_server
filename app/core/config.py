@@ -1335,6 +1335,15 @@ class MetricsConfig(BaseModel):
     enabled: bool = False
 
 
+class FeedConfig(BaseModel):
+    """RSS 订阅源配置。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    max_items: int = Field(default=7, ge=1, le=60)
+
+
 class AppConfig(BaseSettings):
     """Main application configuration."""
 
@@ -1354,6 +1363,7 @@ class AppConfig(BaseSettings):
     cache: CacheConfig
     ops: OpsConfig = Field(default_factory=OpsConfig)
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
+    feed: FeedConfig = Field(default_factory=FeedConfig)
     templates: TemplatesConfig
     data_sources: list[DataSource]
     logging: LoggingConfig
