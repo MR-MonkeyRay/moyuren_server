@@ -265,7 +265,7 @@
     }
     .badge-relax { background: rgba(181, 234, 215, 0.4); }
     .badge-work { background: rgba(255, 183, 178, 0.4); }
-    .off-work-badge { font-size: 13px; color: var(--line-coffee); }
+    .off-work-badge { white-space: nowrap; font-size: 13px; color: var(--line-coffee); }
 
     /* --- 2. 进度条区域 --- */
     .progress-section {
@@ -729,7 +729,7 @@
         <div class="badge-weekend badge-work font-cute">⏳ 距周末 {{ weekend.days_left }} 天</div>
         {% endif %}
         {% if off_work is defined and off_work %}
-        <div class="off-work-badge font-cute">{% if off_work.done %}已下班{% else %}距下班 {{ off_work.hours }}h {{ off_work.minutes }}m{% endif %}</div>
+        <div class="off-work-badge font-cute">{% if off_work.done %}已下班{% elif off_work.hours > 0 %}距下班 {{ off_work.hours }} 小时{% if off_work.minutes > 0 %} {{ off_work.minutes }} 分{% endif %}{% elif off_work.minutes > 0 %}距下班 {{ off_work.minutes }} 分{% else %}即将下班{% endif %}</div>
         {% endif %}
       </div>
     </header>

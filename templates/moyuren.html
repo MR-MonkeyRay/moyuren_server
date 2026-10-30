@@ -342,7 +342,7 @@
         
         .weekend-wrap { margin-top: 10px; font-size: 14px; color: var(--text-grey); display: flex; align-items: baseline; justify-content: flex-end; }
         .weekend-num { font-size: 20px; font-weight: 800; color: var(--orange-main); margin: 0 4px; }
-        .off-work-wrap { margin-top: 5px; font-size: 12px; color: var(--text-grey); text-align: right; }
+        .off-work-wrap { white-space: nowrap; margin-top: 5px; font-size: 12px; color: var(--text-grey); text-align: right; }
         /* 周末当天特殊样式 - 柔和橙色系，与节气框统一风格 */
         .weekend-wrap.is-weekend {
             background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);
@@ -1052,7 +1052,7 @@
                     {% endif %}
                     {% if off_work is defined and off_work %}
                     <div class="off-work-wrap">
-                        {% if off_work.done %}已下班{% else %}距下班 {{ off_work.hours }}h {{ off_work.minutes }}m{% endif %}
+                        {% if off_work.done %}已下班{% elif off_work.hours > 0 %}距下班 {{ off_work.hours }} 小时{% if off_work.minutes > 0 %} {{ off_work.minutes }} 分{% endif %}{% elif off_work.minutes > 0 %}距下班 {{ off_work.minutes }} 分{% else %}即将下班{% endif %}
                     </div>
                     {% endif %}
                 </div>

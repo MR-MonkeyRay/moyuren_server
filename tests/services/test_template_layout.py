@@ -1,12 +1,12 @@
 """Focused rendering tests for template layout context branches."""
 
+import re
 from pathlib import Path
 
 import pytest
-from jinja2 import Environment, FileSystemLoader
 
 from app.services.compute import DataComputer
-from app.services.renderer import format_datetime
+from app.services.renderer import ImageRenderer
 
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
@@ -14,8 +14,10 @@ TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 
 def _render(template_name: str, *, legacy: bool = False, **overrides: object) -> str:
     """Render a production template from a complete fallback-safe context."""
-    env = Environment(loader=FileSystemLoader(TEMPLATES_DIR), autoescape=True)
-    env.filters["format_datetime"] = format_datetime
+    # Only the environment cache is needed for Jinja rendering; no browser or I/O.
+    renderer = ImageRenderer.__new__(ImageRenderer)
+    renderer._env_cache = {}
+    env = renderer._get_jinja_env(str(TEMPLATES_DIR / template_name))
     data = DataComputer().compute({})
     if legacy:
         data.pop("next_rest_day")
@@ -58,7 +60,7 @@ def test_templates_prefer_next_rest_day_and_show_off_work(
     )
 
     assert countdown in html
-    assert "距下班 2h 15m" in html
+    assert "距下班 2 小时 15 分" in html
     assert "周末啦" not in html
     assert "周末愉快" not in html
 
@@ -105,3 +107,43 @@ def test_templates_hide_work_end_on_rest_days(template_name: str) -> None:
     assert "国庆节快乐" in html
     assert "距下班" not in html
     assert "已下班" not in html
+
+
+@pytest.mark.parametrize(
+    ("template_name", "badge_class"),
+    [
+        ("moyuren.html", "off-work-wrap"),
+        ("moyuren_cute.html", "off-work-badge font-cute"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("off_work", "expected"),
+    [
+        ({"hours": 9, "minutes": 5, "end_time": "18:00"}, "距下班 9 小时 5 分"),
+        ({"hours": 9, "minutes": 0, "end_time": "18:00"}, "距下班 9 小时"),
+        ({"hours": 0, "minutes": 45, "end_time": "18:00"}, "距下班 45 分"),
+        ({"hours": 0, "minutes": 0, "end_time": "18:00"}, "即将下班"),
+        ({"done": True}, "已下班"),
+        (None, None),
+    ],
+)
+def test_off_work_text_uses_chinese_units(
+    template_name: str,
+    badge_class: str,
+    off_work: dict[str, object] | None,
+    expected: str | None,
+) -> None:
+    """Render each countdown branch with Chinese units and the existing classes."""
+    html = _render(template_name, off_work=off_work)
+    badge = re.search(rf'<div class="{badge_class}">(.*?)</div>', html, re.DOTALL)
+
+    if expected is None:
+        assert badge is None
+        return
+
+    assert badge is not None
+    text = badge.group(1).strip()
+    assert text == expected
+    assert "h " not in text
+    assert "m" not in text
+    assert "\n" not in text
