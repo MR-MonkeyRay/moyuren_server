@@ -42,5 +42,5 @@ async def get_templates(request: Request) -> JSONResponse:
 
     return JSONResponse(
         content={"data": result},
-        headers={"Cache-Control": "public, max-age=3600"},
+        headers={"Cache-Control": "public, max-age=300, must-revalidate"},
     )

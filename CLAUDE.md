@@ -50,8 +50,8 @@ Docker：`docker-compose up -d`
 | GET | `/readyz` | 就绪检查（含依赖验证） |
 | GET | `/api/v1/moyuren` | 获取最新图片元数据（缓存不存在时自动生成） |
 | GET | `/api/v1/templates` | 获取可用模板列表 |
-| GET | `/api/v1/ops/generate` | 手动触发图片生成（需鉴权） |
-| GET | `/api/v1/ops/cache/clean` | 清理过期缓存（需鉴权） |
+| POST | `/api/v1/ops/generate` | 手动触发图片生成（需鉴权） |
+| POST | `/api/v1/ops/cache/clean` | 清理过期缓存（需鉴权） |
 | GET | `/static/{filename}` | 静态图片 |
 
 ## 配置

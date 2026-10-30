@@ -81,4 +81,4 @@ class TestTemplatesAPI:
                 response = await client.get("/api/v1/templates")
 
         assert response.status_code == 200
-        assert response.headers.get("cache-control") == "public, max-age=3600"
+        assert response.headers.get("cache-control") == "public, max-age=300, must-revalidate"

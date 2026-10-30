@@ -105,11 +105,11 @@ sudo chown -R 1000:1000 cache logs
 | GET/HEAD | `/readyz` | 就绪检查（启动进度、当天数据与浏览器状态） |
 | GET | `/api/v1/moyuren` | 统一端点：图片元信息/详情/文本/Markdown/图片 |
 | GET | `/api/v1/templates` | 获取支持的模板列表 |
-| GET | `/api/v1/ops/generate` | 手动触发图片生成（需鉴权） |
-| GET | `/api/v1/ops/cache/clean` | 清理过期缓存（需鉴权） |
+| POST | `/api/v1/ops/generate` | 手动触发图片生成（需鉴权） |
+| POST | `/api/v1/ops/cache/clean` | 清理过期缓存（需鉴权） |
 | GET | `/static/{filename}` | 静态图片文件 |
 
-> 注：当无可用图片时，API 会自动触发按需生成；同一进程内的并发请求会等待当前生成任务，复用结果或依次生成未覆盖的模板。仅当其他进程持有生成锁或等待超时（90 秒）时返回 `503`，并附带 `Retry-After` 响应头（图片 API 为 5 秒，Ops 为 10 秒）。Ops 端点需要 `Authorization: Bearer <api_key>` 鉴权。
+> 注：当无可用图片时，API 会自动触发按需生成；同一进程内的并发请求会等待当前生成任务，复用结果或依次生成未覆盖的模板。仅当其他进程持有生成锁或等待超时（90 秒）时返回 `503`，并附带 `Retry-After` 响应头（图片 API 为 5 秒，Ops 为 10 秒）。Ops 端点需要 `Authorization: Bearer <api_key>` 鉴权。Ops 的 GET 请求仍兼容，但已弃用；响应包含 `Deprecation: @1793318400`，同一 URL 的 POST 请求为后继版本。
 
 ### 静态发布
 
@@ -200,7 +200,7 @@ sudo chown -R 1000:1000 cache logs
 **HTTP 缓存**：
 
 - 历史日期（< 今天）：`Cache-Control: public, max-age=31536000, immutable`
-- 当天数据：`ETag` + `Last-Modified`，支持 `304 Not Modified`
+- 当天数据：`ETag` + `Last-Modified`，支持 `304 Not Modified`。`If-None-Match` 支持逗号分隔列表、`*` 和弱验证器比较；该请求头存在时优先处理并忽略 `If-Modified-Since`。`Last-Modified` 按秒精度比较，回传服务端返回值可正确命中缓存
 
 **精简响应示例**（`encode=json`）：
 
@@ -243,16 +243,16 @@ sudo chown -R 1000:1000 cache logs
 }
 ```
 
-**缓存**：`Cache-Control: public, max-age=3600`
+**缓存**：`Cache-Control: public, max-age=300, must-revalidate`
 
 </details>
 
 <details>
-<summary>GET /api/v1/ops/* - 运维端点（需鉴权）</summary>
+<summary>POST /api/v1/ops/* - 运维端点（需鉴权）</summary>
 
-所有 Ops 端点需要 `Authorization: Bearer <api_key>` 请求头。
+所有 Ops 端点需要 `Authorization: Bearer <api_key>` 请求头。GET 请求仍兼容，但已弃用；包括错误响应在内均返回 `Deprecation: @1793318400`，同一 URL 的 POST 请求为后继版本。
 
-**GET /api/v1/ops/generate** - 手动触发图片生成
+**POST /api/v1/ops/generate** - 手动触发图片生成
 
 成功响应包含所有模板的生成结果：
 ```json
@@ -272,8 +272,8 @@ sudo chown -R 1000:1000 cache logs
 }
 ```
 
-**GET /api/v1/ops/cache/clean** - 清理过期缓存
-- 可选参数：`keep_days`（保留最近 N 天）
+**POST /api/v1/ops/cache/clean** - 清理过期缓存
+- 可选查询参数：`keep_days`（保留最近 N 天，POST 请求也通过 URL 查询参数传递）
 
 **鉴权失败响应**（401）：
 
@@ -501,7 +501,7 @@ cache:
   retain_days: 30
 
 ops:
-  api_key: ""  # 运维 API Key（留空则禁用 ops 端点）
+  api_key: ""  # 运维 API Key（留空则禁用 ops 端点，所有请求返回 401）
 
 logging:
   level: "INFO"

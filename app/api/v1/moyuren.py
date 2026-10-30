@@ -2,7 +2,9 @@
 
 import logging
 from datetime import UTC, date, datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
+from typing import Literal, get_args
 
 from fastapi import APIRouter, Query, Request, status
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
@@ -13,6 +15,7 @@ from app.services.calendar import today_business
 from app.services.generator import GenerationBusyError, generate_and_save_image
 
 router = APIRouter(prefix="/api/v1", tags=["moyuren"])
+EncodeFormat = Literal["json", "text", "markdown", "image"]
 
 
 def _build_image_url(base_domain: str, filename: str) -> str:
@@ -85,18 +88,25 @@ def _check_not_modified(request: Request, updated_at: int) -> bool:
 
     # Check If-None-Match header
     if_none_match = request.headers.get("If-None-Match")
-    if if_none_match and if_none_match == etag:
-        return True
+    if if_none_match is not None:
+        validators = [validator.strip() for validator in if_none_match.split(",")]
+        return any(
+            validator == "*" or validator.removeprefix("W/") == etag
+            for validator in validators
+        )
 
     # Check If-Modified-Since header
     if_modified_since = request.headers.get("If-Modified-Since")
     if if_modified_since:
         try:
-            client_time = datetime.strptime(if_modified_since, "%a, %d %b %Y %H:%M:%S GMT")
-            server_time = datetime.fromtimestamp(updated_at / 1000, tz=UTC).replace(tzinfo=None)
+            client_time = parsedate_to_datetime(if_modified_since)
+            if client_time.tzinfo is None:
+                client_time = client_time.replace(tzinfo=UTC)
+            client_time = client_time.astimezone(UTC)
+            server_time = datetime.fromtimestamp(updated_at // 1000, tz=UTC)
             if client_time >= server_time:
                 return True
-        except ValueError:
+        except (ValueError, TypeError, OverflowError):
             pass
 
     return False
@@ -491,7 +501,11 @@ def _handle_image_response(
 async def get_moyuren(
     request: Request,
     date: str | None = Query(None, description="Target date in YYYY-MM-DD format, defaults to today"),
-    encode: str = Query("json", description="Output format: json, text, markdown, image"),
+    encode: str = Query(
+        "json",
+        description="Output format: json, text, markdown, image",
+        json_schema_extra={"enum": list(get_args(EncodeFormat))},
+    ),
     template: str | None = Query(None, description="Template name, defaults to first available"),
     detail: bool = Query(False, description="Include detailed fields (only for encode=json)"),
 ) -> Response:
@@ -518,7 +532,7 @@ async def get_moyuren(
     logger = logging.getLogger(__name__)
 
     # Validate encode parameter
-    valid_encodes = ["json", "text", "markdown", "image"]
+    valid_encodes = list(get_args(EncodeFormat))
     if encode not in valid_encodes:
         return JSONResponse(
             content=error_response(

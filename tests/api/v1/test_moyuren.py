@@ -11,8 +11,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
-from app.api.v1.moyuren import router
+from app.api.v1.moyuren import _build_cache_headers, _check_not_modified, router
 from app.core.services import AppServices
 from app.services.generator import GenerationBusyError
 
@@ -215,6 +216,12 @@ class TestMoyurenAPI:
         assert data["error"]["code"] == "API_7002"
         assert "Invalid encode parameter" in data["error"]["message"]
 
+    def test_encode_openapi_enum(self, app: FastAPI) -> None:
+        """Test OpenAPI lists output formats without changing runtime validation."""
+        parameters = app.openapi()["paths"]["/api/v1/moyuren"]["get"]["parameters"]
+        encode = next(parameter for parameter in parameters if parameter["name"] == "encode")
+        assert encode["schema"]["enum"] == ["json", "text", "markdown", "image"]
+
     def test_get_moyuren_date_not_found(self, client: TestClient, mock_today: MagicMock) -> None:
         """Test GET /api/v1/moyuren?date=2025-01-01 returns 404 when data doesn't exist."""
         response = client.get("/api/v1/moyuren?date=2025-01-01")
@@ -245,6 +252,45 @@ class TestMoyurenAPI:
         response2 = client.get("/api/v1/moyuren", headers={"If-None-Match": etag})
         assert response2.status_code == 304
         assert response2.content == b""
+
+    @pytest.mark.parametrize("validator", ['W/{etag}', '"other", W/{etag}, "another"', '*'])
+    def test_get_moyuren_etag_variants(
+        self, client: TestClient, mock_today: MagicMock, validator: str,
+    ) -> None:
+        """Test weak validators, lists and wildcard return 304."""
+        response = client.get("/api/v1/moyuren")
+        etag = response.headers["ETag"]
+        cached = client.get(
+            "/api/v1/moyuren", headers={"If-None-Match": validator.format(etag=etag)},
+        )
+        assert cached.status_code == 304
+        assert cached.content == b""
+
+    def test_get_moyuren_etag_takes_precedence(
+        self, client: TestClient, mock_today: MagicMock,
+    ) -> None:
+        """Test a nonmatching ETag overrides a matching modification date."""
+        response = client.get("/api/v1/moyuren")
+        cached = client.get("/api/v1/moyuren", headers={
+            "If-None-Match": '"other"',
+            "If-Modified-Since": response.headers["Last-Modified"],
+        })
+        assert cached.status_code == 200
+
+    def test_get_moyuren_last_modified_milliseconds(
+        self, app: FastAPI, client: TestClient, mock_today: MagicMock,
+    ) -> None:
+        """Test echoing Last-Modified matches a millisecond update timestamp."""
+        data_file = Path(app.state.config.paths.cache_dir) / "data" / "2026-02-10.json"
+        data = json.loads(data_file.read_text())
+        data["updated_at"] += 321
+        data_file.write_text(json.dumps(data))
+        response = client.get("/api/v1/moyuren")
+        cached = client.get(
+            "/api/v1/moyuren", headers={"If-Modified-Since": response.headers["Last-Modified"]},
+        )
+        assert cached.status_code == 304
+        assert cached.content == b""
 
     def test_get_moyuren_template_parameter(
         self, tmp_path: Path, mock_today: MagicMock, mock_services: AppServices
@@ -451,3 +497,41 @@ class TestMoyurenAPI:
         generate.assert_not_awaited()
         assert response.status_code == 404
         assert response.json()["error"]["code"] == "STORAGE_4003"
+
+
+class TestConditionalRequests:
+    """Pure request-header tests without a client or application lifespan."""
+
+    @pytest.mark.parametrize(("headers", "expected"), [
+        ({"If-None-Match": '"1739145752321"'}, True),
+        ({"If-None-Match": 'W/"1739145752321"'}, True),
+        ({"If-None-Match": '"other", "1739145752321", "another"'}, True),
+        ({"If-None-Match": '*'}, True),
+        ({"If-None-Match": '"other"', "If-Modified-Since": "Mon, 10 Feb 2025 00:02:32 GMT"}, False),
+        ({"If-None-Match": '', "If-Modified-Since": "Mon, 10 Feb 2025 00:02:32 GMT"}, False),
+        ({"If-Modified-Since": "Mon, 10 Feb 2025 00:02:32 GMT"}, True),
+        ({"If-Modified-Since": "Mon, 10 Feb 2025 00:02:31 GMT"}, False),
+        ({"If-Modified-Since": "Mon, 10 Feb 2025 08:02:32 +0800"}, True),
+        ({"If-Modified-Since": "Monday, 10-Feb-25 00:02:32 GMT"}, True),
+        ({"If-Modified-Since": "invalid"}, False),
+        ({"If-Modified-Since": "Sun, 99 Feb 2025 23:42:32 GMT"}, False),
+        ({}, False),
+    ])
+    def test_cache_validator(self, headers: dict[str, str], expected: bool) -> None:
+        """Test validator matching, precedence, date parsing and second precision."""
+        request = Request({
+            "type": "http",
+            "headers": [(name.lower().encode("ascii"), value.encode("ascii")) for name, value in headers.items()],
+        })
+        assert _check_not_modified(request, 1739145752321) is expected
+
+    def test_echo_last_modified(self) -> None:
+        """Test generated Last-Modified round trips with a fractional second timestamp."""
+        today = date(2026, 2, 10)
+        with patch("app.api.v1.moyuren.today_business", return_value=today):
+            headers = _build_cache_headers(today, 1739145752321)
+        request = Request({
+            "type": "http",
+            "headers": [(b"if-modified-since", headers["Last-Modified"].encode("ascii"))],
+        })
+        assert _check_not_modified(request, 1739145752321)

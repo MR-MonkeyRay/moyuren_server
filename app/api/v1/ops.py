@@ -3,10 +3,14 @@
 import asyncio
 import hmac
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
+from starlette.datastructures import MutableHeaders
+from starlette.types import Message, Receive, Scope, Send
 
 from app.core.errors import ErrorCode, StorageError, error_response, get_http_status
 from app.core.services import AppServices
@@ -14,7 +18,32 @@ from app.models.schemas import DailyDataFile
 from app.services.calendar import today_business
 from app.services.generator import GenerationBusyError, generate_and_save_image
 
-router = APIRouter(prefix="/api/v1/ops", tags=["ops"])
+GET_DEPRECATION_TIMESTAMP = int(datetime(2026, 10, 30, tzinfo=UTC).timestamp())
+
+
+class _OpsRoute(APIRoute):
+    """Attach deprecation headers to every legacy GET handler response."""
+
+    async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Wrap ops responses, including auth, validation and operation errors."""
+        if scope["method"] != "GET":
+            await super().handle(scope, receive, send)
+            return
+
+        logging.getLogger("moyuren").warning(
+            "GET %s is deprecated; use POST at the same URL", scope["path"]
+        )
+
+        async def send_with_deprecation(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                headers["Deprecation"] = f"@{GET_DEPRECATION_TIMESTAMP}"
+            await send(message)
+
+        await super().handle(scope, receive, send_with_deprecation)
+
+
+router = APIRouter(prefix="/api/v1/ops", tags=["ops"], route_class=_OpsRoute)
 
 
 class _UnauthorizedError(Exception):
@@ -43,7 +72,7 @@ def _verify_api_key(request: Request) -> None:
         raise _UnauthorizedError("无效的 API Key")
 
     token = auth_header[7:]
-    if not hmac.compare_digest(token, expected_key):
+    if not hmac.compare_digest(token.encode("utf-8"), expected_key.encode("utf-8")):
         raise _UnauthorizedError("无效的 API Key")
 
 
@@ -56,7 +85,8 @@ def _auth_error_response(message: str) -> JSONResponse:
     )
 
 
-@router.get("/generate")
+@router.get("/generate", deprecated=True)
+@router.post("/generate")
 async def ops_generate(request: Request) -> JSONResponse:
     """手动触发图片生成（同步阻塞，需鉴权）。"""
     logger = logging.getLogger("moyuren")
@@ -106,7 +136,8 @@ async def ops_generate(request: Request) -> JSONResponse:
         )
 
 
-@router.get("/cache/clean")
+@router.get("/cache/clean", deprecated=True)
+@router.post("/cache/clean")
 async def ops_cache_clean(
     request: Request,
     keep_days: int | None = Query(None, description="保留最近 N 天的数据"),
