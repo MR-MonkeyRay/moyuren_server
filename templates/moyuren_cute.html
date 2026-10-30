@@ -914,6 +914,10 @@
       {% if is_fallback_mode %}
       <span class="fallback-badge">Fallback Mode</span>
       {% endif %}
+      {% if data_freshness is defined and data_freshness.is_stale %}
+      <span>{{ ('数据日期 ' ~ data_freshness.source_date ~ '（非当日）') if data_freshness.news_is_stale else '部分数据为缓存' }}</span>
+      <span>·</span>
+      {% endif %}
       <span>{{ github_url | default('MR-MonkeyRay/moyuren_server') }}</span>
       <span>·</span>
       <span>{{ version | default('v0.1.0') }}</span>

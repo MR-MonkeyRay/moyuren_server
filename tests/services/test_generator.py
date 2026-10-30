@@ -756,6 +756,7 @@ class TestFetchAllDataParallel:
             "stock_indices": None,
             "gold_price": None,
             "daily_english": None,
+            "stale_sources": [],
         }
 
     @pytest.mark.asyncio
@@ -803,7 +804,7 @@ class TestFetchAllDataParallel:
 
         result = await _fetch_all_data_parallel(app, logger)
 
-        assert result == {"holidays": [], "fun_content": None, "kfc_copy": None, "stock_indices": None, "gold_price": None, "daily_english": None}
+        assert result == {"holidays": [], "fun_content": None, "kfc_copy": None, "stock_indices": None, "gold_price": None, "daily_english": None, "stale_sources": []}
         warning_messages = [call.args[0] for call in logger.warning.call_args_list]
         assert any("raw_data is not dict" in msg for msg in warning_messages)
 
@@ -826,7 +827,7 @@ class TestFetchAllDataParallel:
 
         result = await _fetch_all_data_parallel(app, logger)
 
-        assert result == {"holidays": [], "fun_content": None, "kfc_copy": None, "stock_indices": None, "gold_price": None, "daily_english": None}
+        assert result == {"holidays": [], "fun_content": None, "kfc_copy": None, "stock_indices": None, "gold_price": None, "daily_english": None, "stale_sources": []}
 
 
 class TestScheduleCacheCleanup:

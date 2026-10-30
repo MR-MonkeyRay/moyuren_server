@@ -969,9 +969,14 @@
                     </li>
                     {% endfor %}
                 </ul>
-                {% if news_meta and news_meta.updated %}
+                {% if (news_meta and news_meta.updated) or (data_freshness is defined and data_freshness.is_stale) %}
                 <div class="news-footer">
+                    {% if news_meta and news_meta.updated %}
                     数据更新于 {{ news_meta.updated | format_datetime }}
+                    {% endif %}
+                    {% if data_freshness is defined and data_freshness.is_stale %}
+                    · {{ ('数据日期 ' ~ data_freshness.source_date ~ '（非当日）') if data_freshness.news_is_stale else '部分数据为缓存' }}
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>

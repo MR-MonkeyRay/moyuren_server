@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app.core.config import InstancesConfig
+from app.core.metrics import record_instance_health
 from app.core.network import create_async_client, redact_url, safe_exception_for_log
 
 # 实例列表刷新间隔（秒）
@@ -347,6 +348,7 @@ class InstanceRouter:
         self._failures.pop(url, None)
         self._cooldown_until.pop(url, None)
         self._preferred_endpoint = url
+        record_instance_health(url, failures=0, cooling_down=False)
 
     def mark_failure(self, url: str) -> None:
         """记录端点请求失败，连续失败超阈值时进入冷却。
@@ -366,6 +368,11 @@ class InstanceRouter:
             )
         if self._preferred_endpoint == url:
             self._preferred_endpoint = None
+        record_instance_health(
+            url,
+            failures=failures,
+            cooling_down=self._cooldown_until.get(url, 0.0) > time.monotonic(),
+        )
 
     async def _request_json(
         self,

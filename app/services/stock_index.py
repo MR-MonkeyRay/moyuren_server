@@ -11,6 +11,7 @@ import exchange_calendars as xcals
 import httpx
 
 from app.core.config import StockIndexSource
+from app.core.metrics import FetchOutcome, record_source_fetch
 from app.core.network import create_async_client, safe_exception_for_log
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,14 @@ class StockIndexService:
         self._http_client: httpx.AsyncClient | None = http_client
         self._owns_http_client = False
         self._proxy_url = proxy_url
+        self.namespace = "stock_index"
+        self.last_outcome: FetchOutcome | None = None
         self._init_calendars()
+
+    def _record_outcome(self, outcome: FetchOutcome) -> None:
+        """记录本次获取结果并更新指标。"""
+        self.last_outcome = outcome
+        record_source_fetch(self.namespace, outcome)
 
     def _init_calendars(self) -> None:
         """Initialize exchange calendars for configured markets."""
@@ -118,12 +126,14 @@ class StockIndexService:
         cache_age = now.timestamp() - self._cache.get("fetched_at", 0)
         if cache_age < self.config.cache_ttl_sec and self._cache.get("data"):
             logger.debug("Returning cached stock index data")
+            self._record_outcome("cache")
             return self._cache["data"]
 
         async with self._lock:
             # Double-check cache after acquiring lock
             cache_age = now.timestamp() - self._cache.get("fetched_at", 0)
             if cache_age < self.config.cache_ttl_sec and self._cache.get("data"):
+                self._record_outcome("cache")
                 return self._cache["data"]
 
             # Fetch data
@@ -143,6 +153,7 @@ class StockIndexService:
 
                 self._cache = {"data": result, "fetched_at": now.timestamp()}
                 logger.info("Fetched %s stock indices", len(items))
+                self._record_outcome("fresh")
                 return result
 
             except Exception as e:
@@ -154,8 +165,10 @@ class StockIndexService:
                 if self._cache.get("data"):
                     stale_data = self._cache["data"].copy()
                     stale_data["is_stale"] = True
+                    self._record_outcome("stale")
                     return stale_data
                 # Return placeholder data
+                self._record_outcome("failed")
                 return self._get_placeholder_data(now)
 
     async def _fetch_quotes(self) -> list[dict[str, Any]]:

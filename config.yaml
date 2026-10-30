@@ -23,6 +23,10 @@ cache:
 ops:
   api_key: ""
 
+# Prometheus 指标始终记录；仅在启用后注册 /metrics 端点
+# metrics:
+#   enabled: false  # 环境变量：MOYUREN_METRICS_ENABLED
+
 network:
   proxy_url: null  # Optional: "http://proxy.example:8080" or "socks5://proxy.example:1080"
   ghproxy_urls:

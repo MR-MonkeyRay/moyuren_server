@@ -11,6 +11,8 @@
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | 入口 | `app/main.py` | 应用生命周期、定时任务注册 |
+| 指标 | `app/core/metrics.py` | 专用 Prometheus 注册表、生成/渲染耗时、获取结果与实例健康指标 |
+| 指标 API | `app/api/metrics.py` | 可选根路径 `/metrics` 文本导出 |
 | 启动 | `app/core/bootstrap.py` | 服务构建、定时任务注册、启动缓存验证 |
 | API | `app/api/v1/moyuren.py` | REST 端点 |
 | Ops API | `app/api/v1/ops.py` | 运维端点（手动生成、缓存清理） |
@@ -28,7 +30,7 @@
 | 金价 | `app/services/gold_price.py` | 实时金价数据获取与缓存（主源不可用时切换公共实例） |
 | 股票指数 | `app/services/stock_index.py` | 大盘指数实时行情（StockIndexService） |
 | 每日英语 | `app/services/daily_english.py` | 每日英语单词服务（ECDICT + 随机 API） |
-| 计算 | `app/services/compute.py` | 原始数据 → 模板上下文 |
+| 计算 | `app/services/compute.py` | 原始数据 → 模板上下文，按业务日期与缓存降级计算数据新鲜度 |
 | 渲染 | `app/services/renderer.py` | Jinja2 + Playwright 截图 |
 | 浏览器 | `app/services/browser.py` | Playwright 浏览器生命周期管理 |
 | 模板发现 | `app/services/template_discovery.py` | 自动扫描模板目录，解析 meta 标签 |
@@ -48,7 +50,8 @@ Docker：`docker-compose up -d`
 |------|------|------|
 | GET | `/healthz` | 健康检查 |
 | GET | `/readyz` | 就绪检查（含依赖验证） |
-| GET | `/api/v1/moyuren` | 获取最新图片元数据（缓存不存在时自动生成） |
+| GET | `/metrics` | Prometheus 文本指标；`metrics.enabled` 默认 false，未启用时返回 404 |
+| GET | `/api/v1/moyuren` | 获取最新图片元数据（缓存不存在时自动生成）；`detail=true` 返回 `is_stale` / `source_date` |
 | GET | `/api/v1/templates` | 获取可用模板列表 |
 | POST | `/api/v1/ops/generate` | 手动触发图片生成（需鉴权） |
 | POST | `/api/v1/ops/cache/clean` | 清理过期缓存（需鉴权） |
@@ -65,6 +68,7 @@ Docker：`docker-compose up -d`
 - `scheduler.daily_times`：每日生成时间（如 `["06:00", "18:00"]`）
 - `cache.retain_days`：缓存保留天数（默认 30 天）
 - `ops.api_key`：Ops API 鉴权密钥（留空则禁用 Ops 端点，所有请求返回 401）
+- `metrics.enabled`：默认 false；环境变量 `MOYUREN_METRICS_ENABLED`；只控制 `/metrics` 是否对外提供，指标记录始终开启
 - `templates.dir`：模板目录路径（默认 `templates`，自动扫描 `*.html`）
 - `logging.*`：日志配置
 - `network.ghproxy_urls`：GitHub 代理 URL 列表（加速节假日数据/ECDICT 下载）
@@ -105,3 +109,5 @@ Docker：`docker-compose up -d`
 ## 时间戳规范
 
 API 返回格式 `YYYY/MM/DD HH:MM:SS`，模板显示通过 `format_datetime` 过滤器转为 `YYYY-MM-DD HH:MM`
+
+数据新鲜度：每次生成使用同一个业务时间快照；新闻日期不同于业务日期，或任一数据源降级返回过期缓存（含股票 `is_stale`），即标记 `data_freshness.is_stale`。新闻日期规范化为 `source_date`，无法解析时为 null；未知日期本身不触发过期。数据文件额外保存 `stale_sources`，旧文件仍可读取，详情 API 默认 false/null。两个模板只在过期时显示一行轻量提示，缺少新字段的旧上下文仍可渲染。

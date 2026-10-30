@@ -539,6 +539,9 @@ async def main() -> None:
             ],
             "kfc_content_full": template_data.get("kfc_content"),
             "stock_indices": raw_data.get("stock_indices"),
+            "is_stale": template_data.get("data_freshness", {}).get("is_stale", False),
+            "source_date": template_data.get("data_freshness", {}).get("source_date"),
+            "stale_sources": template_data.get("data_freshness", {}).get("stale_sources", []),
         }
         data_file = DailyDataFile.model_validate(data_payload)
         data = data_file.model_dump(mode="json")

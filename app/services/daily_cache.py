@@ -16,6 +16,7 @@ from datetime import date
 from pathlib import Path
 from typing import Generic, TypeVar
 
+from app.core.metrics import FetchOutcome, record_source_fetch
 from app.services.calendar import today_business
 
 T = TypeVar("T")
@@ -60,9 +61,15 @@ class DailyCache(ABC, Generic[T]):
         self.logger = logger
         self._date_provider = date_provider
         self._get_lock = asyncio.Lock()
+        self.last_outcome: FetchOutcome | None = None
 
         # 确保缓存目录存在
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def _record_outcome(self, outcome: FetchOutcome) -> None:
+        """记录本次获取结果并更新指标。"""
+        self.last_outcome = outcome
+        record_source_fetch(self.namespace, outcome)
 
     def _get_cache_file(self) -> Path:
         """获取缓存文件路径。
@@ -234,6 +241,7 @@ class DailyCache(ABC, Generic[T]):
                         "Using valid cache for %s",
                         self.namespace,
                     )
+                    self._record_outcome("cache")
                     return cached_data
 
             # 2. 获取新鲜数据
@@ -254,6 +262,7 @@ class DailyCache(ABC, Generic[T]):
             # 3. 保存并返回新数据
             if fresh_data is not None:
                 await asyncio.to_thread(self.save_cache, fresh_data)
+                self._record_outcome("fresh")
                 return fresh_data
 
             # 4. 降级策略：返回过期缓存
@@ -267,6 +276,7 @@ class DailyCache(ABC, Generic[T]):
                     "Using stale cache for %s as fallback",
                     self.namespace,
                 )
+                self._record_outcome("stale")
                 return stale_data
 
             # 5. 都失败
@@ -274,4 +284,5 @@ class DailyCache(ABC, Generic[T]):
                 "No data available for %s (fresh fetch failed and no cache)",
                 self.namespace,
             )
+            self._record_outcome("failed")
             return None

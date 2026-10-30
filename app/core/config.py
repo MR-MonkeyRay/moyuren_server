@@ -1263,6 +1263,12 @@ class _FilteredEnvSettingsSource(PydanticBaseSettingsSource):
         return source()
 
 
+class MetricsConfig(BaseModel):
+    """Prometheus 指标端点配置。"""
+
+    enabled: bool = False
+
+
 class AppConfig(BaseSettings):
     """Main application configuration."""
 
@@ -1281,6 +1287,7 @@ class AppConfig(BaseSettings):
     scheduler: SchedulerConfig
     cache: CacheConfig
     ops: OpsConfig = Field(default_factory=OpsConfig)
+    metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     templates: TemplatesConfig
     data_sources: list[DataSource]
     logging: LoggingConfig

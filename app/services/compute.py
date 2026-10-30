@@ -3,7 +3,7 @@
 import logging
 import math
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from app import __github_url__, __version__
@@ -11,6 +11,47 @@ from app.core.config import TextLimitsConfig
 from app.services.calendar import CalendarService, get_business_timezone, now_business
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_news_date(raw_data: dict[str, Any]) -> date | None:
+    """从原始新闻数据中提取日期并规范化。"""
+    news = raw_data.get("news")
+    if not isinstance(news, dict):
+        return None
+    data = news.get("data")
+    if not isinstance(data, dict):
+        return None
+    value = data.get("date")
+    if not isinstance(value, str):
+        return None
+
+    normalized = value.strip()
+    for pattern in ("%Y-%m-%d", "%Y/%m/%d", "%Y年%m月%d日"):
+        try:
+            return datetime.strptime(normalized, pattern).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _compute_data_freshness(
+    raw_data: dict[str, Any], business_date: date
+) -> dict[str, bool | str | None | list[str]]:
+    """计算模板数据的新鲜度标记。"""
+    news_date = _extract_news_date(raw_data)
+    raw_stale_sources = raw_data.get("stale_sources")
+    stale_sources = (
+        list(dict.fromkeys(item for item in raw_stale_sources if isinstance(item, str)))
+        if isinstance(raw_stale_sources, list)
+        else []
+    )
+    news_is_stale = news_date is not None and news_date != business_date
+    return {
+        "is_stale": bool(stale_sources) or news_is_stale,
+        "news_is_stale": news_is_stale,
+        "source_date": news_date.isoformat() if news_date is not None else None,
+        "stale_sources": stale_sources,
+    }
 
 
 # 时区缩写映射表（映射到 UTC 偏移）
@@ -915,8 +956,11 @@ class DataComputer:
         Returns:
             Template context dictionary.
         """
-        domain_data = self._aggregator.aggregate(raw_data, now=now)
-        return self._adapter.adapt(domain_data)
+        snapshot = now or now_business()
+        domain_data = self._aggregator.aggregate(raw_data, now=snapshot)
+        template_data = self._adapter.adapt(domain_data)
+        template_data["data_freshness"] = _compute_data_freshness(raw_data, snapshot.date())
+        return template_data
 
     @property
     def aggregator(self) -> DomainDataAggregator:

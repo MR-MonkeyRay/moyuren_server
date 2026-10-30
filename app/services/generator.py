@@ -11,11 +11,17 @@ from fastapi import FastAPI
 
 from app.core.errors import GenerationBusyError, StorageError
 from app.core.filelock import FileLockTimeout, async_file_lock
+from app.core.metrics import (
+    GenerationResult,
+    record_generation_duration,
+    record_render_duration,
+)
 from app.core.network import safe_exception_for_log
 from app.core.services import AppServices
 from app.models.schemas import DailyDataFile
 from app.services.cache import CacheCleaner
 from app.services.calendar import get_display_timezone, now_business
+from app.services.daily_cache import DailyCache
 
 INFLIGHT_WAIT_TIMEOUT_SEC = 90
 
@@ -94,6 +100,14 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
     stock_index_service = services.stock_index_service
     gold_price_service = services.gold_price_service
     daily_english_service = services.daily_english_service
+    stale_sources: list[str] = []
+
+    async def get_cached_data(service: DailyCache[Any]) -> Any:
+        """Capture fallback status before another caller can update it."""
+        data = await service.get()
+        if data is not None and getattr(service, "last_outcome", None) == "stale":
+            stale_sources.append(service.namespace)
+        return data
 
     # Define fetch tasks
     async def fetch_api_data() -> dict[str, Any]:
@@ -108,7 +122,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
         if not data_fetcher:
             return {}
         try:
-            data = await data_fetcher.get()
+            data = await get_cached_data(data_fetcher)
             return data if data is not None else {}
         except Exception as e:
             logger.warning("Failed to fetch API data: %s", safe_exception_for_log(e))
@@ -126,7 +140,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
         if not holiday_service:
             return []
         try:
-            holidays = await holiday_service.get()
+            holidays = await get_cached_data(holiday_service)
             return holidays if holidays is not None else []
         except Exception as e:
             logger.warning("Failed to fetch holidays: %s", safe_exception_for_log(e))
@@ -144,7 +158,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
         if not fun_content_service:
             return None
         try:
-            return await fun_content_service.get()
+            return await get_cached_data(fun_content_service)
         except Exception as e:
             logger.warning("Failed to fetch fun content: %s", safe_exception_for_log(e))
             return None
@@ -161,7 +175,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
         if not kfc_service:
             return None
         try:
-            return await kfc_service.get()
+            return await get_cached_data(kfc_service)
         except Exception as e:
             logger.warning("Failed to fetch KFC content: %s", safe_exception_for_log(e))
             return None
@@ -178,7 +192,11 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
         if not stock_index_service:
             return None
         try:
-            return await stock_index_service.fetch_indices()
+            data = await stock_index_service.fetch_indices()
+            # 失败占位数据同样带 is_stale，但已在模板中显示"数据更新失败"，不算缓存降级
+            if data.get("is_stale") and not data.get("is_data_missing"):
+                stale_sources.append("stock_index")
+            return data
         except Exception as e:
             logger.warning("Failed to fetch stock indices: %s", safe_exception_for_log(e))
             return None
@@ -195,7 +213,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
         if not gold_price_service:
             return None
         try:
-            return await gold_price_service.get()
+            return await get_cached_data(gold_price_service)
         except Exception as e:
             logger.warning("Failed to fetch gold price: %s", safe_exception_for_log(e))
             return None
@@ -212,7 +230,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
         if not daily_english_service:
             return None
         try:
-            return await daily_english_service.get()
+            return await get_cached_data(daily_english_service)
         except Exception as e:
             logger.warning("Failed to fetch daily english: %s", safe_exception_for_log(e))
             return None
@@ -244,16 +262,17 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
         )
         raw_data = {}
     else:
-        raw_data = api_data_result
+        raw_data = dict(api_data_result)
     raw_data["holidays"] = holidays_result
     raw_data["fun_content"] = fun_content_result
     raw_data["kfc_copy"] = kfc_result
     raw_data["stock_indices"] = stock_indices_result
     raw_data["gold_price"] = gold_price_result
     raw_data["daily_english"] = daily_english_result
+    raw_data["stale_sources"] = sorted(set(stale_sources))
 
     # Log fetch results (count actual API data keys, excluding merged fields)
-    api_keys = [k for k in raw_data if k not in ("holidays", "fun_content", "kfc_copy", "stock_indices", "gold_price", "daily_english")]
+    api_keys = [k for k in raw_data if k not in ("holidays", "fun_content", "kfc_copy", "stock_indices", "gold_price", "daily_english", "stale_sources")]
     logger.info("Fetched data: %d API endpoints, parallel fetch completed", len(api_keys))
     if holidays_result:
         logger.info("Fetched %d holidays", len(holidays_result))
@@ -360,6 +379,21 @@ class ImageGenerator:
     async def _generate_and_save_image(
         self, app: FastAPI, template_name: str | None = None
     ) -> dict[str, str]:
+        """Record one duration for each shared generation run."""
+        started = time.monotonic()
+        result: GenerationResult = "failure"
+        try:
+            images = await self._run_generation(app, template_name)
+            templates = app.state.config.get_templates_config()
+            expected = {template_name} if template_name else {item.name for item in templates.items}
+            result = "success" if expected.issubset(images) else "partial"
+            return images
+        finally:
+            record_generation_duration(time.monotonic() - started, result)
+
+    async def _run_generation(
+        self, app: FastAPI, template_name: str | None = None
+    ) -> dict[str, str]:
         """Generate images and update data file.
 
         This function performs the complete image generation pipeline:
@@ -452,11 +486,14 @@ class ImageGenerator:
                     tname = template_item.name
                     try:
                         t_start = time.monotonic()
-                        filename = await services.image_renderer.render(
-                            template_data,
-                            template_name=tname,
-                            now=now,
-                        )
+                        try:
+                            filename = await services.image_renderer.render(
+                                template_data,
+                                template_name=tname,
+                                now=now,
+                            )
+                        finally:
+                            record_render_duration(tname, time.monotonic() - t_start)
                         t_elapsed = time.monotonic() - t_start
                         logger.info("Image rendered for '%s': %s (%.1fs)", tname, filename, t_elapsed)
 
@@ -614,6 +651,9 @@ async def _update_data_file(
             "stock_indices": raw_data.get("stock_indices"),
             "gold_price": raw_data.get("gold_price"),
             "daily_english": template_data.get("daily_english"),
+            "is_stale": template_data.get("data_freshness", {}).get("is_stale", False),
+            "source_date": template_data.get("data_freshness", {}).get("source_date"),
+            "stale_sources": template_data.get("data_freshness", {}).get("stale_sources", []),
         }
 
         DailyDataFile.model_validate(data).save_atomic(data_file)

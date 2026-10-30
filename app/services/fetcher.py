@@ -358,6 +358,7 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
 
                 if fresh_data is not None:
                     await asyncio.to_thread(self.save_cache, fresh_data)
+                    self._record_outcome("fresh")
                     return fresh_data
 
                 # 降级：返回过期缓存
@@ -371,12 +372,14 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
                         "Using stale cache for %s as fallback",
                         self.namespace,
                     )
+                    self._record_outcome("stale")
                     return stale_data
 
                 self.logger.error(
                     "No data available for %s (fresh fetch failed and no cache)",
                     self.namespace,
                 )
+                self._record_outcome("failed")
                 return None
 
             # 2. 正常模式：检查缓存中的新闻日期
@@ -390,6 +393,7 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
                     self.namespace,
                     today.isoformat(),
                 )
+                self._record_outcome("cache")
                 return cached_data
 
             # 2b. 缓存新闻日期不是今天（或无缓存），调用 API
@@ -419,11 +423,13 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
                         self.logger.warning(
                             "无法从 API 响应中提取日期，保留日期已知的本地缓存"
                         )
+                        self._record_outcome("stale")
                         return cached_data
                     self.logger.warning(
                         "无法从 API 响应中提取日期，保存到缓存（无法判断是否为今天）"
                     )
                     await asyncio.to_thread(self.save_cache, fresh_data)
+                    self._record_outcome("fresh")
                     return fresh_data
 
                 # API 新闻日期 == 今天，保存并返回
@@ -433,6 +439,7 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
                         today.isoformat(),
                     )
                     await asyncio.to_thread(self.save_cache, fresh_data)
+                    self._record_outcome("fresh")
                     return fresh_data
 
                 # API 新闻日期 != 今天（API 还没更新）
@@ -448,6 +455,7 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
                         "Keeping local cache for %s (not overwriting with stale API data)",
                         self.namespace,
                     )
+                    self._record_outcome("stale")
                     return cached_data
 
                 # API 日期更新或缓存日期未知时，保存 API 数据
@@ -458,6 +466,7 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
                     cached_news_date.isoformat() if cached_news_date else None,
                 )
                 await asyncio.to_thread(self.save_cache, fresh_data)
+                self._record_outcome("fresh")
                 return fresh_data
 
             # 2d. API 调用失败（fresh_data is None），降级返回本地缓存
@@ -470,6 +479,7 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
                     "Using stale cache for %s as fallback",
                     self.namespace,
                 )
+                self._record_outcome("stale")
                 return cached_data
 
             # 都失败
@@ -477,4 +487,5 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
                 "No data available for %s (fresh fetch failed and no cache)",
                 self.namespace,
             )
+            self._record_outcome("failed")
             return None

@@ -58,6 +58,8 @@ https://api.monkeyray.net/api/v1/moyuren
   - Chromium 崩溃或断连后自动重启，创建页面遇到浏览器关闭错误时重试一次
 - 自动清理过期缓存
 - RESTful API + 静态文件服务
+- Prometheus 可观测性：生成/模板渲染耗时、数据源获取结果与实例健康指标始终记录；`metrics.enabled` 默认关闭，仅控制 `/metrics` 端点是否对外提供
+- 数据新鲜度：新闻日期与本次生成的业务日期不一致，或任一数据源使用过期缓存时，图片显示轻量提示；详情 JSON 返回 `is_stale` 和 `source_date`，旧数据文件仍兼容
 - 静态发布到 Cloudflare Pages（GitHub Actions 定时推送）
 - YAML 配置 + 环境变量覆盖
 
@@ -113,13 +115,27 @@ pytest -m "not e2e"
 | ---- | ---- | ---- |
 | GET | `/healthz` | 健康检查 |
 | GET/HEAD | `/readyz` | 就绪检查（启动进度、当天数据与浏览器状态） |
-| GET | `/api/v1/moyuren` | 统一端点：图片元信息/详情/文本/Markdown/图片 |
+| GET | `/metrics` | Prometheus 文本指标（`metrics.enabled=true` 时可用，否则 404） |
+| GET | `/api/v1/moyuren` | 统一端点：图片元信息/详情/文本/Markdown/图片；详情包含数据新鲜度 |
 | GET | `/api/v1/templates` | 获取支持的模板列表 |
 | POST | `/api/v1/ops/generate` | 手动触发图片生成（需鉴权） |
 | POST | `/api/v1/ops/cache/clean` | 清理过期缓存（需鉴权） |
 | GET | `/static/{filename}` | 静态图片文件 |
 
 > 注：当无可用图片时，API 会自动触发按需生成；同一进程内的并发请求会等待当前生成任务，复用结果或依次生成未覆盖的模板。仅当其他进程持有生成锁或等待超时（90 秒）时返回 `503`，并附带 `Retry-After` 响应头（图片 API 为 5 秒，Ops 为 10 秒）。Ops 端点需要 `Authorization: Bearer <api_key>` 鉴权。Ops 的 GET 请求仍兼容，但已弃用；响应包含 `Deprecation: @1793318400`，同一 URL 的 POST 请求为后继版本。
+
+启用 `metrics.enabled` 后，`GET /metrics` 导出专用注册表中的以下指标（不出现在 OpenAPI 中）：
+
+| 指标 | 标签 | 说明 |
+| ---- | ---- | ---- |
+| `moyuren_generation_duration_seconds` | `result=success\|partial\|failure` | 整次共享生成任务的耗时；部分模板失败为 partial，所有模板失败为 failure |
+| `moyuren_render_duration_seconds` | `template` | 每个模板的渲染耗时，包含失败尝试 |
+| `moyuren_source_fetch_total` | `source`, `result=cache\|fresh\|stale\|failed` | source 为缓存命名空间；有效缓存命中、新获取、旧缓存降级、无可用数据（股票为占位数据）分别计数 |
+| `moyuren_instance_consecutive_failures` | `endpoint` | 实例最近报告的连续失败次数 |
+| `moyuren_instance_cooling_down` | `endpoint` | 实例最近健康更新时是否冷却（0/1） |
+| `moyuren_build_info` | `version` | 应用版本，值为 1 |
+
+实例标签仅保留 `scheme://host[:port]`，移除凭据、路径与查询参数；同一源地址由最近一次健康更新覆盖。新闻 API 数据被接受时计为 fresh，即使内容日期并非当天；因 API 日期未知或较旧而保留旧缓存时计为 stale。指标仅保存在当前进程内，重启后重新累计。
 
 ### 静态发布
 
@@ -223,7 +239,9 @@ pytest -m "not e2e"
 }
 ```
 
-**详细响应**（`encode=json&detail=true`）包含精简响应的所有字段，以及：weekday、lunar_date、fun_content、is_crazy_thursday、kfc_content、date_info、weekend、solar_term、guide、news_list、news_meta、holidays、kfc_content_full、stock_indices。
+**详细响应**（`encode=json&detail=true`）包含精简响应的所有字段，以及：weekday、lunar_date、fun_content、is_crazy_thursday、kfc_content、date_info、weekend、solar_term、guide、news_list、news_meta、holidays、kfc_content_full、stock_indices、is_stale、source_date。
+
+`is_stale` 为新闻日期不等于生成时业务日期，或任一源使用过期缓存的标志；股票行情的 `is_stale` 也计入。`source_date` 为规范化的新闻日期（`YYYY-MM-DD`），未知时为 `null`。旧文件的详情默认 `is_stale=false`、`source_date=null`。模板仅在过期时显示提示：新闻非当日时显示“数据日期 YYYY-MM-DD（非当日）”，其余情况（新闻为当日但其他源使用缓存）显示“部分数据为缓存”。生成日期、写入时间与数据来源日期分别保留。
 
 详细字段说明参见 [Pydantic 模型](app/models/schemas.py) 中的 `MoyurenDetailResponse`。
 
@@ -357,6 +375,7 @@ pytest -m "not e2e"
 | `cache.retain_days` | `MOYUREN_CACHE_RETAIN_DAYS` | 缓存保留天数（默认 30） |
 | `cache.max_images_per_template_per_day` | `MOYUREN_CACHE_MAX_IMAGES_PER_TEMPLATE_PER_DAY` | 每个模板每天保留的最大图片数（默认 3） |
 | `ops.api_key` | `MOYUREN_OPS_API_KEY` | 运维 API Key（留空则禁用 ops 端点，所有请求返回 401） |
+| `metrics.enabled` | `MOYUREN_METRICS_ENABLED` | 是否对外提供根路径 `/metrics`，默认 `false`；修改后重启应用，指标记录始终开启 |
 | `logging.level` | `MOYUREN_LOGGING_LEVEL` | 日志级别 |
 | `logging.file` | `MOYUREN_LOGGING_FILE` | 日志文件路径（空字符串表示只输出到标准输出） |
 | `timezone.business` | `MOYUREN_TIMEZONE_BUSINESS` | 业务时区（节假日/节气/周末判断） |
@@ -428,7 +447,7 @@ cache/
 
 `data/YYYY-MM-DD.json` 由 `DailyDataFile` 统一读写并通过临时文件原子替换。必需字段为 `date`（有效的 `YYYY-MM-DD`）、`updated`（显示时区的时间字符串）、`updated_at`（非负整数毫秒时间戳，不接受布尔值）和 `images`（模板名到纯文件名的映射，禁止路径分隔符和 `..`）。`schema_version` 当前为 `1`，旧文件缺少该字段时按版本 1 读取；未知字段会保留。
 
-可选字段包括 `weekday`、`lunar_date`、`is_crazy_thursday`、`date_info`、`weekend`、`solar_term`、`guide`、`holidays`、`news_list`、`news_meta`、`fun_content`、`kfc_content`、`kfc_content_full`、`stock_indices`、`gold_price` 和 `daily_english`。`fun_content.type` 使用数据源端点名称，默认内容为 `default`；缺少类型的旧缓存仍兼容。`schema_version` 仅用于文件格式，不出现在公共 API 的简单或详情 JSON 响应中。
+可选字段包括 `weekday`、`lunar_date`、`is_crazy_thursday`、`date_info`、`weekend`、`solar_term`、`guide`、`holidays`、`news_list`、`news_meta`、`fun_content`、`kfc_content`、`kfc_content_full`、`stock_indices`、`gold_price`、`daily_english`、`is_stale`、`source_date` 和 `stale_sources`。`stale_sources` 记录降级源的缓存命名空间，详情 API 仅公开新鲜度标志和新闻日期。`fun_content.type` 使用数据源端点名称，默认内容为 `default`；缺少类型的旧缓存仍兼容。`schema_version` 仅用于文件格式，不出现在公共 API 的简单或详情 JSON 响应中。
 
 保留期内的图片按模板和日期清理，`cache.max_images_per_template_per_day` 默认为 3（最小为 1），按文件名时间保留最新图片。所有数据 JSON 引用的图片优先保留并计入数量，即使引用数超过上限也不会裁剪；数据 JSON 无法读取或格式无效时，跳过对应日期的图片裁剪。
 

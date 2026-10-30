@@ -58,6 +58,9 @@ class DailyDataFile(BaseModel):
     stock_indices: JsonValue = None
     gold_price: JsonValue = None
     daily_english: JsonValue = None
+    is_stale: bool | None = None
+    source_date: str | None = None
+    stale_sources: list[str] | None = None
 
     @field_validator("date")
     @classmethod
@@ -227,6 +230,8 @@ class MoyurenDetailResponse(BaseModel):
     holidays: list[HolidayDetailSchema] | None = Field(None, description="Detailed holiday list")
     kfc_content_full: KfcContentSchema | None = Field(None, description="Full KFC content object")
     stock_indices: StockIndicesSchema | None = Field(None, description="Stock market indices data")
+    is_stale: bool = Field(False, description="Whether rendered data is stale")
+    source_date: str | None = Field(None, description="Source data date in YYYY-MM-DD format")
 
 
 class ErrorDetail(BaseModel):

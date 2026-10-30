@@ -168,6 +168,8 @@ def _build_detail_response(
         "kfc_content_full": stored.get("kfc_content_full"),
         "stock_indices": stored.get("stock_indices"),
         "gold_price": stored.get("gold_price"),
+        "is_stale": bool(stored.get("is_stale")),
+        "source_date": stored.get("source_date"),
     }
 
     return {**simple, **detail_fields}
