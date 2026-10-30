@@ -15,6 +15,7 @@ from PIL import Image
 from starlette.requests import Request
 
 from app.api.v1.moyuren import _build_cache_headers, _check_not_modified, router
+from app.core.config import TemplateRenderConfig
 from app.core.services import AppServices
 from app.services.generator import GenerationBusyError
 
@@ -71,6 +72,7 @@ class TestMoyurenAPI:
         mock_config = MagicMock()
         mock_config.paths.cache_dir = str(cache_dir)
         mock_config.server.base_domain = "http://localhost:8000"
+        mock_config.get_templates_config.return_value.config = TemplateRenderConfig()
 
         app.state.config = mock_config
         app.state.services = mock_services
@@ -184,6 +186,7 @@ class TestMoyurenAPI:
         mock_config = MagicMock()
         mock_config.paths.cache_dir = str(cache_dir)
         mock_config.server.base_domain = "http://localhost:8000"
+        mock_config.get_templates_config.return_value.config = TemplateRenderConfig()
 
         app.state.config = mock_config
         app.state.services = mock_services
@@ -328,6 +331,7 @@ class TestMoyurenAPI:
         mock_config = MagicMock()
         mock_config.paths.cache_dir = str(cache_dir)
         mock_config.server.base_domain = "http://localhost:8000"
+        mock_config.get_templates_config.return_value.config = TemplateRenderConfig()
 
         app.state.config = mock_config
         app.state.services = mock_services
@@ -382,6 +386,7 @@ class TestMoyurenAPI:
         mock_config = MagicMock()
         mock_config.paths.cache_dir = str(cache_dir)
         mock_config.server.base_domain = "http://localhost:8000"
+        mock_config.get_templates_config.return_value.config = TemplateRenderConfig()
 
         app.state.config = mock_config
         app.state.services = mock_services
@@ -424,6 +429,7 @@ class TestMoyurenAPI:
         mock_config = MagicMock()
         mock_config.paths.cache_dir = str(cache_dir)
         mock_config.server.base_domain = "http://localhost:8000"
+        mock_config.get_templates_config.return_value.config = TemplateRenderConfig()
 
         app.state.config = mock_config
         app.state.services = mock_services

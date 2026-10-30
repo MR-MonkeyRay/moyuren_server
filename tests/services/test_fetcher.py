@@ -146,35 +146,6 @@ class TestDataFetcher:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_fetch_all_success(self, logger: logging.Logger) -> None:
-        """Test fetch_all returns news result in legacy format."""
-        source = NewsSource(url="https://api.example.com/news")
-        fetcher = DataFetcher(source=source, logger=logger)
-
-        payload = {"code": 200, "data": {"news": ["item"]}}
-        respx.get(source.url).mock(return_value=Response(200, json=payload))
-
-        result = await fetcher.fetch_all()
-
-        assert "news" in result
-        assert result["news"] == payload
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_fetch_all_partial_failure(self, logger: logging.Logger) -> None:
-        """Test fetch_all handles fetch failure."""
-        source = NewsSource(url="https://api.example.com/news")
-        fetcher = DataFetcher(source=source, logger=logger)
-
-        respx.get("https://api.example.com/news").mock(return_value=Response(500))
-        mock_mirrors_not_found()
-
-        result = await fetcher.fetch_all()
-
-        assert result["news"] is None
-
-    @respx.mock
-    @pytest.mark.asyncio
     async def test_fetch_endpoint_with_params(self, logger: logging.Logger) -> None:
         """Test endpoint fetch includes query parameters."""
         source = NewsSource(url="https://api.example.com/news", params={"key": "value", "limit": "10"})
@@ -431,10 +402,10 @@ class TestCachedDataFetcher:
         async def fetch_once() -> dict[str, Any]:
             fetch_started.set()
             await release_fetch.wait()
-            return today_data
+            return today_data["news"]
 
         fetch_mock = AsyncMock(side_effect=fetch_once)
-        cached_fetcher._fetcher.fetch_all = fetch_mock
+        cached_fetcher._fetcher.fetch = fetch_mock
         first = asyncio.create_task(cached_fetcher.get())
         await fetch_started.wait()
         second = asyncio.create_task(cached_fetcher.get())

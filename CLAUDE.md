@@ -15,7 +15,7 @@
 | 指标 API | `app/api/metrics.py` | 可选根路径 `/metrics` 文本导出 |
 | 启动 | `app/core/bootstrap.py` | 服务构建、定时任务注册、启动缓存验证 |
 | 图片 API | `app/api/v1/moyuren.py` | 多编码响应、图片变体选择、条件请求与缺失缓存自动恢复 |
-| Ops API | `app/api/v1/ops.py` | Bearer 鉴权的生成、缓存清理与无副作用模板预览；保留已弃用 GET 兼容路由 |
+| Ops API | `app/api/v1/ops.py` | 仅 POST，Bearer 鉴权的生成、缓存清理与无副作用模板预览 |
 | 模板 API | `app/api/v1/templates.py` | 模板列表查询 |
 | RSS API | `app/api/v1/feed.py` | 最近每日图片 RSS 2.0 订阅源、条件请求与缓存 |
 | API 公共工具 | `app/api/v1/common.py` | 图片 URL、ETag 与条件请求校验 |
@@ -60,14 +60,16 @@ Docker：`docker compose up -d`，配置覆盖统一使用 `MOYUREN_` 前缀
 | GET | `/api/v1/moyuren` | `date`、`template`、`detail=false`、`encode=json\|text\|markdown\|image\|url`；图片/URL 可传 `format=jpeg\|webp`、正整数 `width`，当日缓存或原图缺失时自动生成 |
 | GET/HEAD | `/api/v1/feed.xml` | RSS 2.0；`template` 默认配置模板，`limit` 为 1..`feed.max_items`，支持 ETag/Last-Modified，关闭 feed 时 404 |
 | GET | `/api/v1/templates` | 返回 `{data:[{name,description,image,show_daily_english}]}`，公开缓存 5 分钟 |
-| POST（兼容 GET） | `/api/v1/ops/generate` | Bearer 鉴权同步生成，`no-store`；并发生成返回 503 + `Retry-After: 10` |
-| POST（兼容 GET） | `/api/v1/ops/cache/clean` | Bearer 鉴权；可选正整数 `keep_days`，`no-store` |
+| POST | `/api/v1/ops/generate` | Bearer 鉴权同步生成，`no-store`；并发生成返回 503 + `Retry-After: 10` |
+| POST | `/api/v1/ops/cache/clean` | Bearer 鉴权；可选正整数 `keep_days`，`no-store` |
 | POST | `/api/v1/ops/templates/preview` | Bearer 鉴权；JSON `template`、可选 `date`、`data=cached\|sample`（默认 cached），返回 JPEG/no-store，锁超时返回 503 |
 | GET/HEAD | `/static/{filename}` | 静态图片 |
 
 ## 配置
 
-主配置：`config.yaml`。顶层对象的直接字段可用 `MOYUREN_<SECTION>_<FIELD>` 覆盖（如 `MOYUREN_METRICS_ENABLED`）；整个顶层段可传 JSON；例如深层渲染字段用 `MOYUREN_TEMPLATES_CONFIG` JSON，对象合并、列表整体替换。更深层字段和 `data_sources` 列表没有展开式环境变量。优先级为进程环境 → `.env` → YAML → 默认值；无前缀的旧式 `<SECTION>_<FIELD>` 仍兼容但会记录弃用警告。
+主配置：`config.yaml`。顶层对象的直接字段可用 `MOYUREN_<SECTION>_<FIELD>` 覆盖（如 `MOYUREN_METRICS_ENABLED`）；整个顶层段可传 JSON；例如深层渲染字段用 `MOYUREN_TEMPLATES_CONFIG` JSON，对象合并、列表整体替换。更深层字段和 `data_sources` 列表没有展开式环境变量。优先级为进程环境 → `.env` → YAML → 默认值；无前缀的 `<SECTION>_<FIELD>` 不参与配置覆盖。
+
+股票指数只接受显式 `secid/name/market` 对象；节假日代理统一使用 `network.ghproxy_urls`，不接受 `mirror_urls`。词典 `db_path` 相对路径完整拼接到缓存根目录，不剥离 `cache/` 前缀。新闻使用 `DataFetcher.fetch()`；日级新闻缓存保留 `{"news": ...}` 聚合结构。节假日日缓存只接受含 `holidays` 的对象，旧列表触发重建；历史图片与每日 JSON 保留读取支持。
 
 关键配置项：
 

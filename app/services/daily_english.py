@@ -18,7 +18,7 @@ from urllib.parse import quote, urlparse
 
 import httpx
 
-from app.core.config import DailyEnglishSource, DictBackendConfig, PathsConfig, SQLiteBackendConfig
+from app.core.config import DailyEnglishSource, PathsConfig, SQLiteBackendConfig
 from app.core.fileutil import set_output_permissions
 from app.core.network import create_async_client, redact_url, safe_exception_for_log
 from app.core.filelock import async_file_lock
@@ -745,7 +745,7 @@ class SQLiteBackend:
 
 
 def build_dict_backend(
-    cfg: DictBackendConfig,
+    cfg: SQLiteBackendConfig,
     ghproxy_urls: list[str],
     logger: logging.Logger,
     proxy_url: str | None = None,
@@ -762,23 +762,18 @@ def build_dict_backend(
 
     Returns:
         符合 DictBackend 协议的后端实例。
-
-    Raises:
-        NotImplementedError: 配置类型尚未实现时抛出。
     """
-    if isinstance(cfg, SQLiteBackendConfig):
-        resolved_db_path = cfg.resolve_db_path(
-            cache_dir if cache_dir is not None else PathsConfig().cache_dir
-        )
-        return SQLiteBackend(
-            db_path=str(resolved_db_path),
-            download_url=cfg.download_url,
-            checksum_sha256=cfg.checksum_sha256,
-            ghproxy_urls=ghproxy_urls,
-            logger=logger,
-            proxy_url=proxy_url,
-        )
-    raise NotImplementedError(f"{type(cfg).__name__} backend not implemented yet")
+    resolved_db_path = cfg.resolve_db_path(
+        cache_dir if cache_dir is not None else PathsConfig().cache_dir
+    )
+    return SQLiteBackend(
+        db_path=str(resolved_db_path),
+        download_url=cfg.download_url,
+        checksum_sha256=cfg.checksum_sha256,
+        ghproxy_urls=ghproxy_urls,
+        logger=logger,
+        proxy_url=proxy_url,
+    )
 
 
 class DailyEnglishService:

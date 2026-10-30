@@ -14,6 +14,7 @@ from fastapi.responses import Response
 
 from app.api.v1.moyuren import get_moyuren
 from app.api.v1.ops import ops_generate
+from app.core.config import TemplateRenderConfig
 from app.core.services import AppServices
 
 
@@ -26,6 +27,7 @@ def generation_request(tmp_path: Path, mock_services: AppServices) -> Request:
     config.ops.api_key = "test-secret-key"
     config.server.base_domain = "http://localhost:8000"
     config.get_templates_config.return_value.items = [SimpleNamespace(name="moyuren")]
+    config.get_templates_config.return_value.config = TemplateRenderConfig()
     app.state.config = config
     app.state.logger = logging.getLogger("test.generation")
     app.state.services = mock_services

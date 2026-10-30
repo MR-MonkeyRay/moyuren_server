@@ -46,14 +46,14 @@ class TestSQLiteBackendConfig:
         ("db_path", "expected"),
         [
             ("ecdict/stardict.db", "/tmp/c/ecdict/stardict.db"),
-            ("cache/ecdict/stardict.db", "/tmp/c/ecdict/stardict.db"),
+            ("cache/ecdict/stardict.db", "/tmp/c/cache/ecdict/stardict.db"),
             ("/opt/ecdict/stardict.db", "/opt/ecdict/stardict.db"),
             ("/cache/ecdict/stardict.db", "/cache/ecdict/stardict.db"),
             ("cache-other/stardict.db", "/tmp/c/cache-other/stardict.db"),
         ],
     )
     def test_resolve_db_path(self, db_path: str, expected: str) -> None:
-        """Test relative, legacy and absolute dictionary paths."""
+        """Test relative paths retain every component and absolute paths stay absolute."""
         config = SQLiteBackendConfig(db_path=db_path)
 
         assert config.resolve_db_path(Path("/tmp/c")) == Path(expected)
@@ -439,6 +439,11 @@ class TestHolidaySource:
         config = HolidaySource(type="holiday", timeout_sec=10)
         assert config.timeout_sec == 10
 
+    def test_obsolete_mirror_urls_are_rejected(self) -> None:
+        """Reject removed fields rather than silently discarding configuration."""
+        with pytest.raises(ValidationError, match="extra_forbidden"):
+            HolidaySource.model_validate({"mirror_urls": ["https://mirror.example"]})
+
     def test_zero_timeout_raises_error(self) -> None:
         """Test zero timeout raises error."""
         with pytest.raises(ValidationError):
@@ -503,7 +508,10 @@ class TestStockIndexSource:
         config = StockIndexSource(
             type="stock_index",
             quote_url="https://api.example.com/quote",
-            secids=["1.000001", "0.399001"],
+            secids=[
+                {"secid": "1.000001", "name": "上证指数", "market": "A"},
+                {"secid": "0.399001", "name": "深证成指", "market": "A"},
+            ],
             timeout_sec=5,
             market_timezones={"A": "Asia/Shanghai"},
             cache_ttl_sec=60,
@@ -534,43 +542,50 @@ class TestStockIndexSource:
         assert [item.code for item in config.secids] == ["DJIA", "000001"]
         assert [item.name for item in config.secids] == ["道指", "沪指"]
 
-    @pytest.mark.parametrize(
-        ("secid", "expected_market"),
-        [("116.UNKNOWN", "HK"), ("105.SPX", "US"), ("0.123456", "A")],
-    )
-    def test_unknown_legacy_code_infers_market(
-        self, secid: str, expected_market: str
-    ) -> None:
-        """Test unknown legacy codes use the supported prefix mapping."""
-        config = StockIndexSource(
-            type="stock_index",
-            quote_url="https://api.example.com/quote",
-            secids=[secid],
-            market_timezones={expected_market: "UTC"},
-        )
-
-        assert config.secids[0].name == config.secids[0].code
-        assert config.secids[0].market == expected_market
+    @pytest.mark.parametrize("secid", ["1.000001", "116.UNKNOWN", "999.UNKNOWN"])
+    def test_string_items_are_rejected(self, secid: str) -> None:
+        """Require an explicit name and market instead of inferring legacy entries."""
+        with pytest.raises(ValidationError):
+            StockIndexSource.model_validate(
+                {
+                    "quote_url": "https://api.example.com/quote",
+                    "secids": [secid],
+                    "market_timezones": {"A": "Asia/Shanghai"},
+                }
+            )
 
     @pytest.mark.parametrize("secid", ["000001", "x.000001", "1.", "1.A-B"])
     def test_invalid_secid_format_raises_error(self, secid: str) -> None:
-        """Test malformed secids are rejected for both supported forms."""
+        """Test malformed secids are rejected in the supported object form."""
         with pytest.raises(ValidationError, match="secid must match"):
             StockIndexSource(
                 type="stock_index",
                 quote_url="https://api.example.com/quote",
-                secids=[secid],
+                secids=[{"secid": secid, "name": "指数", "market": "A"}],
                 market_timezones={"A": "Asia/Shanghai"},
             )
 
-    def test_unknown_legacy_prefix_requires_object_form(self) -> None:
-        """Test legacy entries with unknown prefixes provide migration guidance."""
-        with pytest.raises(ValidationError, match="use object form"):
+    def test_empty_secids_are_rejected(self) -> None:
+        """A stock source must configure at least one index."""
+        with pytest.raises(ValidationError):
             StockIndexSource(
-                type="stock_index",
                 quote_url="https://api.example.com/quote",
-                secids=["999.UNKNOWN"],
+                secids=[],
                 market_timezones={"A": "Asia/Shanghai"},
+            )
+
+    @pytest.mark.parametrize("missing_field", ["name", "market"])
+    def test_object_items_require_name_and_market(self, missing_field: str) -> None:
+        """Reject incomplete objects without restoring inferred defaults."""
+        item = {"secid": "1.000001", "name": "上证指数", "market": "A"}
+        del item[missing_field]
+        with pytest.raises(ValidationError, match="Field required"):
+            StockIndexSource.model_validate(
+                {
+                    "quote_url": "https://api.example.com/quote",
+                    "secids": [item],
+                    "market_timezones": {"A": "Asia/Shanghai"},
+                }
             )
 
     def test_duplicate_codes_raise_error(self) -> None:
@@ -579,7 +594,10 @@ class TestStockIndexSource:
             StockIndexSource(
                 type="stock_index",
                 quote_url="https://api.example.com/quote",
-                secids=["1.000001", "0.000001"],
+                secids=[
+                    {"secid": "1.000001", "name": "沪指", "market": "A"},
+                    {"secid": "0.000001", "name": "重复", "market": "A"},
+                ],
                 market_timezones={"A": "Asia/Shanghai"},
             )
 

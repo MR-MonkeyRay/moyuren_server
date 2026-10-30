@@ -89,7 +89,7 @@ uvicorn app.main:app --reload
 docker compose up -d
 ```
 
-容器配置覆盖使用 `MOYUREN_` 前缀，例如 `MOYUREN_SERVER_HOST=0.0.0.0`、`MOYUREN_SERVER_PORT=8000`、`MOYUREN_SERVER_BASE_DOMAIN=https://example.com`、`MOYUREN_OPS_API_KEY=...`；端口映射需与监听端口一致。已知旧无前缀名称仍兼容，配置加载时记录弃用警告。
+容器配置覆盖使用 `MOYUREN_` 前缀，例如 `MOYUREN_SERVER_HOST=0.0.0.0`、`MOYUREN_SERVER_PORT=8000`、`MOYUREN_SERVER_BASE_DOMAIN=https://example.com`、`MOYUREN_OPS_API_KEY=...`；端口映射需与监听端口一致。无前缀名称不会参与配置覆盖。
 
 原子写入的图片、变体、数据 JSON 和缓存文件权限遵循进程启动时的 umask（`0666 & ~umask`；通常 umask 为 `0022`，文件权限为 `0644`）。`docker-entrypoint.sh` 不设置 umask，也不读取 `UMASK` 环境变量；它在 root 启动时初始化 `/app/cache` 的属主后通过 `gosu` 切换到 `appuser`，否则直接执行服务。需要更严格权限时，应在启动 Python 服务前设置进程 umask。
 
@@ -132,7 +132,7 @@ CI 另外生成覆盖率 XML，并在 PR 中运行非阻塞的 diff-cover（变�
 | POST | `/api/v1/ops/templates/preview` | 模板开发预览，直接返回 JPEG（需鉴权） |
 | GET/HEAD | `/static/{filename}` | 静态图片文件 |
 
-> 除 Ops 外，上表端点均不要求 API Key。当天缺少数据或已知模板原图时按需生成；历史数据不补图。同进程请求共享生成任务，未覆盖的模板可能继续生成。其他进程占锁（等待最多 5 秒）或等待已有任务超过 90 秒时返回 `503 GENERATION_5002`；`Retry-After` 为图片 API 5 秒、Ops 生成 10 秒。Ops 的 GET 兼容规则见下文。
+> 除 Ops 外，上表端点均不要求 API Key。当天缺少数据或已知模板原图时按需生成；历史数据不补图。同进程请求共享生成任务，未覆盖的模板可能继续生成。其他进程占锁（等待最多 5 秒）或等待已有任务超过 90 秒时返回 `503 GENERATION_5002`；`Retry-After` 为图片 API 5 秒、Ops 生成 10 秒。Ops 仅支持 POST。
 
 启用 `metrics.enabled` 后，`GET /metrics` 导出专用注册表中的以下指标（不出现在 OpenAPI 中）：
 
@@ -318,7 +318,7 @@ CI 另外生成覆盖率 XML，并在 PR 中运行非阻塞的 diff-cover（变�
 <details>
 <summary>POST /api/v1/ops/* - 运维端点（需鉴权）</summary>
 
-所有 Ops 端点需要 `Authorization: Bearer <api_key>` 请求头；`ops.api_key` 留空则禁用 ops 端点。由处理器返回的响应带 `Cache-Control: no-store`；鉴权失败同时带 `WWW-Authenticate: Bearer`。生成和清理端点的 GET 请求仍兼容，但已弃用；包括错误响应在内均返回 `Deprecation: @1793318400`，同一 URL 的 POST 请求为后继版本。
+所有 Ops 端点仅支持 POST，需要 `Authorization: Bearer <api_key>` 请求头；`ops.api_key` 留空则禁用 ops 端点。由处理器返回的响应带 `Cache-Control: no-store`；鉴权失败同时带 `WWW-Authenticate: Bearer`。GET 请求返回 `405 Method Not Allowed`，不会生成图片或清理缓存。
 
 **POST /api/v1/ops/generate** - 手动触发图片生成
 
@@ -345,7 +345,7 @@ CI 另外生成覆盖率 XML，并在 PR 中运行非阻塞的 diff-cover（变�
 
 可选查询参数 `keep_days: int | null`，默认使用 `cache.retain_days`，POST 也通过 URL 传递。非正数返回 `400 API_7003`，非整数返回 `422`。成功返回 `{"data":{"deleted_files":3,"freed_bytes":12345,"oldest_kept":"2026-10-01","pruned_images":1}}`；清理失败为 `500 OPS_8001`。
 
-**POST /api/v1/ops/templates/preview** - 模板预览（仅 POST，无 GET 兼容路由）
+**POST /api/v1/ops/templates/preview** - 模板预览
 
 JSON 请求体：`{"template": "moyuren", "date": "2026-10-29", "data": "sample"}`。`template` 必填且必须已发现；`date` 可省略或为 `null`，默认为业务时区今天，严格使用 `YYYY-MM-DD`，按该日业务时间 09:00 计算上下文。`data` 可为 `cached`（默认）或 `sample`。
 
@@ -416,6 +416,15 @@ curl -X POST http://localhost:8000/api/v1/ops/templates/preview \
 
 配置文件：`config.yaml`
 
+### 0.18.2 旧部署升级注意事项
+
+- 配置覆盖统一使用 `MOYUREN_` 前缀；例如将 `SERVER_PORT` 改为 `MOYUREN_SERVER_PORT`，否则继续使用 YAML 或默认值。
+- Ops 生成和缓存清理改用同一路径的 POST，GET 不再支持。
+- 股票指数使用 `{secid: "1.000001", name: "上证指数", market: "A"}` 对象；节假日不再接受 `mirror_urls`，代理统一配置 `network.ghproxy_urls`。
+- 词典相对路径从缓存根目录开始，例如 `ecdict/stardict.db`；旧值 `cache/ecdict/stardict.db` 需移除开头的 `cache/`，避免拼接为双重缓存目录并重新下载词库。
+- 仅含节假日列表的日缓存不再转换为缺少补班日期的对象，下次获取时重新构建。年度原始缓存、历史图片和每日 JSON 不删除；无可用年度缓存且网络失败时，旧列表缓存不能用于降级。
+- 内部新闻获取统一调用 `DataFetcher.fetch()`；已移除 `fetch_all()`，新闻计算只接受 `{"news": {"data": {"news": [...]}}}` 信封结构。
+
 ### 配置项与环境变量
 
 下表列出模型默认值；“必填”表示模型没有默认值。仓库的 `config.yaml` 另外指定了 `scheduler.mode: hourly`、`logging.file: logs/app.log`、GitHub 代理和公共实例发现地址等值，不能与模型默认值混淆。顶层 `server`、`paths`、`scheduler`、`cache`、`templates`、`data_sources`、`logging` 必须提供；其他组可以省略并采用模型默认值。
@@ -424,7 +433,7 @@ curl -X POST http://localhost:8000/api/v1/ops/templates/preview \
 
 对象和列表用 JSON 字符串覆盖：如 `MOYUREN_TEMPLATES_CONFIG='{"output_formats":["jpeg","webp"]}'`、`MOYUREN_DATA_SOURCES='[{"type":"holiday"}]'`、`MOYUREN_NOTIFY_WEBHOOKS='[]'`；也可用 `MOYUREN_TEMPLATES` 等整体对象。对象与低优先级配置合并，列表整体替换，不支持按索引覆盖。以下子字段表统一通过其所属对象或列表设置，没有独立的深层环境变量。
 
-已知组内直接字段的旧无前缀名称仍兼容，例如 `SERVER_PORT`，实际使用时记录弃用警告；同一来源同时设置对应的新旧字段名时 `MOYUREN_` 名称优先。未知名称会被忽略。Webhook 的 `url_env` / `secret_env` 是额外引用**进程环境**中的任意名称，不会读取仅存在于 `.env` 的值。
+无前缀名称（如 `SERVER_PORT`）和未知名称会被忽略；配置覆盖必须使用 `MOYUREN_` 前缀。Webhook 的 `url_env` / `secret_env` 是额外引用**进程环境**中的任意名称，不会读取仅存在于 `.env` 的值。
 
 | 配置项 | 模型默认值 | 环境变量 | 说明 |
 | --- | --- | --- | --- |
@@ -514,10 +523,10 @@ Webhook 子字段均经 `MOYUREN_NOTIFY_WEBHOOKS` JSON 列表设置：
 | `[type=fun_content].endpoints[].url` / `.data_path` / `.display_title` | 均必填 | 非空请求地址、点分数据路径、展示标题 |
 | `[type=crazy_thursday].url` / `[type=gold_price].url` | 必填 | KFC 文案 / 金价 API 地址 |
 | `[type=stock_index].quote_url` | 必填 | 行情 API 地址 |
-| `[type=stock_index].secids` | 必填 | 非空指数对象列表；兼容旧 secid 字符串，按顺序展示 |
+| `[type=stock_index].secids` | 必填 | 非空指数对象列表，按顺序展示；不接受 secid 字符串列表 |
 | `[type=stock_index].secids[].secid` | 必填 | `<市场前缀>.<字母数字代码>` |
 | `[type=stock_index].secids[].code` | `""`，校验时从 secid 派生 | 指数代码；派生值覆盖传入 code，代码不可重复 |
-| `[type=stock_index].secids[].name` / `.market` | 均必填 | 展示名称 / 市场键；旧字符串使用内置映射或按前缀推断 |
+| `[type=stock_index].secids[].name` / `.market` | 均必填 | 显式指定展示名称 / 市场键，不再推断 |
 | `[type=stock_index].market_timezones` | 必填 | 非空的市场 → 时区对象，覆盖所有指数的 market |
 | `[type=stock_index].cache_ttl_sec` | `60` | 正整数，内存行情缓存 TTL 秒数 |
 | `[type=daily_english].word_api_url` | `https://random-word-api.herokuapp.com/word` | 随机单词 API |
@@ -526,7 +535,7 @@ Webhook 子字段均经 `MOYUREN_NOTIFY_WEBHOOKS` JSON 列表设置：
 | `[type=daily_english].api_failure_threshold` | `3` | 正整数，API 连续失败后回退词典随机选词 |
 | `[type=daily_english].backend` | SQLite 默认对象 | 当前仅支持以下 sqlite 字段 |
 | `[type=daily_english].backend.type` | `sqlite` | 词典后端类型 |
-| `[type=daily_english].backend.db_path` | `ecdict/stardict.db` | 相对 cache_dir；兼容旧 cache/ 前缀，绝对路径不变 |
+| `[type=daily_english].backend.db_path` | `ecdict/stardict.db` | 相对路径完整拼接到 cache_dir，不剥离 cache/ 等前缀；绝对路径不变 |
 | `[type=daily_english].backend.download_url` | `https://github.com/skywind3000/ECDICT/releases/download/1.0.28/ecdict-sqlite-28.zip` | 词典下载地址 |
 | `[type=daily_english].backend.checksum_sha256` | `""` | 非空时校验下载文件 SHA-256 |
 

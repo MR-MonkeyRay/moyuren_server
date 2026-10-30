@@ -473,10 +473,8 @@ class CachedHolidayService(DailyCache[dict[str, Any]]):
         )
 
     def load_cache(self) -> dict[str, Any] | None:
-        """读取日缓存，兼容旧版仅保存节假日列表的 payload。"""
+        """读取包含节假日列表与补班日期的日缓存。"""
         data = super().load_cache()
-        if isinstance(data, list):
-            return {"holidays": data, "make_up_workdays": []}
         if not isinstance(data, dict) or not isinstance(data.get("holidays"), list):
             return None
         return {

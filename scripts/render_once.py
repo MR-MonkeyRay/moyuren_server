@@ -157,8 +157,7 @@ async def main() -> None:
         logger.info("Starting image generation...")
 
         # 1. Fetch data
-        raw_data = await data_fetcher.fetch_all()
-        logger.info("Fetched data from %s endpoints", len(raw_data))
+        raw_data = {"news": await data_fetcher.fetch()}
 
         # 1.1 Fetch holiday data
         raw_data["holidays"] = []

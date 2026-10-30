@@ -224,7 +224,10 @@ class TestHolidayService:
         """Test total fetch failure preserves the stale aggregate cache."""
         cache_file = cached_service.cache_dir / "holidays.json"
         stale_data = [{"name": "春节", "start_date": "2026-02-15"}]
-        original = json.dumps({"date": "2026-02-03", "data": stale_data})
+        original = json.dumps({
+            "date": "2026-02-03",
+            "data": {"holidays": stale_data, "make_up_workdays": []},
+        })
         cache_file.write_text(original, encoding="utf-8")
         respx.get(url__regex=r".*\.json$").mock(return_value=Response(500))
 
@@ -417,17 +420,21 @@ class TestHolidayService:
             assert cached_service.load_cache() == result
 
     @pytest.mark.asyncio
-    async def test_valid_legacy_daily_cache_loads_without_fetch(
+    async def test_obsolete_daily_cache_refreshes_make_up_workdays(
         self, cached_service: CachedHolidayService
     ) -> None:
-        """Previous versions stored only a list in the daily cache's data field."""
+        """A list-only cache cannot supply make-up workdays and must be refreshed."""
         holidays = [{"name": "春节", "start_date": "2026-02-15"}]
         (cached_service.cache_dir / "holidays.json").write_text(json.dumps({
             "date": cached_service.cache_key(), "data": holidays,
         }), encoding="utf-8")
-        with patch.object(cached_service, "fetch_fresh", new=AsyncMock()) as fetch:
-            assert await cached_service.get() == {"holidays": holidays, "make_up_workdays": []}
-        fetch.assert_not_awaited()
+        fresh = {"holidays": holidays, "make_up_workdays": ["2026-02-14"]}
+        with (
+            patch.object(cached_service._service, "_get_today", return_value=date(2026, 2, 4)),
+            patch.object(cached_service, "fetch_fresh", new=AsyncMock(return_value=fresh)),
+        ):
+            assert await cached_service.get() == fresh
+            assert cached_service.load_cache() == fresh
 
     @respx.mock
     @pytest.mark.asyncio

@@ -73,12 +73,6 @@ def tmp_cache_dir(tmp_path: Path) -> Path:
     return tmp_path
 
 
-@pytest.fixture
-def tmp_state_dir(tmp_cache_dir: Path) -> Path:
-    """Deprecated: Use tmp_cache_dir instead. Kept for backward compatibility."""
-    return tmp_cache_dir
-
-
 # --- Logger ---
 
 
@@ -220,44 +214,3 @@ def sample_holiday_data() -> list[dict[str, Any]]:
             "is_off_day": True,
         },
     ]
-
-
-@pytest.fixture
-def sample_v1_state() -> dict[str, Any]:
-    """Sample v1 state data for migration testing."""
-    return {
-        "date": "2026-02-04",
-        "timestamp": "2026-02-04T10:00:00+08:00",
-        "filename": "moyuren_20260204.jpg",
-        "weekday": "星期三",
-        "lunar_date": "正月初七",
-        "fun_content": {"title": "🐟 摸鱼小贴士", "content": "工作再忙，也要记得摸鱼。"},
-        "is_crazy_thursday": False,
-    }
-
-
-@pytest.fixture
-def sample_v2_state() -> dict[str, Any]:
-    """Sample v2 state data."""
-    return {
-        "version": 2,
-        "public": {
-            "date": "2026-02-04",
-            "timestamp": "2026-02-04T10:00:00+08:00",
-            "updated": "2026/02/04 10:00:00",
-            "updated_at": 1738634400000,
-            "weekday": "星期三",
-            "lunar_date": "正月初七",
-            "fun_content": None,
-            "is_crazy_thursday": False,
-            "kfc_content": None,
-        },
-        "templates": {
-            "moyuren": {
-                "filename": "moyuren_20260204.jpg",
-                "updated": "2026/02/04 10:00:00",
-                "updated_at": 1738634400000,
-            }
-        },
-        "template_data": {"moyuren": {}},
-    }

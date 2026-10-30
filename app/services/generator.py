@@ -150,8 +150,6 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
                     holidays if isinstance(holidays, list) else [],
                     make_up_workdays if isinstance(make_up_workdays, list) else [],
                 )
-            if isinstance(payload, list):
-                return payload, []
             return [], []
         except Exception as e:
             logger.warning("Failed to fetch holidays: %s", safe_exception_for_log(e))

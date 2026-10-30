@@ -137,8 +137,6 @@ def cached_raw_data(
             result["holidays"] = holidays
         if isinstance(make_up_workdays, list):
             result["make_up_workdays"] = make_up_workdays
-    elif isinstance(cached_holidays, list):
-        result["holidays"] = cached_holidays
 
     cached_fun = _load_cache(services.fun_content_service, "fun_content", logger)
     if isinstance(cached_fun, dict):

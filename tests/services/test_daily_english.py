@@ -890,25 +890,6 @@ class TestSQLiteBackendClose:
 class TestBuildDictBackend:
     """Tests for build_dict_backend factory function."""
 
-    @pytest.mark.parametrize(
-        ("db_path", "expected"),
-        [
-            ("ecdict/stardict.db", "/tmp/c/ecdict/stardict.db"),
-            ("cache/ecdict/stardict.db", "/tmp/c/ecdict/stardict.db"),
-            ("/opt/ecdict/stardict.db", "/opt/ecdict/stardict.db"),
-        ],
-    )
-    def test_build_resolves_db_path(
-        self, db_path: str, expected: str, logger: logging.Logger
-    ) -> None:
-        """Test the factory passes the resolved path to the SQLite backend."""
-        config = SQLiteBackendConfig(db_path=db_path)
-
-        backend = build_dict_backend(config, [], logger, cache_dir="/tmp/c")
-
-        assert isinstance(backend, SQLiteBackend)
-        assert backend._db_path == Path(expected)
-
     def test_build_sqlite_backend(
         self, sqlite_backend_config: SQLiteBackendConfig, logger: logging.Logger
     ) -> None:
@@ -916,15 +897,6 @@ class TestBuildDictBackend:
         backend = build_dict_backend(sqlite_backend_config, [], logger)
 
         assert isinstance(backend, SQLiteBackend)
-
-    def test_unknown_type_raises_error(self, logger: logging.Logger) -> None:
-        """Test NotImplementedError for unknown backend type."""
-        # Create a mock config that's not SQLiteBackendConfig
-        mock_config = MagicMock()
-        mock_config.__class__.__name__ = "UnknownBackendConfig"
-
-        with pytest.raises(NotImplementedError, match="UnknownBackendConfig"):
-            build_dict_backend(mock_config, [], logger)  # type: ignore
 
 
 # =============================================================================

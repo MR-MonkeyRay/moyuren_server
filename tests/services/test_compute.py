@@ -610,49 +610,32 @@ class TestComputeNewsListEdgeCases:
         assert result[0] == {"num": 1, "text": "新闻1"}
         assert result[2] == {"num": 3, "text": "新闻3"}
 
-    def test_news_list_legacy_list_format(self, aggregator: DomainDataAggregator) -> None:
-        """Test _compute_news_list with legacy list format."""
-        raw_data = {"news": [{"text": "旧闻1"}, {"text": "旧闻2"}]}
-        result = aggregator._compute_news_list(raw_data)
-        assert len(result) == 2
-        assert result[0] == {"num": 1, "text": "旧闻1"}
-
-    def test_news_list_legacy_string_items(self, aggregator: DomainDataAggregator) -> None:
-        """Test _compute_news_list legacy format with string items."""
-        raw_data = {"news": ["字符串新闻1", "字符串新闻2"]}
-        result = aggregator._compute_news_list(raw_data)
-        assert result[0]["text"] == "字符串新闻1"
-
-    def test_news_meta_with_updated(self, aggregator: DomainDataAggregator) -> None:
-        """Test _compute_news_meta extracts metadata."""
-        raw_data = {
-            "news": {
-                "data": {
-                    "updated": "2026-02-04 10:30:00 CST",
-                    "date": "2026-02-04",
-                    "updated_at": "10:30",
-                }
-            }
+    @pytest.mark.parametrize("include_source_time", [False, True])
+    def test_news_meta_prefers_source_time_then_api_refresh_time(
+        self, aggregator: DomainDataAggregator, include_source_time: bool
+    ) -> None:
+        """Source and API refresh timestamps coexist in current upstream responses."""
+        data: dict[str, Any] = {
+            "date": "2026-02-04",
+            "api_updated": "2026-02-04T11:00:00+08:00",
+            "api_updated_at": 1770174000000,
         }
-        result = aggregator._compute_news_meta(raw_data)
-        assert result["date"] == "2026-02-04"
-        assert result["updated"] is not None
-        assert result["updated_at"] == "10:30"
+        if include_source_time:
+            data.update({
+                "updated": "2026-02-04T10:30:00+08:00",
+                "updated_at": 1770172200000,
+            })
 
-    def test_news_meta_with_api_updated_fallback(self, aggregator: DomainDataAggregator) -> None:
-        """Test _compute_news_meta falls back to api_updated."""
-        raw_data = {
-            "news": {
-                "data": {
-                    "api_updated": "2026-02-04 10:30:00 CST",
-                    "date": "2026-02-04",
-                    "api_updated_at": "10:30",
-                }
-            }
+        result = aggregator._compute_news_meta({"news": {"data": data}})
+
+        assert result == {
+            "date": "2026-02-04",
+            "updated": (
+                "2026-02-04T10:30:00+08:00" if include_source_time
+                else "2026-02-04T11:00:00+08:00"
+            ),
+            "updated_at": 1770172200000 if include_source_time else 1770174000000,
         }
-        result = aggregator._compute_news_meta(raw_data)
-        assert result["updated"] is not None
-        assert result["updated_at"] == "10:30"
 
     def test_news_meta_empty_when_no_news(self, aggregator: DomainDataAggregator) -> None:
         """Test _compute_news_meta returns empty dict when no news data."""
@@ -1035,7 +1018,7 @@ def test_holiday_templates_distinguish_festivals_from_makeup_work_days(
 
 
 class TestDataComputer:
-    """Tests for DataComputer backward-compatible wrapper."""
+    """Tests for template-context computation."""
 
     def test_compute_uses_provided_snapshot(self) -> None:
         """Test that computation uses the supplied date without reading the clock."""
@@ -1136,23 +1119,6 @@ class TestDataComputer:
         assert raw_data["news"]["data"]["news"][0] == "abcdefgh"
         assert raw_data["daily_english"]["definition"] == "definition text"
         assert raw_data["holidays"][0]["name"] == "Long Holiday"
-
-    @patch("app.services.compute.CalendarService.get_upcoming_solar_festivals", return_value=[])
-    @patch("app.services.compute.CalendarService.get_upcoming_lunar_festivals", return_value=[])
-    def test_legacy_news_caps_and_short_text_is_untouched(
-        self, mock_lunar: Any, mock_solar: Any
-    ) -> None:
-        """Legacy news uses the same item/count caps without changing short strings."""
-        limits = TextLimitsConfig(news_item=5, news_items=2)
-        result = DataComputer(text_limits=limits).compute(
-            {"news": [{"text": "short"}, {"text": "toolong"}, {"text": "ignored"}]},
-            now=datetime(2026, 2, 4, 10, tzinfo=timezone(timedelta(hours=8))),
-        )
-
-        assert result["news_list"] == [
-            {"num": 1, "text": "short"},
-            {"num": 2, "text": "tool…"},
-        ]
 
     @patch("app.services.compute.CalendarService.get_upcoming_solar_festivals", return_value=[])
     @patch("app.services.compute.CalendarService.get_upcoming_lunar_festivals", return_value=[])

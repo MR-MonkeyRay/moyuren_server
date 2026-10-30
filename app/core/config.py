@@ -48,25 +48,6 @@ def _normalize_hostname(value: str) -> str:
     return hostname
 
 
-_LEGACY_STOCK_INDEX_DEFAULTS: dict[str, tuple[str, str]] = {
-    "000001": ("上证指数", "A"),
-    "399001": ("深证成指", "A"),
-    "399006": ("创业板指", "A"),
-    "HSI": ("恒生指数", "HK"),
-    "DJIA": ("道琼斯", "US"),
-}
-
-_STOCK_INDEX_PREFIX_MARKETS: dict[str, str] = {
-    "0": "A",
-    "1": "A",
-    "116": "HK",
-    "100": "US",
-    "105": "US",
-    "106": "US",
-    "107": "US",
-}
-
-
 class ServerConfig(BaseModel):
     """Server configuration."""
 
@@ -465,28 +446,6 @@ class HolidaySource(DataSourceBase):
 
     type: Literal["holiday"] = "holiday"
 
-    @model_validator(mode="before")
-    @classmethod
-    def migrate_mirror_urls(cls, data: Any) -> Any:
-        """兼容并移除已废弃的节假日镜像配置.
-
-        Args:
-            data: Pydantic 传入的原始配置数据.
-
-        Returns:
-            移除 mirror_urls 后的原始配置数据, 或非 dict 数据原样返回.
-
-        Side Effects:
-            检测到 mirror_urls 时写入弃用 warning 日志并从数据中移除该字段.
-        """
-        if isinstance(data, dict) and "mirror_urls" in data:
-            logging.getLogger(__name__).warning(
-                "HolidaySource.mirror_urls is deprecated. "
-                "Use top-level network.ghproxy_urls instead."
-            )
-            data.pop("mirror_urls")
-        return data
-
 
 class SQLiteBackendConfig(BaseModel):
     """SQLite dictionary backend configuration."""
@@ -499,7 +458,7 @@ class SQLiteBackendConfig(BaseModel):
     checksum_sha256: str = ""
 
     def resolve_db_path(self, cache_dir: str | Path) -> Path:
-        """解析词典数据库路径，兼容旧配置中的 cache/ 前缀.
+        """解析绝对数据库路径或相对于缓存根目录的路径.
 
         Args:
             cache_dir: 配置中的缓存根目录.
@@ -510,15 +469,7 @@ class SQLiteBackendConfig(BaseModel):
         db_path = Path(self.db_path)
         if db_path.is_absolute():
             return db_path
-        if db_path.parts and db_path.parts[0] == "cache":
-            db_path = Path(*db_path.parts[1:])
         return Path(cache_dir) / db_path
-
-
-DictBackendConfig = Annotated[
-    SQLiteBackendConfig,  # Future: | CsvBackendConfig | PostgresBackendConfig
-    Field(discriminator="type"),
-]
 
 
 class DailyEnglishSource(DataSourceBase):
@@ -530,7 +481,7 @@ class DailyEnglishSource(DataSourceBase):
     difficulty_range: list[int] = Field(default_factory=lambda: [3, 5])
     max_retries: int = 10
     api_failure_threshold: int = 3
-    backend: DictBackendConfig = Field(default_factory=SQLiteBackendConfig)
+    backend: SQLiteBackendConfig = Field(default_factory=SQLiteBackendConfig)
 
     @field_validator("difficulty_range")
     @classmethod
@@ -649,7 +600,7 @@ class StockIndexSource(DataSourceBase):
 
     type: Literal["stock_index"] = "stock_index"
     quote_url: str
-    secids: list[StockIndexItem]
+    secids: list[StockIndexItem] = Field(min_length=1)
     market_timezones: dict[str, str]
     cache_ttl_sec: int = 60
 
@@ -670,52 +621,6 @@ class StockIndexSource(DataSourceBase):
         if not value:
             raise ValueError("quote_url cannot be empty")
         return value
-
-    @field_validator("secids", mode="before")
-    @classmethod
-    def normalize_secids(cls, value: Any) -> Any:
-        """将旧字符串格式与对象格式统一为指数配置对象.
-
-        Args:
-            value: 股票指数 secid 配置列表.
-
-        Returns:
-            标准化后的指数配置对象列表.
-
-        Raises:
-            ValueError: 列表为空或旧格式无法推断市场时抛出.
-        """
-        if not value:
-            raise ValueError("secids cannot be empty")
-        if not isinstance(value, list):
-            return value
-
-        normalized: list[Any] = []
-        for item in value:
-            if not isinstance(item, str):
-                normalized.append(item)
-                continue
-            if not _STOCK_INDEX_SECID_PATTERN.fullmatch(item):
-                raise ValueError(
-                    "secid must match '<market_prefix>.<code>' "
-                    "using only letters and digits"
-                )
-            prefix, code = item.split(".", 1)
-            default = _LEGACY_STOCK_INDEX_DEFAULTS.get(code)
-            if default is None:
-                market = _STOCK_INDEX_PREFIX_MARKETS.get(prefix)
-                if market is None:
-                    raise ValueError(
-                        f"cannot infer market for legacy secid '{item}'; "
-                        "use object form with secid, name, and market"
-                    )
-                name = code
-            else:
-                name, market = default
-            normalized.append(
-                {"secid": item, "code": code, "name": name, "market": market}
-            )
-        return normalized
 
     @field_validator("market_timezones")
     @classmethod
@@ -1294,7 +1199,7 @@ def _default_notify_triggers() -> list[NotifyTrigger]:
 
 
 class _FilteredEnvSettingsSource(PydanticBaseSettingsSource):
-    """Filter environment names and migrate known legacy keys before parsing."""
+    """Filter environment names to known prefixed sections and direct fields."""
 
     def __init__(self, source: EnvSettingsSource) -> None:
         super().__init__(source.settings_cls)
@@ -1309,15 +1214,12 @@ class _FilteredEnvSettingsSource(PydanticBaseSettingsSource):
         source = self.source
         prefix = source.env_prefix
         canonical_names: set[str] = set()
-        legacy_fields: dict[str, tuple[str, str]] = {}
         for section, field in self.settings_cls.model_fields.items():
             canonical_names.add(f"{prefix}{section}")
             model = field.annotation
             if isinstance(model, type) and issubclass(model, BaseModel):
                 for key in model.model_fields:
-                    name = f"{section}_{key}"
-                    legacy_fields[name] = (section, key)
-                    canonical_names.add(f"{prefix}{name}")
+                    canonical_names.add(f"{prefix}{section}_{key}")
 
         if not source.case_sensitive:
             canonical_names = {name.lower() for name in canonical_names}
@@ -1327,20 +1229,6 @@ class _FilteredEnvSettingsSource(PydanticBaseSettingsSource):
             for name, value in source.env_vars.items()
             if name in canonical_names
         }
-        for name, (section, key) in legacy_fields.items():
-            canonical = f"{prefix}{name}"
-            if not source.case_sensitive:
-                canonical = canonical.lower()
-            if name not in source.env_vars or canonical in filtered:
-                continue
-            if key in self.current_state.get(section, {}):
-                continue
-            filtered[canonical] = source.env_vars[name]
-            logging.getLogger("moyuren").warning(
-                "Environment variable %s is deprecated; use %s instead.",
-                name.upper(),
-                canonical.upper(),
-            )
         source.env_vars = filtered
         return source()
 

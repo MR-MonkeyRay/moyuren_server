@@ -17,15 +17,15 @@ class _FailingDataFetcher:
     def __init__(self, *args, **kwargs):
         self.kwargs = kwargs
 
-    async def fetch_all(self):
+    async def fetch(self):
         raise RuntimeError(
             "failed https://user:pass@example.com/path?token=secret#frag"
         )
 
 
 class _SuccessfulDataFetcher:
-    async def fetch_all(self) -> dict[str, Any]:
-        return {}
+    async def fetch(self) -> dict[str, Any] | None:
+        return None
 
 
 class _AsyncService:

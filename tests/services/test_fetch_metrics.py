@@ -251,7 +251,7 @@ async def test_stock_index_records_each_outcome(outcome: str) -> None:
     """股票服务的独立缓存与降级分支使用统一来源指标。"""
     config = StockIndexSource(
         quote_url="https://stock.example.com/quote",
-        secids=["1.000001"],
+        secids=[{"secid": "1.000001", "name": "上证指数", "market": "A"}],
         cache_ttl_sec=60,
         market_timezones={"A": "Asia/Shanghai"},
     )
@@ -288,8 +288,8 @@ def test_instance_metrics_use_credential_free_bounded_endpoint(
 ) -> None:
     """实例指标仅使用 scheme、host 与 port 作为标签。"""
     router = InstanceRouter(logger, failure_threshold=2, cooldown_sec=60)
-    url = "https://user:secret@example.com:8443/private/path?token=hidden"
-    labels = {"endpoint": "https://example.com:8443"}
+    url = "https://user:secret@metrics.example.test:8443/private/path?token=hidden"
+    labels = {"endpoint": "https://metrics.example.test:8443"}
 
     router.mark_failure(url)
     assert _sample("moyuren_instance_consecutive_failures", labels) == 1.0
@@ -306,6 +306,6 @@ def test_instance_metrics_use_credential_free_bounded_endpoint(
         sample.labels["endpoint"]
         for metric in (instance_consecutive_failures, instance_cooling_down)
         for sample in metric.collect()[0].samples
-        if "endpoint" in sample.labels and "example.com" in sample.labels["endpoint"]
+        if "endpoint" in sample.labels and "metrics.example.test" in sample.labels["endpoint"]
     }
-    assert endpoint_labels == {"https://example.com:8443"}
+    assert endpoint_labels == {"https://metrics.example.test:8443"}

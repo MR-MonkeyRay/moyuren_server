@@ -22,7 +22,10 @@ class TestStockIndexService:
         """Create a sample stock index configuration."""
         return StockIndexSource(
             quote_url="https://api.example.com/quote",
-            secids=["1.000001", "0.399001"],
+            secids=[
+                {"secid": "1.000001", "name": "上证指数", "market": "A"},
+                {"secid": "0.399001", "name": "深证成指", "market": "A"},
+            ],
             timeout_sec=5,
             market_timezones={"A": "Asia/Shanghai", "HK": "Asia/Hong_Kong", "US": "America/New_York"},
             cache_ttl_sec=60,

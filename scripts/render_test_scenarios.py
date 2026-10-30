@@ -340,7 +340,7 @@ async def get_base_template_data(
     Returns:
         已经经过 ``DataComputer`` 计算的模板上下文字典。
     """
-    raw_data = await data_fetcher.fetch_all()
+    raw_data = {"news": await data_fetcher.fetch()}
     raw_data["make_up_workdays"] = []
 
     try:

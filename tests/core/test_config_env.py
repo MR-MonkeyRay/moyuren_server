@@ -1,6 +1,5 @@
-"""Tests for configuration environment overrides and legacy migration."""
+"""Tests for prefixed configuration environment overrides and source precedence."""
 
-import logging
 import os
 import shutil
 from pathlib import Path
@@ -38,6 +37,8 @@ def test_unrelated_variables_are_ignored(
         "MOYUREN_SCHEDULER_UNKNOWN": "not-json",
         "COMPOSE_PROJECT_NAME": "moyu",
         "DATA_SOURCES_URL": "not-json",
+        "MOYUREN_TEMPLATES_CONFIG_JPEG_QUALITY": "not-an-int",
+        "MOYUREN_DATA_SOURCES_NEWS": "not-json",
     }
     if use_dotenv:
         Path(".env").write_text(
@@ -55,7 +56,7 @@ def test_unrelated_variables_are_ignored(
 
 
 @pytest.mark.parametrize("use_dotenv", [False, True])
-@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("prefixed", [False, True])
 @pytest.mark.parametrize(
     ("name", "value", "section", "key", "expected"),
     [
@@ -126,13 +127,14 @@ def test_known_overrides(
     section: str,
     key: str,
     expected: object,
-    legacy: bool,
+    prefixed: bool,
     use_dotenv: bool,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Parse known nested keys and warn once only when using a legacy name."""
-    variable = name if legacy else f"MOYUREN_{name}"
+    """Only known prefixed direct-field names override YAML in either source."""
+    baseline = load_config()
+    variable = f"MOYUREN_{name}" if prefixed else name
     if use_dotenv:
         Path(".env").write_text(f"{variable}='{value}'\n", encoding="utf-8")
     else:
@@ -140,41 +142,31 @@ def test_known_overrides(
 
     config = load_config()
 
-    assert getattr(getattr(config, section), key) == expected
-    if legacy:
-        assert len(caplog.records) == 1
-        record = caplog.records[0]
-        assert record.name == "moyuren"
-        assert record.levelno == logging.WARNING
-        assert record.getMessage() == (
-            f"Environment variable {name} is deprecated; use MOYUREN_{name} instead."
-        )
-        assert value not in record.getMessage()
-    else:
-        assert not caplog.records
+    actual = getattr(getattr(config, section), key)
+    assert actual == (expected if prefixed else getattr(getattr(baseline, section), key))
+    assert not caplog.records
 
 
 @pytest.mark.parametrize(
-    ("env", "dotenv", "expected", "warn"),
+    ("env", "dotenv", "expected"),
     [
-        ({"MOYUREN_SERVER_PORT": "8123", "SERVER_PORT": "invalid"}, {}, 8123, False),
-        ({}, {"MOYUREN_SERVER_PORT": "8123", "SERVER_PORT": "invalid"}, 8123, False),
-        ({"MOYUREN_SERVER_PORT": "8123"}, {"SERVER_PORT": "invalid"}, 8123, False),
-        ({"SERVER_PORT": "8124"}, {"MOYUREN_SERVER_PORT": "8125"}, 8124, True),
-        ({"SERVER_PORT": "8124"}, {"SERVER_PORT": "invalid"}, 8124, True),
-        ({"MOYUREN_SERVER_PORT": "8123"}, {"MOYUREN_SERVER_PORT": "8125"}, 8123, False),
-        ({}, {"SERVER_PORT": "8124"}, 8124, True),
+        ({"MOYUREN_SERVER_PORT": "8123", "SERVER_PORT": "invalid"}, {}, 8123),
+        ({}, {"MOYUREN_SERVER_PORT": "8123", "SERVER_PORT": "invalid"}, 8123),
+        ({"MOYUREN_SERVER_PORT": "8123"}, {"SERVER_PORT": "invalid"}, 8123),
+        ({"SERVER_PORT": "8124"}, {"MOYUREN_SERVER_PORT": "8125"}, 8125),
+        ({"SERVER_PORT": "8124"}, {"SERVER_PORT": "invalid"}, 8000),
+        ({"MOYUREN_SERVER_PORT": "8123"}, {"MOYUREN_SERVER_PORT": "8125"}, 8123),
+        ({}, {"SERVER_PORT": "8124"}, 8000),
     ],
 )
 def test_source_precedence(
     env: dict[str, str],
     dotenv: dict[str, str],
     expected: int,
-    warn: bool,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Prefer process env to dotenv, and canonical names within each source."""
+    """Prefer prefixed process env to dotenv and ignore every unprefixed value."""
     for name, value in env.items():
         monkeypatch.setenv(name, value)
     Path(".env").write_text(
@@ -183,7 +175,7 @@ def test_source_precedence(
     )
 
     assert load_config().server.port == expected
-    assert len(caplog.records) == int(warn)
+    assert not caplog.records
 
 
 def test_sources_merge_individual_fields(
@@ -191,14 +183,59 @@ def test_sources_merge_individual_fields(
 ) -> None:
     """Preserve lower-priority overrides for different keys in the same section."""
     monkeypatch.setenv("MOYUREN_SERVER_PORT", "8123")
-    Path(".env").write_text("SERVER_HOST=127.0.0.1\n", encoding="utf-8")
+    Path(".env").write_text("MOYUREN_SERVER_HOST=127.0.0.1\n", encoding="utf-8")
 
     config = load_config()
 
     assert config.server.port == 8123
     assert config.server.host == "127.0.0.1"
-    assert len(caplog.records) == 1
-    assert "SERVER_HOST is deprecated" in caplog.records[0].getMessage()
+    assert not caplog.records
+
+
+def test_prefixed_sections_merge_with_direct_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """JSON sections retain source precedence and nested direct-field overrides."""
+    monkeypatch.setenv("MOYUREN_SERVER", '{"port": 8123}')
+    monkeypatch.setenv("MOYUREN_TEMPLATES_CONFIG", '{"jpeg_quality": 71}')
+    monkeypatch.setenv("MOYUREN_SERVER_PORT", "8124")
+    Path(".env").write_text(
+        'MOYUREN_SERVER=\'{"port": 8125, "host": "127.0.0.1"}\'\n',
+        encoding="utf-8",
+    )
+
+    config = load_config()
+
+    assert config.server.port == 8124
+    assert config.server.host == "127.0.0.1"
+    assert config.server.base_domain == "http://127.0.0.1:8000"
+    assert config.templates.config.jpeg_quality == 71
+
+
+@pytest.mark.parametrize("use_dotenv", [False, True])
+def test_prefixed_data_sources_json_replaces_yaml_list(
+    use_dotenv: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Whole-list JSON overrides stay supported without index-based variables."""
+    value = '[{"type": "holiday", "enabled": false}]'
+    if use_dotenv:
+        Path(".env").write_text(f"MOYUREN_DATA_SOURCES='{value}'\n", encoding="utf-8")
+    else:
+        monkeypatch.setenv("MOYUREN_DATA_SOURCES", value)
+
+    config = load_config()
+
+    assert len(config.data_sources) == 1
+    assert config.data_sources[0].type == "holiday"
+    assert config.data_sources[0].enabled is False
+
+
+def test_invalid_prefixed_value_is_not_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Filtering must not hide validation errors in supported environment keys."""
+    monkeypatch.setenv("MOYUREN_SERVER_PORT", "not-an-int")
+
+    with pytest.raises(ValueError, match="int_parsing"):
+        load_config()
 
 
 @pytest.mark.parametrize("nested", [False, True])

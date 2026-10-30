@@ -193,16 +193,6 @@ class DataFetcher:
         )
         return None
 
-    async def fetch_all(self) -> dict[str, dict[str, Any] | None]:
-        """Fetch data and return in legacy format for backward compatibility.
-
-        Returns:
-            A dictionary mapping source name to fetched data.
-        """
-        self.logger.info("Fetching news data")
-        result = await self.fetch()
-        return {"news": result}
-
 
 class CachedDataFetcher(DailyCache[dict[str, Any]]):
     """带日级缓存的数据获取器。
@@ -307,12 +297,8 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
             获取的数据字典，如果获取失败返回 None
         """
         try:
-            result = await self._fetcher.fetch_all()
-            # 检查 fetch_all 返回的数据是否有效
-            # fetch_all 返回 {"news": <data>}，如果 <data> 是 None 说明获取失败
-            if result is not None and result.get("news") is None:
-                return None
-            return result
+            result = await self._fetcher.fetch()
+            return {"news": result} if result is not None else None
         except Exception as e:
             self.logger.error("Failed to fetch data: %s", e)
             return None

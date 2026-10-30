@@ -92,9 +92,7 @@ async def test_sample_is_private_and_side_effect_free(
     assert response.content == JPEG
     assert response.headers["content-type"] == "image/jpeg"
     assert response.headers["cache-control"] == "no-store"
-    assert "deprecation" not in response.headers
     assert get_response.status_code == 405
-    assert "deprecation" not in get_response.headers
     assert list(tmp_path.rglob("*")) == before
     compute = preview_app.state.services.data_computer.compute
     now = compute.call_args.kwargs["now"]

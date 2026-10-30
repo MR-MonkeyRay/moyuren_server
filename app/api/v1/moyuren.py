@@ -443,14 +443,6 @@ def _get_image_path(
     return image_path, None
 
 
-def _configured_formats(render_config: object) -> list[str]:
-    """Return configured formats while tolerating legacy test doubles."""
-    formats = getattr(render_config, "output_formats", ["jpeg"])
-    if not isinstance(formats, list):
-        return ["jpeg"]
-    return formats
-
-
 def _select_variant_width(
     requested_width: int | None, original_width: int, configured_widths: list[int]
 ) -> int:
@@ -519,7 +511,7 @@ async def _resolve_image_variant(
 
     render_config = config.get_templates_config().config
     selected_format: ImageFormat = image_format or "jpeg"
-    if selected_format not in _configured_formats(render_config):
+    if selected_format not in render_config.output_formats:
         return JSONResponse(
             content=error_response(
                 code=ErrorCode.API_INVALID_PARAMETER,
@@ -539,10 +531,7 @@ async def _resolve_image_variant(
             ),
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-    configured_widths = getattr(render_config, "output_widths", [])
-    if not isinstance(configured_widths, list):
-        configured_widths = []
-    available_widths = configured_widths + _recorded_widths(
+    available_widths = render_config.output_widths + _recorded_widths(
         data, template, selected_format
     )
     selected_width = _select_variant_width(width, original_width, available_widths)
@@ -673,8 +662,8 @@ async def get_moyuren(
         )
     config = request.app.state.config
     requested_format = format or "jpeg"
-    if encode in {"image", "url"} and requested_format not in _configured_formats(
-        config.get_templates_config().config
+    if encode in {"image", "url"} and requested_format not in (
+        config.get_templates_config().config.output_formats
     ):
         return JSONResponse(
             content=error_response(

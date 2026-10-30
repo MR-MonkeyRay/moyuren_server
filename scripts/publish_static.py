@@ -460,9 +460,8 @@ async def main() -> None:
         logger.info("Starting artifact generation...")
 
         try:
-            # 1. Fetch data (same as render_once.py:92-134)
-            raw_data = await data_fetcher.fetch_all()
-            logger.info("Fetched data from %s endpoints", len(raw_data))
+            # 1. Fetch news
+            raw_data = {"news": await data_fetcher.fetch()}
 
             # 1.1 Fetch holiday data
             raw_data["holidays"] = []

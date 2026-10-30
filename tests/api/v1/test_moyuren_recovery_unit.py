@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, Response
 
 from app.api.v1.moyuren import get_moyuren
+from app.core.config import TemplateRenderConfig
 from app.core.errors import StorageError
 from app.core.services import AppServices
 from app.services.generator import GenerationBusyError
@@ -27,6 +28,7 @@ def api_request(tmp_path: Path, mock_services: AppServices) -> Request:
     config.server.base_domain = "http://localhost:8000"
     config.get_templates_config.return_value.items = [MagicMock(name="moyuren")]
     config.get_templates_config.return_value.items[0].name = "moyuren"
+    config.get_templates_config.return_value.config = TemplateRenderConfig()
     app.state.config = config
     app.state.services = mock_services
     app.state.logger = logging.getLogger("test.moyuren.recovery")

@@ -520,14 +520,12 @@ class DomainDataAggregator:
             festivals = CalendarService.get_festivals(today)
 
         return {
-            # Existing fields (backwards compatible)
             "year_month": now.strftime("%Y.%m"),
             "day": str(now.day),
             "week_cn": self._WEEK_CN[weekday],
             "week_en": self._WEEK_EN[weekday],
             "lunar_year": lunar_info["lunar_year"],
             "lunar_date": lunar_info["lunar_date"],
-            # New fields
             "zodiac": lunar_info["zodiac"],
             "constellation": CalendarService.get_constellation(today),
             "moon_phase": CalendarService.get_moon_phase(today),
@@ -751,7 +749,7 @@ class DomainDataAggregator:
             List of news items.
         """
         news_data = raw_data.get("news")
-        # Handle new API format: { code, data: { news: [...] } }
+        # Fetchers normalize primary, instance and mirror responses to this envelope.
         if isinstance(news_data, dict):
             data = news_data.get("data")
             if isinstance(data, dict):
@@ -764,18 +762,6 @@ class DomainDataAggregator:
                         }
                         for i, item in enumerate(news_items[: self._text_limits.news_items])
                     ]
-        # Handle legacy format: [{ text: "..." }, ...]
-        if news_data and isinstance(news_data, list):
-            result: list[dict[str, Any]] = []
-            for i, item in enumerate(news_data[: self._text_limits.news_items]):
-                text = item.get("text", "") if isinstance(item, dict) else item
-                result.append(
-                    {
-                        "num": i + 1,
-                        "text": self._truncate(str(text), self._text_limits.news_item),
-                    }
-                )
-            return result
         return self._default_news()
 
     def _compute_news_meta(self, raw_data: dict[str, Any]) -> dict[str, Any]:
@@ -791,7 +777,7 @@ class DomainDataAggregator:
         if isinstance(news_data, dict):
             data = news_data.get("data")
             if isinstance(data, dict):
-                # 兼容新旧字段名：优先使用 updated，回退到 api_updated
+                # Prefer source publication time; API refresh time is a distinct upstream field.
                 updated_str = data.get("updated") or data.get("api_updated")
                 # 规范化为 RFC3339 格式
                 normalized_updated = normalize_datetime(updated_str) if updated_str else None
@@ -1104,7 +1090,7 @@ class TemplateAdapter:
 
 
 class DataComputer:
-    """Backward compatible wrapper for data computation."""
+    """Compute a template context and freshness from one business-time snapshot."""
 
     def __init__(
         self,
