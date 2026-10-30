@@ -264,6 +264,29 @@ class CalendarService:
     """Wrapper for tyme4py library to provide calendar data."""
 
     @staticmethod
+    def get_current_solar_term(dt: date) -> str | None:
+        """返回当天所在节气区间的名称，与展示用的下个节气倒计时区分。"""
+        try:
+            return str(SolarDay.from_ymd(dt.year, dt.month, dt.day).get_term().get_name())
+        except Exception as e:
+            logger.warning("Failed to get current solar term for %s: %s", dt, e)
+            return None
+
+    @staticmethod
+    def is_spring_festival_period(dt: date) -> bool:
+        """判断是否在除夕至正月十五（含首尾），排除闰正月。"""
+        try:
+            solar = SolarDay.from_ymd(dt.year, dt.month, dt.day)
+            lunar = solar.get_lunar_day()
+            if lunar.get_month() == 1 and lunar.get_day() <= 15:
+                return True
+            tomorrow = solar.next(1).get_lunar_day()
+            return bool(tomorrow.get_month() == 1 and tomorrow.get_day() == 1)
+        except Exception as e:
+            logger.warning("Failed to check spring festival period for %s: %s", dt, e)
+            return False
+
+    @staticmethod
     def get_lunar_info(dt: date) -> dict[str, str]:
         """Get lunar calendar information.
 

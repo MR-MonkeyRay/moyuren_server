@@ -11,7 +11,7 @@ import pytest
 
 import app.core.bootstrap as bootstrap_module
 from app.core.bootstrap import build_services, register_scheduled_jobs, warmup_daily_cache
-from app.core.config import AppConfig, HolidaySource, TextLimitsConfig
+from app.core.config import AppConfig, HolidaySource, TextLimitsConfig, ThemesConfig
 from app.core.scheduler import TaskScheduler
 from app.core.services import AppServices
 
@@ -104,7 +104,9 @@ def test_build_services_leaves_missing_or_disabled_optional_sources_disabled(
         network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),
         instances=SimpleNamespace(),
         templates=SimpleNamespace(
-            config=SimpleNamespace(text_limits=TextLimitsConfig(), work_end_time="18:00")
+            config=SimpleNamespace(
+                text_limits=TextLimitsConfig(), work_end_time="18:00", themes=ThemesConfig()
+            )
         ),
         cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
         data_sources=data_sources,
@@ -170,7 +172,9 @@ def test_build_services_leaves_disabled_daily_english_unconstructed(
         network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),
         instances=SimpleNamespace(),
         templates=SimpleNamespace(
-            config=SimpleNamespace(text_limits=TextLimitsConfig(), work_end_time="18:00")
+            config=SimpleNamespace(
+                text_limits=TextLimitsConfig(), work_end_time="18:00", themes=ThemesConfig()
+            )
         ),
         cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
         get_source=get_source,
@@ -209,7 +213,9 @@ def test_build_services_passes_http_client_to_all_network_services(
         network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),
         instances=SimpleNamespace(),
         templates=SimpleNamespace(
-            config=SimpleNamespace(text_limits=TextLimitsConfig(), work_end_time="18:00")
+            config=SimpleNamespace(
+                text_limits=TextLimitsConfig(), work_end_time="18:00", themes=ThemesConfig()
+            )
         ),
         cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
         get_source=lambda source_type: source,
@@ -227,6 +233,8 @@ def test_build_services_passes_http_client_to_all_network_services(
     ):
         constructors[name] = MagicMock()
         monkeypatch.setattr(bootstrap_module, name, constructors[name])
+    computer_constructor = MagicMock()
+    monkeypatch.setattr(bootstrap_module, "DataComputer", computer_constructor)
     for name in ("ImageRenderer", "CacheCleaner", "ImageGenerator", "build_dict_backend"):
         monkeypatch.setattr(bootstrap_module, name, MagicMock())
 
@@ -237,6 +245,11 @@ def test_build_services_passes_http_client_to_all_network_services(
     else:
         build_services(cast(AppConfig, config), logger)
 
+    computer_constructor.assert_called_once_with(
+        text_limits=config.templates.config.text_limits,
+        work_end_time=config.templates.config.work_end_time,
+        themes=config.templates.config.themes,
+    )
     for constructor in constructors.values():
         constructor.assert_called_once()
         assert constructor.call_args.kwargs["http_client"] is (

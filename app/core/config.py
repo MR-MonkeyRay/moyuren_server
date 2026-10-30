@@ -854,6 +854,39 @@ class TextLimitsConfig(BaseModel):
     holiday_name: int = Field(default=20, gt=0, strict=True)
 
 
+# 按当前节气划分季节；节气当天即进入新的季节。
+SOLAR_TERM_SEASONS: dict[str, str] = {
+    **dict.fromkeys(("立春", "雨水", "惊蛰", "春分", "清明", "谷雨"), "spring"),
+    **dict.fromkeys(("立夏", "小满", "芒种", "夏至", "小暑", "大暑"), "summer"),
+    **dict.fromkeys(("立秋", "处暑", "白露", "秋分", "寒露", "霜降"), "autumn"),
+    **dict.fromkeys(("立冬", "小雪", "大雪", "冬至", "小寒", "大寒"), "winter"),
+}
+
+
+class ThemesConfig(BaseModel):
+    """节假日与节气季节主题选择配置，配色保存在模板 CSS 中。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    festival_themes: dict[str, str] = Field(default_factory=lambda: {
+        "除夕": "spring_festival",
+        "春节": "spring_festival",
+        "元宵节": "spring_festival",
+        "中秋节": "mid_autumn",
+        "国庆节": "national_day",
+    })
+    season_themes: bool = True
+
+    @field_validator("festival_themes")
+    @classmethod
+    def validate_theme_names(cls, value: dict[str, str]) -> dict[str, str]:
+        """主题名直接用于 CSS 类名，仅允许小写字母、数字及下划线。"""
+        if any(re.fullmatch(r"[a-z][a-z0-9_]*", name) is None for name in value.values()):
+            raise ValueError("theme names must match ^[a-z][a-z0-9_]*$")
+        return value
+
+
 class TemplateRenderConfig(BaseModel):
     """Global template render configuration."""
 
@@ -879,6 +912,7 @@ class TemplateRenderConfig(BaseModel):
         "fonts.gstatic.cn",
     ])
     text_limits: TextLimitsConfig = Field(default_factory=TextLimitsConfig)
+    themes: ThemesConfig = Field(default_factory=ThemesConfig)
 
     @field_validator("work_end_time")
     @classmethod

@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from app import __github_url__, __version__
-from app.core.config import TemplateRenderConfig, TextLimitsConfig
+from app.core.config import SOLAR_TERM_SEASONS, TemplateRenderConfig, TextLimitsConfig, ThemesConfig
 from app.services.calendar import CalendarService, get_business_timezone, now_business
 
 logger = logging.getLogger(__name__)
@@ -209,9 +209,11 @@ class DomainDataAggregator:
         self,
         text_limits: TextLimitsConfig | None = None,
         work_end_time: str | None = None,
+        themes: ThemesConfig | None = None,
     ) -> None:
         """Initialize the aggregator with external text limits."""
         self._text_limits = text_limits or TextLimitsConfig()
+        self._themes = themes or ThemesConfig()
         self._work_end_time = (
             TemplateRenderConfig(work_end_time=work_end_time)
             if work_end_time is not None
@@ -261,6 +263,7 @@ class DomainDataAggregator:
         history = self._compute_history(raw_data)
         gold_price = self._compute_gold_price(raw_data)
         next_rest_day = self._compute_next_rest_day(now, raw_data)
+        festivals = CalendarService.get_festivals(now.date())
 
         # 检测降级模式：当多个外部数据源都失败时
         is_fallback_mode = (
@@ -270,7 +273,8 @@ class DomainDataAggregator:
         )
 
         return {
-            "date": self._compute_date(now),
+            "date": self._compute_date(now, festivals),
+            "theme": self._compute_theme(now, raw_data, festivals),
             "weekend": self._compute_weekend(now),
             "next_rest_day": next_rest_day,
             "off_work": self._compute_off_work(now, next_rest_day["is_today_off"]),
@@ -441,7 +445,64 @@ class DomainDataAggregator:
             )
         return result
 
-    def _compute_date(self, now: datetime) -> dict[str, Any]:
+    def _compute_theme(
+        self,
+        now: datetime,
+        raw_data: dict[str, Any],
+        festivals: dict[str, str | None],
+    ) -> dict[str, str | None]:
+        """使用同一业务日期，依次选择法定休假、当日节日、春节期间和节气季节。"""
+        default: dict[str, str | None] = {"name": "default", "source": None, "kind": "default"}
+        if not self._themes.enabled:
+            return default
+
+        today = now.date()
+        mapping = self._themes.festival_themes
+        raw_holidays = raw_data.get("holidays")
+        if isinstance(raw_holidays, list):
+            for holiday in raw_holidays:
+                if not isinstance(holiday, dict):
+                    continue
+                name = holiday.get("name")
+                if not isinstance(name, str) or name not in mapping:
+                    continue
+                off_value = holiday.get("is_off_day", True)
+                is_off = (
+                    off_value.lower() not in ["false", "0", ""]
+                    if isinstance(off_value, str)
+                    else off_value is None or bool(off_value)
+                )
+                if not is_off:
+                    continue
+                try:
+                    start = date.fromisoformat(holiday["start_date"])
+                    end = date.fromisoformat(holiday.get("end_date") or holiday["start_date"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if start <= today <= end:
+                    return {"name": mapping[name], "source": name, "kind": "festival"}
+
+        # tyme 的节日字符串带日期前缀，使用末尾名称，不使用经过长度截断的展示字段。
+        for key in ("festival_lunar", "festival_solar"):
+            festival = festivals.get(key)
+            if isinstance(festival, str):
+                name = festival.rsplit(" ", 1)[-1]
+                if name in mapping:
+                    return {"name": mapping[name], "source": name, "kind": "festival"}
+
+        if "春节" in mapping and CalendarService.is_spring_festival_period(today):
+            return {"name": mapping["春节"], "source": "春节", "kind": "festival"}
+
+        if self._themes.season_themes:
+            term = CalendarService.get_current_solar_term(today)
+            season = SOLAR_TERM_SEASONS.get(term) if term is not None else None
+            if season is not None:
+                return {"name": season, "source": term, "kind": "season"}
+        return default
+
+    def _compute_date(
+        self, now: datetime, festivals: dict[str, str | None] | None = None
+    ) -> dict[str, Any]:
         """Compute date information including lunar calendar data.
 
         Args:
@@ -455,7 +516,8 @@ class DomainDataAggregator:
 
         # Get lunar calendar info from CalendarService
         lunar_info = CalendarService.get_lunar_info(today)
-        festivals = CalendarService.get_festivals(today)
+        if festivals is None:
+            festivals = CalendarService.get_festivals(today)
 
         return {
             # Existing fields (backwards compatible)
@@ -1042,6 +1104,7 @@ class DataComputer:
         adapter: TemplateAdapter | None = None,
         text_limits: TextLimitsConfig | None = None,
         work_end_time: str | None = None,
+        themes: ThemesConfig | None = None,
     ) -> None:
         """Initialize DataComputer with optional aggregator and adapter.
 
@@ -1050,9 +1113,10 @@ class DataComputer:
             adapter: Template adapter instance.
             text_limits: Limits for externally sourced text.
             work_end_time: Configured business-time workday end in HH:MM format.
+            themes: Festival and solar-term-season theme selection rules.
         """
         self._aggregator = aggregator or DomainDataAggregator(
-            text_limits=text_limits, work_end_time=work_end_time
+            text_limits=text_limits, work_end_time=work_end_time, themes=themes
         )
         self._adapter = adapter or TemplateAdapter(text_limits=text_limits)
 

@@ -125,6 +125,21 @@ class TestTemplateDiscovery:
         assert items[0].show_kfc is True  # 默认值
         assert items[0].show_stock is True  # 默认值
 
+    def test_production_templates_have_matching_feature_meta(
+        self, discovery: TemplateDiscovery, global_config: TemplateRenderConfig
+    ) -> None:
+        """两个正式模板声明同一组功能 meta，并如实标注每日英语。"""
+        templates_dir = Path(__file__).resolve().parents[2] / "templates"
+
+        items = {item.name: item for item in discovery.discover(str(templates_dir), global_config)}
+
+        assert items["moyuren"].show_kfc is True
+        assert items["moyuren"].show_stock is True
+        assert items["moyuren"].show_daily_english is False
+        assert items["moyuren_cute"].show_kfc is True
+        assert items["moyuren_cute"].show_stock is True
+        assert items["moyuren_cute"].show_daily_english is True
+
     def test_discover_skips_meta_without_attribute_values(
         self, discovery: TemplateDiscovery, global_config: TemplateRenderConfig, tmp_path: Path
     ) -> None:

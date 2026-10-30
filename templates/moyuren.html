@@ -6,6 +6,7 @@
     <meta name="moyuren:viewport-height" content="1123">
     <meta name="moyuren:show-kfc" content="true">
     <meta name="moyuren:show-stock" content="true">
+    <meta name="moyuren:show-daily-english" content="false">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>摸鱼日历 {{ date.year_month }} - 杂志风格版</title>
     <link rel="stylesheet" href="https://fonts.moyuren.invalid/fonts.css">
@@ -32,7 +33,7 @@
             /* --- 文字系统 (Slate 色系) --- */
             --text-dark: #1E293B;        /* Slate 800 - 重要标题 */
             --text-grey: #475569;        /* Slate 600 - 正文内容 */
-            --text-light: #64748B;       /* Slate 500 - 辅助信息，满足无障碍标准 */
+            --text-light: #5B687A;       /* 辅助信息，满足 WCAG AA */
 
             /* --- 功能色板 --- */
             /* 蓝色 - 信息/序号 */
@@ -40,15 +41,15 @@
             --blue-bg: #EFF6FF;          /* 极淡蓝背景 */
 
             /* 绿色 - 成功/下跌(A股) */
-            --green-main: #059669;       /* Emerald 600 - WCAG AA compliant */
+            --green-main: #047857;       /* Emerald 700 - WCAG AA compliant */
             --green-bg: #ECFDF5;
 
             /* 红色 - 紧急/KFC/上涨(A股) */
-            --red-main: #DC2626;         /* Red 600 - WCAG AA compliant */
+            --red-main: #B91C1C;         /* Red 700 - WCAG AA compliant */
             --red-bg: #FEF2F2;
 
             /* 橙色 - 警告/倒计时 */
-            --orange-main: #EA580C;      /* Orange 600 - WCAG AA compliant */
+            --orange-main: #B83A08;      /* 深橙色，满足 WCAG AA */
             --orange-bg: #FFF7ED;
 
             /* --- 语义化映射（兼容旧变量名） --- */
@@ -77,6 +78,127 @@
             --font-body: 'Moyuren Noto Sans SC', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', 'WenQuanYi Micro Hei', 'Helvetica Neue', Arial, sans-serif;
             --font-title: 'Moyuren LXGW WenKai', 'Moyuren Noto Sans SC', 'LXGW WenKai', 'Noto Sans SC', 'STKaiti', 'KaiTi', 'SimKai', 'FangSong', serif;
             --font-number: 'Moyuren Poppins', 'Poppins', 'Moyuren JetBrains Mono', 'JetBrains Mono', 'Moyuren Noto Sans SC', 'Noto Sans SC', 'SF Mono', 'Consolas', 'Helvetica Neue', Arial, sans-serif;
+        }
+
+        /* 节日主题更鲜明；正文/纸张 #3B1717/#FFF7ED，满足 WCAG AA */
+        body.theme-spring_festival {
+            --bg-body: #F7DED8;
+            --bg-paper: #FFF7ED;
+            --text-dark: #3B1717;
+            --text-grey: #684037;
+            --text-light: #76554D;
+            --blue-main: #9F1239;
+            --blue-bg: #FFF1F2;
+            --red-main: #B91C1C;
+            --red-bg: #FEF2F2;
+            --green-main: #047857;
+            --orange-main: #9A3412;
+            --orange-bg: #FFFBEB;
+        }
+
+        /* 中秋暖金配靛蓝；正文/纸张 #25213D/#FFF8E7，满足 WCAG AA */
+        body.theme-mid_autumn {
+            --bg-body: #E8E3F0;
+            --bg-paper: #FFF8E7;
+            --text-dark: #25213D;
+            --text-grey: #514B66;
+            --text-light: #686078;
+            --blue-main: #4338CA;
+            --blue-bg: #EEF2FF;
+            --red-main: #B91C1C;
+            --red-bg: #FFF1F2;
+            --green-main: #047857;
+            --orange-main: #9A4D08;
+            --orange-bg: #FFFBEB;
+        }
+
+        /* 国庆红色强调；正文/纸张 #351515/#FFF8F5，满足 WCAG AA */
+        body.theme-national_day {
+            --bg-body: #F3D8D5;
+            --bg-paper: #FFF8F5;
+            --text-dark: #351515;
+            --text-grey: #68413D;
+            --text-light: #785B56;
+            --blue-main: #A11212;
+            --blue-bg: #FFF1F2;
+            --red-main: #B91C1C;
+            --red-bg: #FEF2F2;
+            --green-main: #047857;
+            --orange-main: #9A3412;
+            --orange-bg: #FFF7ED;
+        }
+
+        /* 春季嫩绿微调；正文/纸张 #1E382C/#F4FBF5，满足 WCAG AA */
+        body.theme-spring {
+            --bg-body: #DCE9DF;
+            --bg-paper: #F4FBF5;
+            --text-dark: #1E382C;
+            --text-grey: #476052;
+            --text-light: #53685A;
+            --blue-main: #25633E;
+            --blue-bg: #ECFDF3;
+            --red-main: #B91C1C;
+            --green-main: #047857;
+            --orange-main: #A3480B;
+            --orange-bg: #FFF7ED;
+        }
+
+        /* 夏季湖蓝微调；正文/纸张 #153548/#F2FAFC，满足 WCAG AA */
+        body.theme-summer {
+            --bg-body: #D8E8EC;
+            --bg-paper: #F2FAFC;
+            --text-dark: #153548;
+            --text-grey: #3E5D6C;
+            --text-light: #4F6671;
+            --blue-main: #036887;
+            --blue-bg: #ECFEFF;
+            --red-main: #B91C1C;
+            --green-main: #047857;
+            --orange-main: #A5450A;
+            --orange-bg: #FFF7ED;
+        }
+
+        /* 秋季枫叶暖调；正文/纸张 #422716/#FFF9F0，满足 WCAG AA */
+        body.theme-autumn {
+            --bg-body: #EADFD2;
+            --bg-paper: #FFF9F0;
+            --text-dark: #422716;
+            --text-grey: #674D3A;
+            --text-light: #786251;
+            --blue-main: #9A4D08;
+            --blue-bg: #FFF7ED;
+            --red-main: #B91C1C;
+            --green-main: #047857;
+            --orange-main: #9A3412;
+            --orange-bg: #FFEDD5;
+        }
+
+        /* 冬季霜蓝微调；正文/纸张 #243246/#F4F8FC，满足 WCAG AA */
+        body.theme-winter {
+            --bg-body: #DDE4EC;
+            --bg-paper: #F4F8FC;
+            --text-dark: #243246;
+            --text-grey: #4B5B70;
+            --text-light: #586678;
+            --blue-main: #285A9F;
+            --blue-bg: #EFF6FF;
+            --red-main: #B91C1C;
+            --green-main: #047857;
+            --orange-main: #A3480B;
+            --orange-bg: #FFF7ED;
+        }
+
+        body[class*="theme-"] {
+            /* 在 body 上重新绑定，确保主题 Token 能传递到语义别名 */
+            --accent-blue: var(--blue-bg);
+            --accent-blue-text: var(--blue-main);
+            --accent-green: var(--green-bg);
+            --accent-green-text: var(--green-main);
+            --accent-pink: var(--red-bg);
+            --accent-pink-text: var(--red-main);
+            --color-up: var(--red-main);
+            --color-down: var(--green-main);
+            --color-flat: var(--text-light);
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -296,7 +418,7 @@
         .days-label.today {
             font-weight: 600;
             color: var(--green-main);
-            background: linear-gradient(135deg, #ECFDF5 0%, #A7F3D0 100%);
+            background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
             padding: 6px 14px;
             border-radius: 20px;
             box-shadow:
@@ -439,7 +561,7 @@
         }
         .news-empty .empty-text, .holiday-empty .empty-text {
             font-size: 14px;
-            color: #999;
+            color: var(--text-grey);
         }
 
         /* 降级模式横幅 */
@@ -463,12 +585,12 @@
         .fallback-title {
             font-size: 15px;
             font-weight: bold;
-            color: #e65100;
+            color: #9A3412;
             margin-bottom: 2px;
         }
         .fallback-desc {
             font-size: 12px;
-            color: #ff8f00;
+            color: #9A3412;
         }
 
         /* 右侧列容器 */
@@ -553,7 +675,7 @@
         }
         /* 休市行样式 */
         .market-item.closed {
-            opacity: 0.6;
+            background: var(--color-flat-bg);
         }
         .market-item.closed .market-name {
             color: var(--text-light);
@@ -610,7 +732,6 @@
             font-family: var(--font-title);
             font-size: 14px;
             color: var(--text-grey);
-            opacity: 0.8;
         }
 
         .holiday-card {
@@ -649,13 +770,12 @@
         /* 非法定节假日 - 淡化 */
         .holiday-item.normal {
             background: #F8F9F9;
-            opacity: 0.8;
             box-shadow: 1px 1px 4px rgba(0,0,0,0.03);
         }
         .h-info { display: flex; flex-direction: column; justify-content: center; }
         .h-name { font-size: 16px; font-weight: 700; color: #333; }
         .holiday-item.normal .h-name { font-weight: 500; color: #555;}
-        .h-date { font-size: 11px; color: #999; margin-top: 2px; }
+        .h-date { font-size: 11px; color: var(--text-grey); margin-top: 2px; }
 
         .h-count-wrap { text-align: right; }
         .h-num {
@@ -700,7 +820,7 @@
             text-shadow: none;
         }
         .holiday-item.is-today .h-num.today {
-            color: #DC2626;
+            color: var(--red-main);
         }
         .holiday-item.is-today .h-unit {
             color: #B91C1C;
@@ -891,7 +1011,7 @@
         }
     </style>
 </head>
-<body>
+<body class="theme-{{ theme.name if theme is defined else 'default' }}">
 
     <div class="poster">
 

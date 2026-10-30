@@ -65,6 +65,7 @@ def build_services(
     data_computer = DataComputer(
         text_limits=config.templates.config.text_limits,
         work_end_time=config.templates.config.work_end_time,
+        themes=config.templates.config.themes,
     )
     holiday_source = config.get_source(HolidaySource)
     holiday_service = (

@@ -498,6 +498,7 @@ async def main():
         data_computer = DataComputer(
             text_limits=config.templates.config.text_limits,
             work_end_time=config.templates.config.work_end_time,
+            themes=config.templates.config.themes,
         )
 
         # Initialize stock index service

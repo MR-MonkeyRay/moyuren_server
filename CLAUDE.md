@@ -72,6 +72,7 @@ Docker：`docker-compose up -d`
 - `templates.dir`：模板目录路径（默认 `templates`，自动扫描 `*.html`）
 - `templates.config.local_fonts_dir`：本地 WOFF2 字体目录（默认 `templates/fonts`；与 `templates.dir` 一样，相对路径基于进程工作目录，通常为项目根目录）
 - `templates.config.remote_font_fallback`：是否启用 Google Fonts 缺字回退（默认 true，离线部署可关闭）
+- `templates.config.themes`：自动主题配置，`enabled=true`、`season_themes=true`；`festival_themes` 默认将除夕/春节/元宵节映射到 `spring_festival`、中秋节到 `mid_autumn`、国庆节到 `national_day`，主题名须匹配 `^[a-z][a-z0-9_]*$`
 - `logging.*`：日志配置
 - `network.ghproxy_urls`：GitHub 代理 URL 列表（加速节假日数据/ECDICT 下载）
 - `data_sources`：数据源配置统一在此列表中管理（news/fun_content/crazy_thursday/holiday/stock_index/gold_price/daily_english）
@@ -87,6 +88,7 @@ Docker：`docker-compose up -d`
 - **修改大盘指数**：`stock_index.py` → `compute.py` → 模板
 - **修改每日英语**：`daily_english.py` → `compute.py` → 模板
 - **修改日历/农历**：`calendar.py` → `compute.py`
+- **修改配色主题**：选择规则在 `config.py` / `templates.config.themes`，农历春节期间与当前节气复用 `CalendarService`，`DomainDataAggregator` 在同一业务快照中按法定休假区间 → 当日节日 → 除夕至正月十五 → 当前节气季节 → 默认的顺序选择；`TemplateAdapter` 透传 `theme: {name, source, kind}`（kind 为 festival/season/default）。配色只在两套模板 CSS，未知主题及缺失 theme 保持默认外观；新增主题需补充文本/背景 WCAG AA 对比度测试，涨跌颜色保持红/绿。`DataComputer` 的 `themes=` 与 text_limits/work_end_time 一起由 bootstrap 及三个渲染脚本显式传入
 - **添加新模板**：在 `templates/` 目录创建 HTML 文件，在 `<head>` 中添加 `<meta name="moyuren:viewport-width" content="794">` 等 meta 标签，重启后自动发现
 - **重建字体子集**：安装开发依赖后运行 `python scripts/build_fonts.py --src /path/to/fontsrc --out templates/fonts`；许可证保存在 `templates/fonts/licenses/`
 - **添加 API**：在 `app/api/v1/` 创建路由 → `main.py` 注册

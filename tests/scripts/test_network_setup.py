@@ -8,7 +8,7 @@ from typing import Any, Callable
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from app.core.config import TextLimitsConfig
+from app.core.config import TextLimitsConfig, ThemesConfig
 
 
 class _FailingDataFetcher:
@@ -87,7 +87,9 @@ def _fake_config(
         ),
         instances=SimpleNamespace(list_url=None, urls=None),
         templates=SimpleNamespace(
-            config=SimpleNamespace(text_limits=TextLimitsConfig(), work_end_time="18:00")
+            config=SimpleNamespace(
+                text_limits=TextLimitsConfig(), work_end_time="18:00", themes=ThemesConfig()
+            )
         ),
         get_source=get_source,
         get_templates_config=lambda: SimpleNamespace(
@@ -131,7 +133,9 @@ def _install_common_fakes(
     monkeypatch.setattr(module, "setup_logging", lambda *args, **kwargs: logger)
     monkeypatch.setattr(module, "init_timezones", lambda *args, **kwargs: None)
     monkeypatch.setattr(module, "browser_manager", browser_manager)
-    monkeypatch.setattr(module, "DataComputer", lambda *args, **kwargs: _DataComputer())
+    monkeypatch.setattr(
+        module, "DataComputer", record_factory("DataComputer", _DataComputer())
+    )
     monkeypatch.setattr(
         module, "DataFetcher", record_factory("DataFetcher", _FailingDataFetcher())
     )
@@ -202,6 +206,11 @@ async def test_scripts_configure_browser_pass_proxy_and_cleanup(
     browser_manager.configure.assert_called_once_with(
         logger, proxy_url=config.network.proxy_url
     )
+    assert records["DataComputer"] == {
+        "text_limits": config.templates.config.text_limits,
+        "work_end_time": config.templates.config.work_end_time,
+        "themes": config.templates.config.themes,
+    }
     assert order == ["stock", "browser"]
 
     expected = {

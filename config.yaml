@@ -52,6 +52,16 @@ templates:
     local_fonts_dir: "templates/fonts"  # 本地 WOFF2 字体及 fonts.css 目录；相对路径基于进程工作目录（通常为项目根目录）
     remote_font_fallback: true  # 本地子集缺字时加载 Google Fonts；离线部署可设为 false
     work_end_time: "18:00"  # 业务时区下班时间，严格 HH:MM；图片显示生成时的倒计时快照
+    # 节假日优先于节气季节；配色定义在模板 CSS，未知主题名保持默认外观。
+    themes:
+      enabled: true
+      festival_themes:  # 名称须匹配 ^[a-z][a-z0-9_]*$；{} 关闭节日主题及春节期间扩展
+        除夕: spring_festival
+        春节: spring_festival
+        元宵节: spring_festival
+        中秋节: mid_autumn
+        国庆节: national_day
+      season_themes: true  # 立春/立夏/立秋/立冬当天起切换季节
     remote_resource_cache_enabled: true
     remote_resource_cache_ttl_sec: 604800
     remote_resource_timeout_sec: 5.0

@@ -38,6 +38,7 @@ async def get_templates(request: Request) -> JSONResponse:
             "name": item.name,
             "description": f"摸鱼日历{item.name}模板",
             "image": image_url,
+            "show_daily_english": item.show_daily_english,
         })
 
     return JSONResponse(

@@ -14,7 +14,7 @@ from fastapi import FastAPI
 
 import app.main as main_module
 import app.core.bootstrap as bootstrap_module
-from app.core.config import TextLimitsConfig
+from app.core.config import TextLimitsConfig, ThemesConfig
 
 
 class _CachedService:
@@ -83,7 +83,9 @@ def _fake_config(tmp_path: Path) -> SimpleNamespace:
         ),
         instances=SimpleNamespace(list_url=None, urls=None),
         templates=SimpleNamespace(
-            config=SimpleNamespace(text_limits=TextLimitsConfig(), work_end_time="18:00")
+            config=SimpleNamespace(
+                text_limits=TextLimitsConfig(), work_end_time="18:00", themes=ThemesConfig()
+            )
         ),
         cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
         scheduler=SimpleNamespace(mode="hourly", minute_of_hour=0, daily_times=[]),
