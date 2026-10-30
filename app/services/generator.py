@@ -19,6 +19,9 @@ from app.services.calendar import get_display_timezone, now_business
 
 INFLIGHT_WAIT_TIMEOUT_SEC = 90
 
+# Keep background cleanup alive until its completion callback releases it.
+_cleanup_tasks: set[asyncio.Task[None]] = set()
+
 
 def _read_data_file(data_file: Path) -> dict | None:
     """读取 data 文件内容"""
@@ -236,7 +239,9 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
     # Merge results into raw_data with type safety
     # Ensure raw_data is a dict (DailyCache.get() might return non-dict if corrupted)
     if not isinstance(api_data_result, dict):
-        logger.warning(f"raw_data is not dict (got {type(api_data_result).__name__}), using empty dict")
+        logger.warning(
+            "raw_data is not dict (got %s), using empty dict", type(api_data_result).__name__
+        )
         raw_data = {}
     else:
         raw_data = api_data_result
@@ -249,19 +254,19 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
 
     # Log fetch results (count actual API data keys, excluding merged fields)
     api_keys = [k for k in raw_data if k not in ("holidays", "fun_content", "kfc_copy", "stock_indices", "gold_price", "daily_english")]
-    logger.info(f"Fetched data: {len(api_keys)} API endpoints, parallel fetch completed")
+    logger.info("Fetched data: %d API endpoints, parallel fetch completed", len(api_keys))
     if holidays_result:
-        logger.info(f"Fetched {len(holidays_result)} holidays")
+        logger.info("Fetched %d holidays", len(holidays_result))
     if fun_content_result and isinstance(fun_content_result, dict):
-        logger.info(f"Fetched fun content: {fun_content_result.get('title')}")
+        logger.info("Fetched fun content: %s", fun_content_result.get("title"))
     if kfc_result:
         logger.info("Fetched KFC Crazy Thursday content")
     if stock_indices_result and isinstance(stock_indices_result, dict):
-        logger.info(f"Fetched {len(stock_indices_result.get('items', []))} stock indices")
+        logger.info("Fetched %d stock indices", len(stock_indices_result.get("items", [])))
     if gold_price_result and isinstance(gold_price_result, dict):
-        logger.info(f"Fetched gold price: {gold_price_result.get('today_price')}")
+        logger.info("Fetched gold price: %s", gold_price_result.get("today_price"))
     if daily_english_result and isinstance(daily_english_result, dict):
-        logger.info(f"Fetched daily english: {daily_english_result.get('word')}")
+        logger.info("Fetched daily english: %s", daily_english_result.get("word"))
 
     return raw_data
 
@@ -288,13 +293,16 @@ def _schedule_cache_cleanup(cache_cleaner: CacheCleaner, logger: logging.Logger)
             result: dict[str, Any] = await asyncio.to_thread(cache_cleaner.cleanup)
             if result.get("deleted_files", 0) > 0:
                 logger.info(
-                    f"Cleaned up {result['deleted_files']} expired cache file(s), "
-                    f"freed {result['freed_bytes'] / 1024:.1f} KB"
+                    "Cleaned up %d expired cache file(s), freed %.1f KB",
+                    result["deleted_files"],
+                    result["freed_bytes"] / 1024,
                 )
         except Exception as e:
-            logger.warning(f"Cache cleanup failed: {e}")
+            logger.warning("Cache cleanup failed: %s", e)
 
-    asyncio.create_task(_cleanup_task())
+    task = asyncio.create_task(_cleanup_task())
+    _cleanup_tasks.add(task)
+    task.add_done_callback(_cleanup_tasks.discard)
 
 
 class ImageGenerator:
@@ -414,19 +422,20 @@ class ImageGenerator:
                                 missing_templates.append(t)
                         if not missing_templates:
                             logger.info(
-                                f"All {len(templates_to_render)} template(s) recently updated, skipping generation"
+                                "All %d template(s) recently updated, skipping generation",
+                                len(templates_to_render),
                             )
                             return cached_results
                         # Only render missing templates, carry over cached results
                         templates_to_render = missing_templates
                         pre_cached = cached_results
                         logger.info(
-                            f"Found {len(cached_results)} cached, {len(missing_templates)} to render"
+                            "Found %d cached, %d to render",
+                            len(cached_results),
+                            len(missing_templates),
                         )
 
-                logger.info(
-                    f"Starting image generation for {len(templates_to_render)} template(s)..."
-                )
+                logger.info("Starting image generation for %d template(s)...", len(templates_to_render))
 
                 # 1. Fetch all data sources in parallel (使用缓存服务)
                 raw_data = await _fetch_all_data_parallel(app, logger)
@@ -449,7 +458,7 @@ class ImageGenerator:
                             now=now,
                         )
                         t_elapsed = time.monotonic() - t_start
-                        logger.info(f"Image rendered for '{tname}': {filename} ({t_elapsed:.1f}s)")
+                        logger.info("Image rendered for '%s': %s (%.1fs)", tname, filename, t_elapsed)
 
                         await _update_data_file(
                             data_dir=str(data_dir),
@@ -462,7 +471,7 @@ class ImageGenerator:
                         )
                         results[tname] = filename
                     except Exception:
-                        logger.exception(f"Failed to render template '{tname}'")
+                        logger.exception("Failed to render template '%s'", tname)
                         failed_templates.append(tname)
 
                 if not results:
@@ -470,8 +479,9 @@ class ImageGenerator:
 
                 if failed_templates:
                     logger.warning(
-                        f"Partial render failure: {len(failed_templates)} template(s) failed: "
-                        f"{', '.join(failed_templates)}"
+                        "Partial render failure: %d template(s) failed: %s",
+                        len(failed_templates),
+                        ", ".join(failed_templates),
                     )
 
                 # 4. Clean up old cache (fire-and-forget, non-blocking)

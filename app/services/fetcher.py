@@ -110,7 +110,7 @@ class DataFetcher:
             return result[1]
 
         self.logger.warning(
-            f"All news endpoints unavailable for {self.source.type}, trying static mirror"
+            "All news endpoints unavailable for %s, trying static mirror", self.source.type
         )
         return await self._fetch_static_with_client(client)
 
@@ -293,11 +293,11 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
                 return date(int(year), int(month), int(day))
 
             # 都失败
-            self.logger.warning(f"无法解析日期格式: {date_str}")
+            self.logger.warning("无法解析日期格式: %s", date_str)
             return None
 
         except (AttributeError, TypeError, ValueError) as e:
-            self.logger.warning(f"提取新闻日期时出错: {e}")
+            self.logger.warning("提取新闻日期时出错: %s", e)
             return None
 
     async def fetch_fresh(self) -> dict[str, Any] | None:
@@ -314,7 +314,7 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
                 return None
             return result
         except Exception as e:
-            self.logger.error(f"Failed to fetch data: {e}")
+            self.logger.error("Failed to fetch data: %s", e)
             return None
 
     async def get(self, force_refresh: bool = False) -> dict[str, Any] | None:

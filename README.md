@@ -95,7 +95,17 @@ sudo chown -R 1000:1000 cache logs
 
 ## 依赖管理
 
-`requirements.txt` 和 `requirements-dev.txt` 保留依赖最低版本，并限制在下一个主版本之前（Ruff 按次版本限制）。`.github/dependabot.yml` 配置 Dependabot 每周向 `develop` 提交 Python 依赖、GitHub Actions 和 Docker 基础镜像更新；Python 次版本/补丁更新合并为一个 PR，主版本升级单独评审。
+`requirements.txt` 和 `requirements-dev.txt` 保留依赖最低版本，并限制在下一个主版本之前（Ruff 和 mypy 按次版本限制）。`.github/dependabot.yml` 配置 Dependabot 每周向 `develop` 提交 Python 依赖、GitHub Actions 和 Docker 基础镜像更新；Python 次版本/补丁更新合并为一个 PR，主版本升级单独评审。
+
+## 开发与测试
+
+CI 在运行测试前执行 Ruff 代码检查（含日志惰性格式化规则 G004）和 mypy 类型检查。本地安装开发依赖后可运行：
+
+```bash
+ruff check app tests scripts
+mypy app
+pytest -m "not e2e"
+```
 
 ## API
 

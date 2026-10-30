@@ -67,7 +67,7 @@ class TaskScheduler:
                 hour = hour if hour is not None else default_hour
                 minute = minute if minute is not None else default_minute
             except (ValueError, AttributeError, IndexError) as e:
-                self.logger.warning(f"Invalid daily_times config, using 06:00: {e}")
+                self.logger.warning("Invalid daily_times config, using 06:00: %s", e)
                 hour = hour if hour is not None else 6
                 minute = minute if minute is not None else 0
 
@@ -84,7 +84,7 @@ class TaskScheduler:
         )
 
         self.logger.info(
-            f"Added daily job '{job_id}' at {hour:02d}:{minute:02d} ({self.timezone})"
+            "Added daily job '%s' at %02d:%02d (%s)", job_id, hour, minute, self.timezone
         )
 
     def add_hourly_job(
@@ -114,14 +114,14 @@ class TaskScheduler:
         )
 
         self.logger.info(
-            f"Added hourly job '{job_id}' at minute {minute:02d} ({self.timezone})"
+            "Added hourly job '%s' at minute %02d (%s)", job_id, minute, self.timezone
         )
 
     def start(self) -> None:
         """Start the scheduler."""
         if not self.scheduler.running:
             self.scheduler.start()
-            self.logger.info(f"Task scheduler started ({self.timezone})")
+            self.logger.info("Task scheduler started (%s)", self.timezone)
         else:
             self.logger.warning("Task scheduler is already running")
 
@@ -145,7 +145,7 @@ class TaskScheduler:
         try:
             job = self.scheduler.get_job(job_id)
             if job is None:
-                self.logger.error(f"Job '{job_id}' not found")
+                self.logger.error("Job '%s' not found", job_id)
                 return
 
             # Add a one-time job that runs immediately
@@ -156,9 +156,9 @@ class TaskScheduler:
                 name=f"{job_id}_immediate",
                 replace_existing=True,
             )
-            self.logger.info(f"Triggered immediate execution of job '{job_id}'")
+            self.logger.info("Triggered immediate execution of job '%s'", job_id)
         except Exception as e:
-            self.logger.error(f"Failed to run job '{job_id}': {e}")
+            self.logger.error("Failed to run job '%s': %s", job_id, e)
 
     @property
     def is_running(self) -> bool:

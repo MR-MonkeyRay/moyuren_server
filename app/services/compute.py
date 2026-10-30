@@ -141,7 +141,7 @@ def normalize_datetime(value: str, default_tz: timezone | None = None) -> str | 
             continue
 
     # 所有格式都无法解析
-    logger.warning(f"Failed to normalize datetime: {value}")
+    logger.warning("Failed to normalize datetime: %s", value)
     return None
 
 
@@ -348,7 +348,7 @@ class DomainDataAggregator:
                 "trend": trend,
             }
         except (KeyError, ValueError, TypeError) as e:
-            logging.getLogger(__name__).debug(f"Gold price compute failed: {e}")
+            logging.getLogger(__name__).debug("Gold price compute failed: %s", e)
             return None
 
     def _compute_kfc(self, now: datetime, raw_data: dict[str, Any]) -> dict[str, Any] | None:
@@ -750,22 +750,27 @@ class DomainDataAggregator:
         for f in lunar_festivals:
             if not isinstance(f, dict):
                 continue
-            name = f.get("name")
+            festival_name = f.get("name")
             solar_date = f.get("solar_date")
-            days_left = f.get("days_left")
+            festival_days_left = f.get("days_left")
             # 检查必需字段
-            if not name or not solar_date or days_left is None:
+            if (
+                not isinstance(festival_name, str)
+                or not festival_name
+                or not solar_date
+                or festival_days_left is None
+            ):
                 continue
 
             # 确保 days_left 为 int 类型
             try:
-                days_left = int(days_left)
+                days_left = int(festival_days_left)
             except (TypeError, ValueError):
                 continue
 
-            if name not in name_map and not is_duplicate_name(name):
-                name_map[name] = {
-                    "name": name,
+            if festival_name not in name_map and not is_duplicate_name(festival_name):
+                name_map[festival_name] = {
+                    "name": festival_name,
                     "start_date": solar_date,
                     "end_date": solar_date,
                     "duration": 1,
@@ -779,22 +784,27 @@ class DomainDataAggregator:
         for f in solar_festivals:
             if not isinstance(f, dict):
                 continue
-            name = f.get("name")
+            festival_name = f.get("name")
             solar_date = f.get("solar_date")
-            days_left = f.get("days_left")
+            festival_days_left = f.get("days_left")
             # 检查必需字段
-            if not name or not solar_date or days_left is None:
+            if (
+                not isinstance(festival_name, str)
+                or not festival_name
+                or not solar_date
+                or festival_days_left is None
+            ):
                 continue
 
             # 确保 days_left 为 int 类型
             try:
-                days_left = int(days_left)
+                days_left = int(festival_days_left)
             except (TypeError, ValueError):
                 continue
 
-            if name not in name_map and not is_duplicate_name(name):
-                name_map[name] = {
-                    "name": name,
+            if festival_name not in name_map and not is_duplicate_name(festival_name):
+                name_map[festival_name] = {
+                    "name": festival_name,
                     "start_date": solar_date,
                     "end_date": solar_date,
                     "duration": 1,

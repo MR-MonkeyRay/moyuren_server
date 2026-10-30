@@ -128,7 +128,7 @@ async def ops_generate(request: Request) -> JSONResponse:
             headers={"Retry-After": "10", "Cache-Control": "no-store"},
         )
     except Exception as e:
-        logger.error(f"Manual generation failed: {e}")
+        logger.error("Manual generation failed: %s", e)
         return JSONResponse(
             content=error_response(ErrorCode.GENERATION_FAILED, "图片生成失败"),
             status_code=get_http_status(ErrorCode.GENERATION_FAILED),
@@ -167,7 +167,7 @@ async def ops_cache_clean(
 
         return JSONResponse(content={"data": result}, headers={"Cache-Control": "no-store"})
     except Exception as e:
-        logger.error(f"Cache cleanup failed: {e}")
+        logger.error("Cache cleanup failed: %s", e)
         return JSONResponse(
             content=error_response(ErrorCode.OPS_CACHE_CLEAN_FAILED, "缓存清理失败"),
             status_code=get_http_status(ErrorCode.OPS_CACHE_CLEAN_FAILED),

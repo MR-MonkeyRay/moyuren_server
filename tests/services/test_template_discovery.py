@@ -125,6 +125,29 @@ class TestTemplateDiscovery:
         assert items[0].show_kfc is True  # 默认值
         assert items[0].show_stock is True  # 默认值
 
+    def test_discover_skips_meta_without_attribute_values(
+        self, discovery: TemplateDiscovery, global_config: TemplateRenderConfig, tmp_path: Path
+    ) -> None:
+        """Malformed meta tags are ignored while valid tags still take effect."""
+        _create_template(
+            tmp_path,
+            "partial",
+            '''
+            <meta name="moyuren:viewport-width">
+            <meta name>
+            <meta name content="1024">
+            <meta name="moyuren:viewport-height" content="768">
+            ''',
+        )
+
+        items = discovery.discover(str(tmp_path), global_config)
+
+        assert len(items) == 1
+        assert items[0].name == "partial"
+        assert items[0].viewport.width == 794
+        assert items[0].viewport.height == 768
+        assert items[0].device_scale_factor == global_config.device_scale_factor
+
     def test_discover_no_meta(
         self, discovery: TemplateDiscovery, global_config: TemplateRenderConfig, tmp_path: Path
     ):

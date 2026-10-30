@@ -348,7 +348,7 @@ async def get_base_template_data(
         if holidays is None:
             logger.warning("获取节假日失败，使用默认空列表")
     except Exception as e:
-        logger.warning(f"获取节假日失败: {safe_exception_for_log(e, proxy_url)}")
+        logger.warning("获取节假日失败: %s", safe_exception_for_log(e, proxy_url))
         raw_data["holidays"] = []
 
     try:
@@ -357,7 +357,7 @@ async def get_base_template_data(
         fun_content = await fun_content_service.fetch_content(date.today())
         raw_data["fun_content"] = fun_content
     except Exception as e:
-        logger.warning(f"获取趣味内容失败: {safe_exception_for_log(e, proxy_url)}")
+        logger.warning("获取趣味内容失败: %s", safe_exception_for_log(e, proxy_url))
         raw_data["fun_content"] = None
 
     raw_data["kfc_copy"] = None
@@ -368,9 +368,9 @@ async def get_base_template_data(
         try:
             stock_indices = await stock_index_service.fetch_indices()
             raw_data["stock_indices"] = stock_indices
-            logger.info(f"获取到 {len(stock_indices.get('items', []))} 条股票指数数据")
+            logger.info("获取到 %s 条股票指数数据", len(stock_indices.get("items", [])))
         except Exception as e:
-            logger.warning(f"获取股票指数失败: {safe_exception_for_log(e, proxy_url)}")
+            logger.warning("获取股票指数失败: %s", safe_exception_for_log(e, proxy_url))
 
     # 获取金价数据
     raw_data["gold_price"] = None
@@ -379,9 +379,9 @@ async def get_base_template_data(
             gold_price = await gold_price_service.fetch_gold_price()
             raw_data["gold_price"] = gold_price
             if gold_price:
-                logger.info(f"获取到金价数据: {gold_price.get('today_price')}")
+                logger.info("获取到金价数据: %s", gold_price.get("today_price"))
         except Exception as e:
-            logger.warning(f"获取金价数据失败: {safe_exception_for_log(e, proxy_url)}")
+            logger.warning("获取金价数据失败: %s", safe_exception_for_log(e, proxy_url))
 
     # 获取每日英语数据
     raw_data["daily_english"] = None
@@ -391,11 +391,9 @@ async def get_base_template_data(
             daily_english = await daily_english_service.fetch_daily_word()
             raw_data["daily_english"] = dict(daily_english) if daily_english else None
             if daily_english:
-                logger.info(f"获取到每日英语数据: {daily_english.get('word')}")
+                logger.info("获取到每日英语数据: %s", daily_english.get("word"))
         except Exception as e:
-            logger.warning(
-                f"获取每日英语数据失败: {safe_exception_for_log(e, proxy_url)}"
-            )
+            logger.warning("获取每日英语数据失败: %s", safe_exception_for_log(e, proxy_url))
 
     return data_computer.compute(raw_data)
 
@@ -443,11 +441,11 @@ async def render_scenario(
     if source_path.exists():
         source_path.replace(target_path)
     else:
-        logger.warning(f"未找到渲染输出文件: {source_path}")
+        logger.warning("未找到渲染输出文件: %s", source_path)
         target_path = source_path
         output_name = filename
 
-    logger.info(f"测试图片已生成: {output_name}")
+    logger.info("测试图片已生成: %s", output_name)
     return target_path
 
 
@@ -563,7 +561,7 @@ async def main():
 
         if args.all:
             for scenario_name, scenario_data in SCENARIOS.items():
-                logger.info(f"渲染场景: {scenario_name}")
+                logger.info("渲染场景: %s", scenario_name)
                 overrides = replace_today_placeholder(
                     scenario_data["overrides"], today_str
                 )

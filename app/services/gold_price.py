@@ -65,7 +65,7 @@ class GoldPriceService:
         """
         if not isinstance(data, dict):
             self._logger.warning(
-                f"Gold price API returned non-dict response: {type(data).__name__}"
+                "Gold price API returned non-dict response: %s", type(data).__name__
             )
             return None
         data_field = data.get("data")
@@ -108,7 +108,8 @@ class GoldPriceService:
                 return result[1] if result is not None else None
         except Exception as e:
             self._logger.warning(
-                f"Failed to fetch gold price: {safe_exception_for_log(e, self.config.url, self._proxy_url)}"
+                "Failed to fetch gold price: %s",
+                safe_exception_for_log(e, self.config.url, self._proxy_url),
             )
         return None
 

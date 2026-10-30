@@ -154,7 +154,7 @@ async def main() -> None:
 
         # 1. Fetch data
         raw_data = await data_fetcher.fetch_all()
-        logger.info(f"Fetched data from {len(raw_data)} endpoints")
+        logger.info("Fetched data from %s endpoints", len(raw_data))
 
         # 1.1 Fetch holiday data
         raw_data["holidays"] = []
@@ -165,20 +165,22 @@ async def main() -> None:
                 if holidays is None:
                     logger.warning("Failed to fetch holidays, using default")
                 else:
-                    logger.info(f"Fetched {len(holidays)} holidays")
+                    logger.info("Fetched %s holidays", len(holidays))
             except Exception as e:
                 logger.warning(
-                    f"Failed to fetch holidays, using default: {safe_exception_for_log(e, config.network.proxy_url)}"
+                    "Failed to fetch holidays, using default: %s",
+                    safe_exception_for_log(e, config.network.proxy_url),
                 )
 
         # 1.2 Fetch fun content
         try:
             fun_content = await fun_content_service.fetch_content(business_date)
             raw_data["fun_content"] = fun_content
-            logger.info(f"Fetched fun content: {fun_content.get('title')}")
+            logger.info("Fetched fun content: %s", fun_content.get("title"))
         except Exception as e:
             logger.warning(
-                f"Failed to fetch fun content, using default: {safe_exception_for_log(e, config.network.proxy_url)}"
+                "Failed to fetch fun content, using default: %s",
+                safe_exception_for_log(e, config.network.proxy_url),
             )
             raw_data["fun_content"] = None
 
@@ -192,7 +194,8 @@ async def main() -> None:
                     logger.info("Fetched KFC Crazy Thursday content")
             except Exception as e:
                 logger.warning(
-                    f"Failed to fetch KFC content: {safe_exception_for_log(e, config.network.proxy_url)}"
+                    "Failed to fetch KFC content: %s",
+                    safe_exception_for_log(e, config.network.proxy_url),
                 )
 
         # 1.4 Fetch stock index data
@@ -201,12 +204,11 @@ async def main() -> None:
             try:
                 stock_indices = await stock_index_service.fetch_indices()
                 raw_data["stock_indices"] = stock_indices
-                logger.info(
-                    f"Fetched {len(stock_indices.get('items', []))} stock indices"
-                )
+                logger.info("Fetched %s stock indices", len(stock_indices.get("items", [])))
             except Exception as e:
                 logger.warning(
-                    f"Failed to fetch stock indices: {safe_exception_for_log(e, config.network.proxy_url)}"
+                    "Failed to fetch stock indices: %s",
+                    safe_exception_for_log(e, config.network.proxy_url),
                 )
 
         # 1.5 Fetch gold price data
@@ -216,10 +218,11 @@ async def main() -> None:
                 gold_price = await gold_price_service.fetch_gold_price()
                 raw_data["gold_price"] = gold_price
                 if gold_price:
-                    logger.info(f"Fetched gold price: {gold_price.get('today_price')}")
+                    logger.info("Fetched gold price: %s", gold_price.get("today_price"))
             except Exception as e:
                 logger.warning(
-                    f"Failed to fetch gold price: {safe_exception_for_log(e, config.network.proxy_url)}"
+                    "Failed to fetch gold price: %s",
+                    safe_exception_for_log(e, config.network.proxy_url),
                 )
 
         # 1.6 Fetch daily english
@@ -232,10 +235,11 @@ async def main() -> None:
                     dict(daily_english) if daily_english else None
                 )
                 if daily_english:
-                    logger.info(f"Fetched daily english: {daily_english.get('word')}")
+                    logger.info("Fetched daily english: %s", daily_english.get("word"))
             except Exception as e:
                 logger.warning(
-                    f"Failed to fetch daily english: {safe_exception_for_log(e, config.network.proxy_url)}"
+                    "Failed to fetch daily english: %s",
+                    safe_exception_for_log(e, config.network.proxy_url),
                 )
 
         # 2. Compute template context
@@ -250,7 +254,7 @@ async def main() -> None:
                 template_data, template_name=tname, now=now
             )
             all_filenames[tname] = filename
-            logger.info(f"Image rendered for '{tname}': {filename}")
+            logger.info("Image rendered for '%s': %s", tname, filename)
 
         # 4. Update data file
         data_dir = cache_dir / "data"
@@ -328,7 +332,7 @@ async def main() -> None:
             tmp_path = tmp_file.name
 
         os.replace(tmp_path, data_file)
-        logger.info(f"Data file updated: {data_file}")
+        logger.info("Data file updated: %s", data_file)
 
         # Print results
         print(f"\n{'=' * 50}")

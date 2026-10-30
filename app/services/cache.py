@@ -86,8 +86,10 @@ class CacheCleaner:
                     skip_pruning = True
                     pruning_scope = "all dates"
                 self.logger.warning(
-                    f"Skipping image pruning for {pruning_scope}: "
-                    f"unreadable or invalid data file {data_path.name}: {e}"
+                    "Skipping image pruning for %s: unreadable or invalid data file %s: %s",
+                    pruning_scope,
+                    data_path.name,
+                    e,
                 )
 
         # Clean data files
@@ -95,7 +97,7 @@ class CacheCleaner:
         for file_path in self.data_dir.glob("*.json"):
             match = data_pattern.match(file_path.name)
             if not match:
-                self.logger.warning(f"Skipping file with invalid name format: {file_path.name}")
+                self.logger.warning("Skipping file with invalid name format: %s", file_path.name)
                 continue
 
             try:
@@ -105,12 +107,12 @@ class CacheCleaner:
                     file_path.unlink()
                     deleted_files += 1
                     freed_bytes += file_size
-                    self.logger.info(f"Deleted expired data file: {file_path.name}")
+                    self.logger.info("Deleted expired data file: %s", file_path.name)
                 else:
                     if file_date < oldest_kept_date:
                         oldest_kept_date = file_date
             except Exception as e:
-                self.logger.warning(f"Failed to process data file {file_path.name}: {e}")
+                self.logger.warning("Failed to process data file %s: %s", file_path.name, e)
 
         # Clean image files
         image_pattern = re.compile(r"^([A-Za-z0-9_-]+)_(\d{8})_(\d{6})\.jpg$")
@@ -118,7 +120,7 @@ class CacheCleaner:
         for file_path in self.images_dir.glob("*.jpg"):
             match = image_pattern.match(file_path.name)
             if not match:
-                self.logger.warning(f"Skipping file with invalid name format: {file_path.name}")
+                self.logger.warning("Skipping file with invalid name format: %s", file_path.name)
                 continue
 
             try:
@@ -129,7 +131,7 @@ class CacheCleaner:
                     file_path.unlink()
                     deleted_files += 1
                     freed_bytes += file_size
-                    self.logger.info(f"Deleted expired image file: {file_path.name}")
+                    self.logger.info("Deleted expired image file: %s", file_path.name)
                 else:
                     image_groups.setdefault((match.group(1), file_date), []).append(
                         (match.group(3), file_path)
@@ -137,7 +139,7 @@ class CacheCleaner:
                     if file_date < oldest_kept_date:
                         oldest_kept_date = file_date
             except Exception as e:
-                self.logger.warning(f"Failed to process image file {file_path.name}: {e}")
+                self.logger.warning("Failed to process image file %s: %s", file_path.name, e)
 
         # Referenced images count toward the limit, even when they are older
         for (_, file_date), images_in_group in image_groups.items():
@@ -158,9 +160,9 @@ class CacheCleaner:
                     deleted_files += 1
                     freed_bytes += file_size
                     pruned_images += 1
-                    self.logger.info(f"Pruned superseded image file: {image_path.name}")
+                    self.logger.info("Pruned superseded image file: %s", image_path.name)
                 except OSError as e:
-                    self.logger.warning(f"Failed to prune image file {image_path.name}: {e}")
+                    self.logger.warning("Failed to prune image file %s: %s", image_path.name, e)
 
         # Clean render resource cache files
         cutoff_timestamp = datetime.combine(
@@ -179,9 +181,11 @@ class CacheCleaner:
                     body_path.unlink(missing_ok=True)
                     deleted_files += 1
                     freed_bytes += freed
-                    self.logger.info(f"Deleted expired render resource cache: {cache_key}")
+                    self.logger.info("Deleted expired render resource cache: %s", cache_key)
             except (OSError, ValueError, json.JSONDecodeError) as e:
-                self.logger.warning(f"Removing unreadable render resource meta: {meta_path.name} ({e})")
+                self.logger.warning(
+                    "Removing unreadable render resource meta: %s (%s)", meta_path.name, e
+                )
                 freed = 0
                 try:
                     freed = meta_path.stat().st_size
@@ -205,7 +209,7 @@ class CacheCleaner:
             cache_key = body_path.stem
             meta_path = self.render_resources_dir / f"{cache_key}.meta"
             if not meta_path.exists():
-                self.logger.info(f"Deleting orphan render resource body: {body_path.name}")
+                self.logger.info("Deleting orphan render resource body: %s", body_path.name)
                 freed = body_path.stat().st_size
                 body_path.unlink(missing_ok=True)
                 deleted_files += 1
@@ -213,15 +217,17 @@ class CacheCleaner:
 
         # Clean stale temporary files from interrupted atomic writes
         for tmp_path in self.render_resources_dir.glob("*.tmp"):
-            self.logger.info(f"Deleting stale temporary file: {tmp_path.name}")
+            self.logger.info("Deleting stale temporary file: %s", tmp_path.name)
             freed = tmp_path.stat().st_size
             tmp_path.unlink(missing_ok=True)
             deleted_files += 1
             freed_bytes += freed
 
         self.logger.info(
-            f"Cache cleanup completed: {deleted_files} file(s) deleted, "
-            f"{pruned_images} image(s) pruned, {freed_bytes / 1024:.1f} KB freed"
+            "Cache cleanup completed: %s file(s) deleted, %s image(s) pruned, %.1f KB freed",
+            deleted_files,
+            pruned_images,
+            freed_bytes / 1024,
         )
 
         return {

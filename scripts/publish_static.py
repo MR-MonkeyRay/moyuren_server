@@ -273,8 +273,8 @@ async def main() -> None:
     browser_manager.configure(logger, proxy_url=config.network.proxy_url)
     stock_index_service = None
     try:
-        logger.info(f"Output directory: {output_dir}")
-        logger.info(f"Base URL: {base_url}")
+        logger.info("Output directory: %s", output_dir)
+        logger.info("Base URL: %s", base_url)
 
         # Initialize timezones
         init_timezones(
@@ -374,7 +374,7 @@ async def main() -> None:
         try:
             # 1. Fetch data (same as render_once.py:92-134)
             raw_data = await data_fetcher.fetch_all()
-            logger.info(f"Fetched data from {len(raw_data)} endpoints")
+            logger.info("Fetched data from %s endpoints", len(raw_data))
 
             # 1.1 Fetch holiday data
             raw_data["holidays"] = []
@@ -385,20 +385,22 @@ async def main() -> None:
                     if holidays is None:
                         logger.warning("Failed to fetch holidays, using default")
                     else:
-                        logger.info(f"Fetched {len(holidays)} holidays")
+                        logger.info("Fetched %s holidays", len(holidays))
                 except Exception as e:
                     logger.warning(
-                        f"Failed to fetch holidays, using default: {safe_exception_for_log(e, config.network.proxy_url)}"
+                        "Failed to fetch holidays, using default: %s",
+                        safe_exception_for_log(e, config.network.proxy_url),
                     )
 
             # 1.2 Fetch fun content
             try:
                 fun_content = await fun_content_service.fetch_content(business_date)
                 raw_data["fun_content"] = fun_content
-                logger.info(f"Fetched fun content: {fun_content.get('title')}")
+                logger.info("Fetched fun content: %s", fun_content.get("title"))
             except Exception as e:
                 logger.warning(
-                    f"Failed to fetch fun content, using default: {safe_exception_for_log(e, config.network.proxy_url)}"
+                    "Failed to fetch fun content, using default: %s",
+                    safe_exception_for_log(e, config.network.proxy_url),
                 )
                 raw_data["fun_content"] = None
 
@@ -412,7 +414,8 @@ async def main() -> None:
                         logger.info("Fetched KFC Crazy Thursday content")
                 except Exception as e:
                     logger.warning(
-                        f"Failed to fetch KFC content: {safe_exception_for_log(e, config.network.proxy_url)}"
+                        "Failed to fetch KFC content: %s",
+                        safe_exception_for_log(e, config.network.proxy_url),
                     )
 
             # 1.4 Fetch stock index data
@@ -421,12 +424,11 @@ async def main() -> None:
                 try:
                     stock_indices = await stock_index_service.fetch_indices()
                     raw_data["stock_indices"] = stock_indices
-                    logger.info(
-                        f"Fetched {len(stock_indices.get('items', []))} stock indices"
-                    )
+                    logger.info("Fetched %s stock indices", len(stock_indices.get("items", [])))
                 except Exception as e:
                     logger.warning(
-                        f"Failed to fetch stock indices: {safe_exception_for_log(e, config.network.proxy_url)}"
+                        "Failed to fetch stock indices: %s",
+                        safe_exception_for_log(e, config.network.proxy_url),
                     )
 
             # 1.5 Fetch gold price data
@@ -436,12 +438,11 @@ async def main() -> None:
                     gold_price = await gold_price_service.fetch_gold_price()
                     raw_data["gold_price"] = gold_price
                     if gold_price:
-                        logger.info(
-                            f"Fetched gold price: {gold_price.get('today_price')}"
-                        )
+                        logger.info("Fetched gold price: %s", gold_price.get("today_price"))
                 except Exception as e:
                     logger.warning(
-                        f"Failed to fetch gold price: {safe_exception_for_log(e, config.network.proxy_url)}"
+                        "Failed to fetch gold price: %s",
+                        safe_exception_for_log(e, config.network.proxy_url),
                     )
 
             # 1.6 Fetch daily english
@@ -454,12 +455,11 @@ async def main() -> None:
                         dict(daily_english) if daily_english else None
                     )
                     if daily_english:
-                        logger.info(
-                            f"Fetched daily english: {daily_english.get('word')}"
-                        )
+                        logger.info("Fetched daily english: %s", daily_english.get("word"))
                 except Exception as e:
                     logger.warning(
-                        f"Failed to fetch daily english: {safe_exception_for_log(e, config.network.proxy_url)}"
+                        "Failed to fetch daily english: %s",
+                        safe_exception_for_log(e, config.network.proxy_url),
                     )
 
             # 2. Compute template context
@@ -468,7 +468,7 @@ async def main() -> None:
 
             # 3. Render image
             filename = await image_renderer.render(template_data, now=now)
-            logger.info(f"Image rendered: {filename}")
+            logger.info("Image rendered: %s", filename)
 
         except Exception as e:
             logger.error(
@@ -553,19 +553,21 @@ async def main() -> None:
             write_atomic(json_content, date_dir / "data.json")
             write_atomic(json_content, output_dir / "latest.json")
             logger.info(
-                f"JSON artifacts written: {date_dir / 'data.json'}, {output_dir / 'latest.json'}"
+                "JSON artifacts written: %s, %s", date_dir / "data.json", output_dir / "latest.json"
             )
 
             # Image artifacts (copy from cache)
             src_image = cache_dir / "images" / filename
             if not src_image.exists():
-                logger.error(f"Source image not found: {src_image}")
+                logger.error("Source image not found: %s", src_image)
                 sys.exit(11)
 
             copy_atomic(src_image, date_dir / "moyuren.jpg")
             copy_atomic(src_image, output_dir / "latest.jpg")
             logger.info(
-                f"Image artifacts copied: {date_dir / 'moyuren.jpg'}, {output_dir / 'latest.jpg'}"
+                "Image artifacts copied: %s, %s",
+                date_dir / "moyuren.jpg",
+                output_dir / "latest.jpg",
             )
 
             # TXT artifacts
@@ -575,7 +577,7 @@ async def main() -> None:
             write_atomic(dated_txt_content, date_dir / "data.txt")
             write_atomic(latest_txt_content, output_dir / "latest.txt")
             logger.info(
-                f"TXT artifacts written: {date_dir / 'data.txt'}, {output_dir / 'latest.txt'}"
+                "TXT artifacts written: %s, %s", date_dir / "data.txt", output_dir / "latest.txt"
             )
 
             # Markdown artifacts
@@ -584,11 +586,11 @@ async def main() -> None:
             write_atomic(dated_md_content, date_dir / "data.md")
             write_atomic(latest_md_content, output_dir / "latest.md")
             logger.info(
-                f"Markdown artifacts written: {date_dir / 'data.md'}, {output_dir / 'latest.md'}"
+                "Markdown artifacts written: %s, %s", date_dir / "data.md", output_dir / "latest.md"
             )
 
         except Exception as e:
-            logger.error(f"Failed to write artifacts: {e}", exc_info=True)
+            logger.error("Failed to write artifacts: %s", e, exc_info=True)
             sys.exit(11)
 
         # 6. Validate artifacts
@@ -606,13 +608,13 @@ async def main() -> None:
 
             missing_files = [f for f in required_files if not f.exists()]
             if missing_files:
-                logger.error(f"Validation failed: missing files: {missing_files}")
+                logger.error("Validation failed: missing files: %s", missing_files)
                 sys.exit(12)
 
             logger.info("Artifact validation passed")
 
         except Exception as e:
-            logger.error(f"Validation error: {e}", exc_info=True)
+            logger.error("Validation error: %s", e, exc_info=True)
             sys.exit(12)
 
         # 7. Print summary

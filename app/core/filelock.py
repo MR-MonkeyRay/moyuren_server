@@ -104,9 +104,9 @@ async def async_file_lock(
             try:
                 fcntl.flock(fd, fcntl.LOCK_UN)
             except OSError as e:
-                logger.warning(f"Failed to unlock {lock_path}: {e}")
+                logger.warning("Failed to unlock %s: %s", lock_path, e)
 
         try:
             os.close(fd)
         except OSError as e:
-            logger.warning(f"Failed to close lock file descriptor {lock_path}: {e}")
+            logger.warning("Failed to close lock file descriptor %s: %s", lock_path, e)

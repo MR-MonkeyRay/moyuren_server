@@ -59,9 +59,9 @@ class StockIndexService:
                 continue
             try:
                 self._calendars[market] = xcals.get_calendar(calendar_code)
-                logger.debug(f"Initialized calendar for {market}: {calendar_code}")
+                logger.debug("Initialized calendar for %s: %s", market, calendar_code)
             except Exception as e:
-                logger.warning(f"Failed to initialize calendar for {market}: {e}")
+                logger.warning("Failed to initialize calendar for %s: %s", market, e)
                 self._calendars[market] = None
 
     async def _get_http_client(self) -> httpx.AsyncClient:
@@ -93,7 +93,7 @@ class StockIndexService:
             return ZoneInfo(tz_name)
         except Exception:
             logger.warning(
-                f"Invalid timezone '{tz_name}' for market {market}, using {DEFAULT_TIMEZONE}"
+                "Invalid timezone '%s' for market %s, using %s", tz_name, market, DEFAULT_TIMEZONE
             )
             return ZoneInfo(DEFAULT_TIMEZONE)
 
@@ -142,12 +142,13 @@ class StockIndexService:
                 }
 
                 self._cache = {"data": result, "fetched_at": now.timestamp()}
-                logger.info(f"Fetched {len(items)} stock indices")
+                logger.info("Fetched %s stock indices", len(items))
                 return result
 
             except Exception as e:
                 logger.warning(
-                    f"Failed to fetch stock indices: {safe_exception_for_log(e, self.config.quote_url, self._proxy_url)}"
+                    "Failed to fetch stock indices: %s",
+                    safe_exception_for_log(e, self.config.quote_url, self._proxy_url),
                 )
                 # Return stale cache if available
                 if self._cache.get("data"):
@@ -169,7 +170,7 @@ class StockIndexService:
         try:
             data = resp.json()
         except JSONDecodeError as e:
-            logger.error(f"Failed to parse API response as JSON: {e}")
+            logger.error("Failed to parse API response as JSON: %s", e)
             raise ValueError("Invalid JSON response from stock API") from e
 
         if data.get("rc") != 0:
@@ -199,7 +200,7 @@ class StockIndexService:
                 try:
                     trading_days[market] = calendar.is_session(local_date)
                 except Exception as e:
-                    logger.warning(f"Failed to check trading day for {market}: {e}")
+                    logger.warning("Failed to check trading day for %s: %s", market, e)
                     trading_days[market] = local_now.weekday() < 5
             else:
                 trading_days[market] = local_now.weekday() < 5

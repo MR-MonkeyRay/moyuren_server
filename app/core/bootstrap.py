@@ -191,9 +191,7 @@ def register_scheduled_jobs(
             func=job,
             minute=config.scheduler.minute_of_hour,
         )
-        logger.info(
-            f"Scheduler mode: hourly (minute={config.scheduler.minute_of_hour:02d})"
-        )
+        logger.info("Scheduler mode: hourly (minute=%02d)", config.scheduler.minute_of_hour)
         return
 
     for idx, time_str in enumerate(config.scheduler.daily_times):
@@ -208,8 +206,8 @@ def register_scheduled_jobs(
                 job_id=job_id, func=job, hour=hour, minute=minute
             )
         except (ValueError, AttributeError) as exc:
-            logger.warning(f"Invalid time format '{time_str}', skipping: {exc}")
-    logger.info(f"Scheduler mode: daily (times={config.scheduler.daily_times})")
+            logger.warning("Invalid time format '%s', skipping: %s", time_str, exc)
+    logger.info("Scheduler mode: daily (times=%s)", config.scheduler.daily_times)
 
 
 async def warmup_daily_cache(
@@ -282,10 +280,10 @@ async def ensure_today_data(app: FastAPI) -> None:
             if data_file.is_file():
                 data_file.unlink()
             elif data_file.is_dir():
-                logger.error(f"Data file path is a directory, not a file: {data_file}")
+                logger.error("Data file path is a directory, not a file: %s", data_file)
                 shutil.rmtree(data_file)
         except (OSError, IsADirectoryError) as exc:
-            logger.error(f"Failed to remove invalid data file: {exc}")
+            logger.error("Failed to remove invalid data file: %s", exc)
 
     logger.info("No valid cache found, generating initial image...")
     try:
@@ -312,9 +310,9 @@ def _inspect_today_data(
         data = DailyDataFile.load(data_file)
         cached_date = data.date
         if cached_date != today_str:
-            logger.info(f"Cache date mismatch: {cached_date} != {today_str}")
+            logger.info("Cache date mismatch: %s != %s", cached_date, today_str)
             return True, True
     except StorageError as exc:
-        logger.warning(f"Data file invalid or unreadable: {exc}")
+        logger.warning("Data file invalid or unreadable: %s", exc)
         return True, False
     return False, False

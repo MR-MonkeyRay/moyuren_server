@@ -78,7 +78,8 @@ class KfcService:
                 )
         except httpx.RequestError as e:
             logger.warning(
-                f"Failed to fetch KFC content: {safe_exception_for_log(e, self.config.url, self._proxy_url)}"
+                "Failed to fetch KFC content: %s",
+                safe_exception_for_log(e, self.config.url, self._proxy_url),
             )
             return None
 
@@ -163,7 +164,8 @@ class CachedKfcService(DailyCache[str]):
             return await self._service.fetch_kfc_copy()
         except Exception as e:
             self.logger.error(
-                f"Failed to fetch KFC content: {safe_exception_for_log(e, self.config.url, self._proxy_url)}"
+                "Failed to fetch KFC content: %s",
+                safe_exception_for_log(e, self.config.url, self._proxy_url),
             )
             return None
 

@@ -18,7 +18,7 @@ _READ_LIMIT = 16384  # 读取文件前 16KB
 class _MetaParser(HTMLParser):
     """解析 HTML <head> 段中的 moyuren:* meta 标签。"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """初始化 meta 标签解析器。
 
         Side Effects:
@@ -42,9 +42,11 @@ class _MetaParser(HTMLParser):
             self.in_head = True
         elif tag.lower() == "meta" and self.in_head:
             attrs_dict = dict(attrs)
-            name = attrs_dict.get("name", "")
+            name = attrs_dict.get("name")
             content = attrs_dict.get("content")
-            if name.lower().startswith("moyuren:") and content is not None:
+            if name is None or content is None:
+                return
+            if name.lower().startswith("moyuren:"):
                 key = name[8:].lower()  # 去掉 "moyuren:" 前缀
                 self.meta_data[key] = content
 
@@ -89,25 +91,25 @@ class TemplateDiscovery:
 
             # 跳过不合法文件名
             if not _TEMPLATE_FILENAME_PATTERN.match(filename):
-                logger.warning(f"Skipping template with invalid filename: {filename}")
+                logger.warning("Skipping template with invalid filename: %s", filename)
                 continue
 
             try:
                 meta = self._parse_meta(html_file)
                 item = self._build_item(html_file, meta, global_config)
                 items.append(item)
-                logger.info(f"Discovered template: {item.name} ({html_file})")
+                logger.info("Discovered template: %s (%s)", item.name, html_file)
             except UnicodeDecodeError as e:
-                logger.warning(f"Skipping template {filename}: encoding error - {e}")
+                logger.warning("Skipping template %s: encoding error - %s", filename, e)
                 continue
             except ValueError as e:
-                logger.warning(f"Skipping template {filename}: configuration error - {e}")
+                logger.warning("Skipping template %s: configuration error - %s", filename, e)
                 continue
             except OSError as e:
-                logger.warning(f"Skipping template {filename}: file read error - {e}")
+                logger.warning("Skipping template %s: file read error - %s", filename, e)
                 continue
             except Exception:
-                logger.exception(f"Skipping template {filename}: unexpected error")
+                logger.exception("Skipping template %s: unexpected error", filename)
                 continue
 
         if not items:

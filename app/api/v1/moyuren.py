@@ -228,7 +228,7 @@ async def _generate_on_demand(
             headers={"Retry-After": "5"},
         )
     except Exception as e:
-        logger.error(f"On-demand image generation failed: {e}")
+        logger.error("On-demand image generation failed: %s", e)
         return JSONResponse(
             content=error_response(
                 code=ErrorCode.GENERATION_FAILED,
@@ -266,7 +266,7 @@ async def _load_data_for_date(
     # For today's date, trigger generation if file doesn't exist
     today = today_business()
     if target_date == today and not data_file.exists() and allow_generation:
-        logger.info(f"Data file not found for today ({target_date}), triggering generation...")
+        logger.info("Data file not found for today (%s), triggering generation...", target_date)
         error = await _generate_on_demand(request, logger)
         if error is not None:
             return None, error
@@ -274,7 +274,7 @@ async def _load_data_for_date(
 
     # Read data file
     if not data_file.exists():
-        logger.warning(f"Data file not found for date: {target_date}")
+        logger.warning("Data file not found for date: %s", target_date)
         return None, JSONResponse(
             content=error_response(
                 code=ErrorCode.API_DATA_NOT_FOUND,
@@ -286,7 +286,7 @@ async def _load_data_for_date(
     try:
         daily_data = DailyDataFile.load(data_file)
     except StorageError as e:
-        logger.error(f"Failed to load data file: {e.message}")
+        logger.error("Failed to load data file: %s", e.message)
         cause = e.__cause__
         errors = getattr(cause, "errors", None)
         invalid_image = bool(
@@ -324,7 +324,7 @@ async def _load_data_for_date(
             if image_error is not None:
                 if image_error.status_code == status.HTTP_404_NOT_FOUND and allow_generation:
                     logger.info(
-                        f"Image file not found for today ({target_date}), triggering generation..."
+                        "Image file not found for today (%s), triggering generation...", target_date
                     )
                     template_name = template if template is not None else next(iter(images), None)
                     error = await _generate_on_demand(request, logger, template_name=template_name)
@@ -354,7 +354,9 @@ def _handle_json_response(
     else:
         response_data = _build_simple_response(data, base_domain, template)
 
-    logger.info(f"Retrieved moyuren data for {target_date} (encode=json, detail={detail})")
+    logger.info(
+        "Retrieved moyuren data for %s (encode=json, detail=%s)", target_date, detail
+    )
     return JSONResponse(
         content=response_data,
         status_code=status.HTTP_200_OK,
@@ -372,7 +374,7 @@ def _handle_text_response(
 ) -> PlainTextResponse:
     """Handle plain text format response (encode=text)."""
     text_content = _build_text_response(data, base_domain, template)
-    logger.info(f"Retrieved moyuren data for {target_date} (encode=text)")
+    logger.info("Retrieved moyuren data for %s (encode=text)", target_date)
     return PlainTextResponse(
         content=text_content,
         status_code=status.HTTP_200_OK,
@@ -390,7 +392,7 @@ def _handle_markdown_response(
 ) -> PlainTextResponse:
     """Handle markdown format response (encode=markdown)."""
     markdown_content = _build_markdown_response(data, base_domain, template)
-    logger.info(f"Retrieved moyuren data for {target_date} (encode=markdown)")
+    logger.info("Retrieved moyuren data for %s (encode=markdown)", target_date)
     return PlainTextResponse(
         content=markdown_content,
         status_code=status.HTTP_200_OK,
@@ -407,7 +409,7 @@ def _get_image_path(
 
     # Validate filename to prevent path traversal
     if "/" in filename or "\\" in filename or ".." in filename:
-        logger.error(f"Invalid filename with path separators: {filename}")
+        logger.error("Invalid filename with path separators: %s", filename)
         return None, JSONResponse(
             content=error_response(
                 code=ErrorCode.STORAGE_READ_FAILED,
@@ -423,7 +425,7 @@ def _get_image_path(
         resolved_path = image_path.resolve()
         resolved_images = images_dir.resolve()
         if not resolved_path.is_relative_to(resolved_images):
-            logger.error(f"Path traversal attempt: {filename}")
+            logger.error("Path traversal attempt: %s", filename)
             return None, JSONResponse(
                 content=error_response(
                     code=ErrorCode.STORAGE_READ_FAILED,
@@ -432,7 +434,7 @@ def _get_image_path(
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
     except (OSError, ValueError) as e:
-        logger.error(f"Failed to resolve path: {e}")
+        logger.error("Failed to resolve path: %s", e)
         return None, JSONResponse(
             content=error_response(
                 code=ErrorCode.STORAGE_READ_FAILED,
@@ -443,7 +445,7 @@ def _get_image_path(
 
     # Check if image file exists
     if not image_path.is_file():
-        logger.error(f"Image file not found: {image_path}")
+        logger.error("Image file not found: %s", image_path)
         return None, JSONResponse(
             content=error_response(
                 code=ErrorCode.STORAGE_NOT_FOUND,
@@ -479,7 +481,7 @@ def _handle_image_response(
         return error
     assert image_path is not None
 
-    logger.info(f"Serving moyuren image for {target_date}: {filename}")
+    logger.info("Serving moyuren image for %s: %s", target_date, filename)
     return FileResponse(
         path=image_path,
         media_type="image/jpeg",
@@ -585,7 +587,7 @@ async def get_moyuren(
         else:
             return _handle_json_response(data, base_domain, template, detail, cache_headers, target_date, logger)
     except StorageError as e:
-        logger.error(f"Storage error: {e.message}")
+        logger.error("Storage error: %s", e.message)
         return JSONResponse(
             content=error_response(code=e.code, message=e.message),
             status_code=get_http_status(e.code),

@@ -231,12 +231,13 @@ class NetworkConfig(BaseModel):
         for url in value:
             if not url.startswith(("http://", "https://")):
                 logging.getLogger(__name__).warning(
-                    f"Invalid ghproxy_url '{redact_url(url)}': must start with http:// or https://, skipping"
+                    "Invalid ghproxy_url '%s': must start with http:// or https://, skipping",
+                    redact_url(url),
                 )
                 continue
             if "?" in url or "#" in url:
                 logging.getLogger(__name__).warning(
-                    f"Invalid ghproxy_url '{redact_url(url)}': query/fragment not allowed, skipping"
+                    "Invalid ghproxy_url '%s': query/fragment not allowed, skipping", redact_url(url)
                 )
                 continue
             valid_urls.append(url)

@@ -91,6 +91,7 @@ Docker：`docker-compose up -d`
 - 使用 `app/core/errors.py` 中的异常类
 - 通过 `config.py` 读取配置，禁止硬编码
 - 使用注入的 logger，禁止 print
+- 日志使用 % 惰性格式化（ruff G004）
 - 修改完成后更新 README.md
 - 提交代码后根据内容更新系统版本号
 

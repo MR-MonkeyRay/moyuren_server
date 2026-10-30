@@ -85,9 +85,7 @@ class _FontRequests:
         )
         for result in results:
             if isinstance(result, Exception):
-                self.logger.warning(
-                    f"Failed to abort font request: {safe_exception_for_log(result)}"
-                )
+                self.logger.warning("Failed to abort font request: %s", safe_exception_for_log(result))
 
 
 def format_datetime(value: str | datetime | int | float | None) -> str:
@@ -228,14 +226,17 @@ class ImageRenderer:
         template_item = self.templates_config.get_template(template_name)
         render_start = time.monotonic()
         self.logger.info(
-            f"Rendering template '{template_item.name}' from {template_item.path} "
-            f"(viewport={template_item.viewport.width}x{template_item.viewport.height})"
+            "Rendering template '%s' from %s (viewport=%sx%s)",
+            template_item.name,
+            template_item.path,
+            template_item.viewport.width,
+            template_item.viewport.height,
         )
 
         # Step 1: Render HTML with Jinja2
         html_content = self._render_template(data, template_item)
         self.logger.info(
-            f"Rendered HTML for '{template_item.name}' ({len(html_content)} bytes)"
+            "Rendered HTML for '%s' (%s bytes)", template_item.name, len(html_content)
         )
 
         # Step 2: Generate screenshot with Playwright
@@ -257,8 +258,10 @@ class ImageRenderer:
         self._write_file_atomic(filename, image_bytes)
 
         self.logger.info(
-            f"Successfully rendered image: {filename} "
-            f"({len(image_bytes)} bytes, {time.monotonic() - render_start:.1f}s)"
+            "Successfully rendered image: %s (%s bytes, %.1fs)",
+            filename,
+            len(image_bytes),
+            time.monotonic() - render_start,
         )
         if self._render_degraded:
             self.logger.warning("Render completed with degraded stylesheet(s)")
@@ -292,7 +295,7 @@ class ImageRenderer:
             }
             return template.render(**render_context)
         except TemplateError as e:
-            self.logger.error(f"Template rendering failed: {e}")
+            self.logger.error("Template rendering failed: %s", e)
             raise RenderError(
                 message=f"Failed to render template: {e}",
             ) from e
@@ -324,8 +327,10 @@ class ImageRenderer:
         tracked_resources: dict[int, _TrackedResource] = {}
         try:
             self.logger.info(
-                f"Creating screenshot page for '{template_name}' "
-                f"(scale={device_scale_factor}, quality={jpeg_quality})"
+                "Creating screenshot page for '%s' (scale=%s, quality=%s)",
+                template_name,
+                device_scale_factor,
+                jpeg_quality,
             )
             page = await browser_manager.create_page(
                 {
@@ -340,7 +345,7 @@ class ImageRenderer:
             # Set HTML content without waiting for network idle. Remote font/CDN requests
             # can keep the network busy long enough to fail otherwise valid renders.
             set_content_start = time.monotonic()
-            self.logger.info(f"Loading HTML into browser for '{template_name}'")
+            self.logger.info("Loading HTML into browser for '%s'", template_name)
             page_load_timeout_ms = self._timeout_ms(
                 self.render_config.page_load_timeout_sec
             )
@@ -355,8 +360,9 @@ class ImageRenderer:
             if not ready:
                 await font_requests.abort_pending()
             self.logger.info(
-                f"Browser content loaded for '{template_name}' "
-                f"({time.monotonic() - set_content_start:.1f}s)"
+                "Browser content loaded for '%s' (%.1fs)",
+                template_name,
+                time.monotonic() - set_content_start,
             )
 
             use_full_page = True
@@ -370,13 +376,16 @@ class ImageRenderer:
                 content_height = min(content_height, self.MAX_VIEWPORT_HEIGHT)
                 if original_height > self.MAX_VIEWPORT_HEIGHT:
                     self.logger.error(
-                        f"Screenshot truncated: content height {original_height}px exceeds "
-                        f"max {self.MAX_VIEWPORT_HEIGHT}px, output will be clipped"
+                        "Screenshot truncated: content height %spx exceeds max %spx, output will be clipped",
+                        original_height,
+                        self.MAX_VIEWPORT_HEIGHT,
                     )
                     use_full_page = False
                 self.logger.info(
-                    f"Adjusting viewport for '{template_name}' "
-                    f"from {viewport.height}px to {content_height}px"
+                    "Adjusting viewport for '%s' from %spx to %spx",
+                    template_name,
+                    viewport.height,
+                    content_height,
                 )
                 await page.set_viewport_size(
                     {"width": viewport.width, "height": content_height}
@@ -384,7 +393,7 @@ class ImageRenderer:
 
             # Take screenshot as JPEG
             screenshot_start = time.monotonic()
-            self.logger.info(f"Capturing screenshot for '{template_name}'")
+            self.logger.info("Capturing screenshot for '%s'", template_name)
             screenshot_bytes = await page.screenshot(
                 type="jpeg",
                 quality=jpeg_quality,
@@ -392,15 +401,17 @@ class ImageRenderer:
                 timeout=page_load_timeout_ms,
             )
             self.logger.info(
-                f"Screenshot captured for '{template_name}' "
-                f"({len(screenshot_bytes)} bytes, {time.monotonic() - screenshot_start:.1f}s)"
+                "Screenshot captured for '%s' (%s bytes, %.1fs)",
+                template_name,
+                len(screenshot_bytes),
+                time.monotonic() - screenshot_start,
             )
 
             return screenshot_bytes
 
         except Exception as e:
             self._log_pending_render_resources(template_name, tracked_resources)
-            self.logger.error(f"Screenshot generation failed: {e}")
+            self.logger.error("Screenshot generation failed: %s", e)
             raise RenderError(
                 message=f"Failed to generate screenshot: {e}",
             ) from e
@@ -442,8 +453,9 @@ class ImageRenderer:
                 else str(getattr(request, "resource_type", "unknown"))
             )
             self.logger.warning(
-                f"Render resource request failed: {resource_type} "
-                f"{self._resource_url_for_log(url)}"
+                "Render resource request failed: %s %s",
+                resource_type,
+                self._resource_url_for_log(url),
             )
 
         try:
@@ -451,7 +463,7 @@ class ImageRenderer:
             on("requestfinished", forget_request)
             on("requestfailed", log_failed_request)
         except Exception as e:
-            self.logger.debug(f"Render resource request tracking disabled: {e}")
+            self.logger.debug("Render resource request tracking disabled: %s", e)
             tracked_resources.clear()
         return tracked_resources
 
@@ -478,8 +490,10 @@ class ImageRenderer:
         remaining = len(pending) - limit
         suffix = f"; +{remaining} more" if remaining > 0 else ""
         self.logger.warning(
-            f"Pending render resources for {template_name} at timeout/failure: "
-            f"{summary}{suffix}"
+            "Pending render resources for %s at timeout/failure: %s%s",
+            template_name,
+            summary,
+            suffix,
         )
 
     async def _wait_for_render_ready(
@@ -513,24 +527,21 @@ class ImageRenderer:
                 timeout_ms,
             )
         except Exception as e:
-            self.logger.warning(
-                f"Render readiness wait skipped for {template_name}: {e}"
-            )
+            self.logger.warning("Render readiness wait skipped for %s: %s", template_name, e)
             if tracked_resources is not None:
                 self._log_pending_render_resources(template_name, tracked_resources)
             return False
 
         if result == "timeout":
             self.logger.warning(
-                f"Font readiness wait timed out for {template_name} after "
-                f"{self.render_config.font_ready_timeout_sec:.1f}s; continuing with fallback fonts"
+                "Font readiness wait timed out for %s after %.1fs; continuing with fallback fonts",
+                template_name,
+                self.render_config.font_ready_timeout_sec,
             )
             if tracked_resources is not None:
                 self._log_pending_render_resources(template_name, tracked_resources)
         elif result == "error":
-            self.logger.warning(
-                f"Font readiness wait failed for {template_name}; continuing"
-            )
+            self.logger.warning("Font readiness wait failed for %s; continuing", template_name)
         return result not in ("timeout", "error")
 
     async def _install_resource_cache_routes(self, page: Any) -> _FontRequests:
@@ -542,8 +553,10 @@ class ImageRenderer:
         timeout = self.render_config.remote_resource_timeout_sec
         if cache_enabled:
             self.logger.info(
-                f"Remote render resource cache enabled "
-                f"(dir={self.resource_cache_dir}, ttl={ttl}s, timeout={timeout}s)"
+                "Remote render resource cache enabled (dir=%s, ttl=%ss, timeout=%ss)",
+                self.resource_cache_dir,
+                ttl,
+                timeout,
             )
         else:
             self.logger.info("Remote render resource cache disabled")
@@ -595,7 +608,8 @@ class ImageRenderer:
                 except ValueError:
                     # Size limit exceeded - treat as unavailable
                     self.logger.warning(
-                        f"Render resource rejected (size limit exceeded): {self._sanitize_url_for_log(url)}"
+                        "Render resource rejected (size limit exceeded): %s",
+                        self._sanitize_url_for_log(url),
                     )
                     return None
 
@@ -620,8 +634,9 @@ class ImageRenderer:
                 return
             except Exception as e:
                 self.logger.warning(
-                    f"{'Font' if is_font else 'Render'} resource fetch failed: "
-                    f"{safe_exception_for_log(e)}"
+                    "%s resource fetch failed: %s",
+                    "Font" if is_font else "Render",
+                    safe_exception_for_log(e),
                 )
                 await route.abort()
                 return
@@ -643,7 +658,7 @@ class ImageRenderer:
                 return
             if cached is not None:
                 self.logger.info(
-                    f"Render resource {cached.cache_state}: {self._sanitize_url_for_log(url)}"
+                    "Render resource %s: %s", cached.cache_state, self._sanitize_url_for_log(url)
                 )
                 await route.fulfill(
                     status=200,
@@ -657,7 +672,8 @@ class ImageRenderer:
 
             if resource_type == "stylesheet":
                 self.logger.warning(
-                    f"Using empty stylesheet fallback for render resource: {self._sanitize_url_for_log(url)}"
+                    "Using empty stylesheet fallback for render resource: %s",
+                    self._sanitize_url_for_log(url),
                 )
                 self._render_degraded = True
                 await route.fulfill(
@@ -669,7 +685,8 @@ class ImageRenderer:
                 return
 
             self.logger.warning(
-                f"Aborting uncached render resource after fetch failure: {self._sanitize_url_for_log(url)}"
+                "Aborting uncached render resource after fetch failure: %s",
+                self._sanitize_url_for_log(url),
             )
             await route.abort()
 
@@ -692,9 +709,7 @@ class ImageRenderer:
         if url in blocked_urls:
             return
         blocked_urls.add(url)
-        self.logger.warning(
-            f"Blocked render resource URL: {self._sanitize_url_for_log(url)}"
-        )
+        self.logger.warning("Blocked render resource URL: %s", self._sanitize_url_for_log(url))
 
     async def _fetch_route_with_redirects(
         self,
@@ -719,8 +734,8 @@ class ImageRenderer:
                 return response
             if redirect_count >= max_redirects:
                 self.logger.warning(
-                    f"Render resource redirect limit exceeded: "
-                    f"{self._sanitize_url_for_log(current_url)}"
+                    "Render resource redirect limit exceeded: %s",
+                    self._sanitize_url_for_log(current_url),
                 )
                 return None
             next_url = urljoin(current_url, location)
@@ -841,9 +856,9 @@ class ImageRenderer:
         except ValueError as e:
             if cached_body is not None and cached_meta:
                 self.logger.warning(
-                    f"Render resource refresh exceeded size limit, using stale cache: "
-                    f"{self._sanitize_url_for_log(url)} "
-                    f"({safe_exception_for_log(e, url, self._proxy_url)})"
+                    "Render resource refresh exceeded size limit, using stale cache: %s (%s)",
+                    self._sanitize_url_for_log(url),
+                    safe_exception_for_log(e, url, self._proxy_url),
                 )
                 return _CachedResource(
                     body=self._rewrite_css_urls(
@@ -866,7 +881,9 @@ class ImageRenderer:
         except (httpx.HTTPError, OSError) as e:
             if cached_body is not None and cached_meta:
                 self.logger.warning(
-                    f"Render resource refresh failed, using stale cache: {self._sanitize_url_for_log(url)} ({safe_exception_for_log(e, url, self._proxy_url)})"
+                    "Render resource refresh failed, using stale cache: %s (%s)",
+                    self._sanitize_url_for_log(url),
+                    safe_exception_for_log(e, url, self._proxy_url),
                 )
                 return _CachedResource(
                     body=self._rewrite_css_urls(
@@ -876,7 +893,9 @@ class ImageRenderer:
                     cache_state="stale cache",
                 )
             self.logger.warning(
-                f"Render resource fetch failed: {self._sanitize_url_for_log(url)} ({safe_exception_for_log(e, url, self._proxy_url)})"
+                "Render resource fetch failed: %s (%s)",
+                self._sanitize_url_for_log(url),
+                safe_exception_for_log(e, url, self._proxy_url),
             )
             return None
 
@@ -937,8 +956,8 @@ class ImageRenderer:
                     if response.is_redirect and location:
                         if redirect_count >= redirect_limit:
                             self.logger.warning(
-                                f"Render resource redirect limit exceeded: "
-                                f"{self._sanitize_url_for_log(current_url)}"
+                                "Render resource redirect limit exceeded: %s",
+                                self._sanitize_url_for_log(current_url),
                             )
                             raise RenderResourceRedirectError(
                                 "Render resource redirect limit exceeded"
@@ -1109,7 +1128,9 @@ class ImageRenderer:
                 raise
         except OSError as e:
             self.logger.warning(
-                f"Failed to write render resource cache for {self._sanitize_url_for_log(url)}: {e}"
+                "Failed to write render resource cache for %s: %s",
+                self._sanitize_url_for_log(url),
+                e,
             )
 
     def _rewrite_css_urls(self, body: bytes, base_url: str, content_type: str) -> bytes:
@@ -1242,7 +1263,7 @@ class ImageRenderer:
             os.replace(tmp_path, target_path)
 
         except Exception as e:
-            self.logger.error(f"Failed to write file {filename}: {e}")
+            self.logger.error("Failed to write file %s: %s", filename, e)
             # Clean up temp file if it exists
             if "tmp_path" in locals() and Path(tmp_path).exists():
                 Path(tmp_path).unlink(missing_ok=True)

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, time, timezone
 from pathlib import Path
@@ -832,13 +833,43 @@ class TestScheduleCacheCleanup:
     """Tests for _schedule_cache_cleanup function."""
 
     @pytest.mark.asyncio
-    async def test_schedules_cleanup_and_logs_result(self) -> None:
+    async def test_retains_cleanup_task_until_done(self) -> None:
+        """Pending cleanup stays referenced and completion releases it."""
+        import app.services.generator as generator_module
+
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def cleanup_inline(*args: object) -> dict[str, int]:
+            started.set()
+            await release.wait()
+            return {"deleted_files": 0, "freed_bytes": 0}
+
+        with patch("app.services.generator.asyncio.to_thread", side_effect=cleanup_inline):
+            generator_module._schedule_cache_cleanup(MagicMock(), MagicMock())
+            await started.wait()
+            try:
+                tasks = generator_module._cleanup_tasks.copy()
+                assert len(tasks) == 1
+                task = next(iter(tasks))
+                assert not task.done()
+            finally:
+                release.set()
+                await asyncio.sleep(0)
+                await asyncio.sleep(0)
+
+        assert task.done()
+        assert task not in generator_module._cleanup_tasks
+
+    @pytest.mark.asyncio
+    async def test_schedules_cleanup_and_logs_result(self, caplog: pytest.LogCaptureFixture) -> None:
         from unittest.mock import AsyncMock
 
         from app.services.generator import _schedule_cache_cleanup
 
         cache_cleaner = MagicMock()
-        logger = MagicMock()
+        logger = logging.getLogger("test.cleanup")
+        caplog.set_level(logging.INFO, logger=logger.name)
         created_tasks: list[asyncio.Task[Any]] = []
         original_create_task = asyncio.create_task
 
@@ -857,16 +888,16 @@ class TestScheduleCacheCleanup:
             _schedule_cache_cleanup(cache_cleaner, logger)
             await asyncio.gather(*created_tasks)
 
-        logger.info.assert_called_once_with("Cleaned up 2 expired cache file(s), freed 4.0 KB")
+        assert "Cleaned up 2 expired cache file(s), freed 4.0 KB" in caplog.messages
 
     @pytest.mark.asyncio
-    async def test_logs_warning_when_cleanup_fails(self) -> None:
+    async def test_logs_warning_when_cleanup_fails(self, caplog: pytest.LogCaptureFixture) -> None:
         from unittest.mock import AsyncMock
 
         from app.services.generator import _schedule_cache_cleanup
 
         cache_cleaner = MagicMock()
-        logger = MagicMock()
+        logger = logging.getLogger("test.cleanup")
         created_tasks: list[asyncio.Task[Any]] = []
         original_create_task = asyncio.create_task
 
@@ -882,7 +913,7 @@ class TestScheduleCacheCleanup:
             _schedule_cache_cleanup(cache_cleaner, logger)
             await asyncio.gather(*created_tasks)
 
-        assert "Cache cleanup failed: boom" in logger.warning.call_args.args[0]
+        assert "Cache cleanup failed: boom" in caplog.messages
 
 
 class TestUpdateDataFile:

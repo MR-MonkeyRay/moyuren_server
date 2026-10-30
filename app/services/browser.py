@@ -78,13 +78,13 @@ class BrowserManager:
                 try:
                     await browser.close()
                 except Exception as e:
-                    self._logger.warning(f"Failed to close browser: {safe_exception_for_log(e)}")
+                    self._logger.warning("Failed to close browser: %s", safe_exception_for_log(e))
         finally:
             if playwright is not None:
                 try:
                     await playwright.stop()
                 except Exception as e:
-                    self._logger.warning(f"Failed to stop Playwright: {safe_exception_for_log(e)}")
+                    self._logger.warning("Failed to stop Playwright: %s", safe_exception_for_log(e))
 
     async def _ensure_browser(self) -> None:
         """Ensure browser is initialized (lazy loading).
@@ -127,7 +127,9 @@ class BrowserManager:
                     try:
                         await pw.stop()
                     except Exception as stop_err:
-                        self._logger.warning(f"Failed to stop Playwright after cancellation: {safe_exception_for_log(stop_err)}")
+                        self._logger.warning(
+                            "Failed to stop Playwright after cancellation: %s", safe_exception_for_log(stop_err)
+                        )
                 self._playwright = None
                 self._browser = None
                 raise
@@ -137,7 +139,10 @@ class BrowserManager:
                     try:
                         await pw.stop()
                     except Exception as stop_err:
-                        self._logger.warning(f"Failed to stop Playwright after launch failure: {safe_exception_for_log(stop_err)}")
+                        self._logger.warning(
+                            "Failed to stop Playwright after launch failure: %s",
+                            safe_exception_for_log(stop_err),
+                        )
                 self._playwright = None
                 self._browser = None
                 raise
@@ -220,7 +225,7 @@ class BrowserManager:
         try:
             await page.close()
         except Exception as e:
-            self._logger.warning(f"Failed to close page: {safe_exception_for_log(e)}")
+            self._logger.warning("Failed to close page: %s", safe_exception_for_log(e))
         finally:
             async with self._lock:
                 self._active_pages = max(0, self._active_pages - 1)
@@ -236,13 +241,15 @@ class BrowserManager:
         # Wait for active pages to complete (with timeout)
         elapsed = 0.0
         while self._active_pages > 0 and elapsed < _SHUTDOWN_TIMEOUT:
-            self._logger.debug(f"Waiting for {self._active_pages} active page(s) to complete...")
+            self._logger.debug("Waiting for %s active page(s) to complete...", self._active_pages)
             await asyncio.sleep(_SHUTDOWN_POLL_INTERVAL)
             elapsed += _SHUTDOWN_POLL_INTERVAL
 
         if self._active_pages > 0:
             self._logger.warning(
-                f"Shutdown timeout: {self._active_pages} page(s) still active after {_SHUTDOWN_TIMEOUT}s"
+                "Shutdown timeout: %s page(s) still active after %ss",
+                self._active_pages,
+                _SHUTDOWN_TIMEOUT,
             )
 
         async with self._lock:

@@ -671,6 +671,35 @@ class TestComputeHolidays:
     def now(self) -> datetime:
         return datetime(2026, 2, 4, 10, 0, 0, tzinfo=timezone(timedelta(hours=8)))
 
+    @pytest.mark.parametrize("kind", ["lunar", "solar"])
+    def test_festival_fields_are_validated_before_use(
+        self, aggregator: DomainDataAggregator, now: datetime, kind: str
+    ) -> None:
+        """Missing festival values are skipped and numeric strings still work."""
+        festivals = [
+            {"name": None, "solar_date": "2026-02-14", "days_left": 10},
+            {"name": 42, "solar_date": "2026-02-14", "days_left": 10},
+            {"name": "Missing date", "solar_date": None, "days_left": 10},
+            {"name": "Missing countdown", "solar_date": "2026-02-14", "days_left": None},
+            {"name": "Bad countdown", "solar_date": "2026-02-14", "days_left": "bad"},
+            {"name": "Valid", "solar_date": "2026-02-04", "days_left": "0"},
+        ]
+        with (
+            patch(
+                "app.services.compute.CalendarService.get_upcoming_lunar_festivals",
+                return_value=festivals if kind == "lunar" else [],
+            ),
+            patch(
+                "app.services.compute.CalendarService.get_upcoming_solar_festivals",
+                return_value=festivals if kind == "solar" else [],
+            ),
+        ):
+            result = aggregator._compute_holidays(now, {})
+
+        assert len(result) == 1
+        assert result[0]["name"] == "Valid"
+        assert result[0]["days_left"] == 0
+
     @patch("app.services.compute.CalendarService.get_upcoming_solar_festivals", return_value=[])
     @patch("app.services.compute.CalendarService.get_upcoming_lunar_festivals", return_value=[])
     def test_legal_holidays_basic(

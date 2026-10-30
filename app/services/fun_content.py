@@ -83,7 +83,7 @@ class FunContentService:
             for endpoint in endpoints:
                 result = await self._fetch_endpoint(client, endpoint)
                 if result:
-                    logger.info(f"Successfully fetched content from {endpoint.name}")
+                    logger.info("Successfully fetched content from %s", endpoint.name)
                     return result
 
         logger.warning("All fun content endpoints failed, using default")
@@ -144,13 +144,13 @@ class FunContentService:
             去空白后的文案字符串; 缺失或为空时返回 None.
         """
         if not isinstance(data, dict):
-            logger.debug(f"No valid content from {endpoint.name}")
+            logger.debug("No valid content from %s", endpoint.name)
             return None
 
         content = self._extract_by_path(data, endpoint.data_path)
         if isinstance(content, str) and content.strip():
             return content.strip()
-        logger.debug(f"No valid content from {endpoint.name}")
+        logger.debug("No valid content from %s", endpoint.name)
         return None
 
     def _extract_by_path(self, data: Any, path: str) -> Any:
