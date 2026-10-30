@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   moyuren-server:
     container_name: moyuren-server

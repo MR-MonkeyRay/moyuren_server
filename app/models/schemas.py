@@ -261,6 +261,17 @@ class StockIndicesSchema(BaseModel):
     updated_at: int = Field(..., description="Update timestamp in milliseconds")
     trading_day: dict[str, bool] = Field(..., description="Trading day status by market")
     is_stale: bool = Field(..., description="Whether data is stale/cached")
+    is_data_missing: bool = Field(
+        False, description="True for the placeholder returned when every quote fetch failed"
+    )
+
+
+class GoldPriceSchema(BaseModel):
+    """Gold price data schema (raw values from the upstream API)."""
+
+    today_price: str | float | None = Field(None, description="Today's gold price")
+    sell_price: str | float | None = Field(None, description="Gold buy-back price")
+    unit: str = Field("元/克", description="Price unit")
 
 
 class MoyurenDetailResponse(BaseModel):
@@ -286,6 +297,7 @@ class MoyurenDetailResponse(BaseModel):
     holidays: list[HolidayDetailSchema] | None = Field(None, description="Detailed holiday list")
     kfc_content_full: KfcContentSchema | None = Field(None, description="Full KFC content object")
     stock_indices: StockIndicesSchema | None = Field(None, description="Stock market indices data")
+    gold_price: GoldPriceSchema | None = Field(None, description="Gold price data")
     is_stale: bool = Field(False, description="Whether rendered data is stale")
     source_date: str | None = Field(None, description="Source data date in YYYY-MM-DD format")
 
