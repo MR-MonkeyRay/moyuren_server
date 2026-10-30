@@ -39,6 +39,9 @@ jobs:
       - name: Run mypy
         run: mypy app
 
+      - name: Run workflow regression tests
+        run: node --test .github/scripts/verify-ci-status.test.js
+
       - name: Run tests with coverage
         run: |
           coverage run -m pytest -m "not e2e" --tb=short
@@ -73,3 +76,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
+
+  publish:
+    name: Publish Docker image
+    needs: [test, security-scan]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    permissions:
+      contents: write
+      packages: write
+      actions: read
+    uses: ./.github/workflows/docker-publish.yml
+    secrets: inherit
