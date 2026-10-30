@@ -261,7 +261,7 @@ def generate_md(
     return "\n".join(lines)
 
 
-async def main():
+async def main() -> None:
     """Generate static artifacts."""
     args = parse_args()
     output_dir = Path(args.output)
@@ -300,13 +300,15 @@ async def main():
         )
         holiday_cache_dir = cache_dir / "holidays"
         holiday_source = config.get_source(HolidaySource)
-        holiday_service = HolidayService(
-            logger=logger,
-            cache_dir=holiday_cache_dir,
-            ghproxy_urls=config.network.ghproxy_urls,
-            timeout_sec=holiday_source.timeout_sec if holiday_source else 10,
-            proxy_url=config.network.proxy_url,
-        )
+        holiday_service: HolidayService | None = None
+        if holiday_source:
+            holiday_service = HolidayService(
+                logger=logger,
+                cache_dir=holiday_cache_dir,
+                ghproxy_urls=config.network.ghproxy_urls,
+                timeout_sec=holiday_source.timeout_sec,
+                proxy_url=config.network.proxy_url,
+            )
         fun_content_source = config.get_source(FunContentSource)
         fun_content_service = FunContentService(
             fun_content_source, proxy_url=config.network.proxy_url, instances=config.instances
@@ -375,18 +377,19 @@ async def main():
             logger.info(f"Fetched data from {len(raw_data)} endpoints")
 
             # 1.1 Fetch holiday data
-            try:
-                holidays = await holiday_service.fetch_holidays()
-                raw_data["holidays"] = holidays if holidays is not None else []
-                if holidays is None:
-                    logger.warning("Failed to fetch holidays, using default")
-                else:
-                    logger.info(f"Fetched {len(holidays)} holidays")
-            except Exception as e:
-                logger.warning(
-                    f"Failed to fetch holidays, using default: {safe_exception_for_log(e, config.network.proxy_url)}"
-                )
-                raw_data["holidays"] = []
+            raw_data["holidays"] = []
+            if holiday_service:
+                try:
+                    holidays = await holiday_service.fetch_holidays()
+                    raw_data["holidays"] = holidays if holidays is not None else []
+                    if holidays is None:
+                        logger.warning("Failed to fetch holidays, using default")
+                    else:
+                        logger.info(f"Fetched {len(holidays)} holidays")
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to fetch holidays, using default: {safe_exception_for_log(e, config.network.proxy_url)}"
+                    )
 
             # 1.2 Fetch fun content
             try:

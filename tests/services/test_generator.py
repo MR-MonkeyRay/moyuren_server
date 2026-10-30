@@ -730,6 +730,34 @@ class TestFetchAllDataParallel:
     """Tests for _fetch_all_data_parallel function."""
 
     @pytest.mark.asyncio
+    async def test_uses_empty_holidays_when_service_is_disabled(self) -> None:
+        """Generation proceeds with an empty holiday list when the service is absent."""
+        from app.services.generator import _fetch_all_data_parallel
+
+        services = _build_services(
+            data_fetcher=None,
+            holiday_service=None,
+            fun_content_service=None,
+            kfc_service=None,
+            stock_index_service=None,
+            gold_price_service=None,
+            daily_english_service=None,
+        )
+        app = MagicMock()
+        app.state.services = services
+
+        result = await _fetch_all_data_parallel(app, MagicMock())
+
+        assert result == {
+            "holidays": [],
+            "fun_content": None,
+            "kfc_copy": None,
+            "stock_indices": None,
+            "gold_price": None,
+            "daily_english": None,
+        }
+
+    @pytest.mark.asyncio
     async def test_fetches_all_data_from_service_container(self) -> None:
         from app.services.generator import _fetch_all_data_parallel
 

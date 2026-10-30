@@ -10,6 +10,7 @@ import respx
 from httpx import Response
 
 from app.core.config import StockIndexSource
+from app.services.compute import DataComputer
 from app.services.stock_index import StockIndexService
 
 
@@ -118,7 +119,7 @@ class TestStockIndexService:
 
         # Clear mock and set up failure
         respx.reset()
-        respx.get(url__regex=r".*quote.*").mock(return_value=Response(500))
+        respx.get(url__regex=r".*quote.*").mock(return_value=Response(502))
 
         # Second fetch after TTL with error
         now2 = datetime(2026, 2, 4, 10, 2, 0, tzinfo=timezone(timedelta(hours=8)))
@@ -130,13 +131,63 @@ class TestStockIndexService:
     @pytest.mark.asyncio
     async def test_fetch_indices_returns_placeholder_on_error_no_cache(self, service: StockIndexService) -> None:
         """Test returns placeholder when error and no cache."""
-        respx.get(url__regex=r".*quote.*").mock(return_value=Response(500))
+        respx.get(url__regex=r".*quote.*").mock(return_value=Response(502))
 
         now = datetime(2026, 2, 4, 10, 0, 0, tzinfo=timezone(timedelta(hours=8)))
         result = await service.fetch_indices(now)
 
         assert "items" in result
         assert result["items"] == []
+        assert result["is_data_missing"] is True
+        assert result["trading_day"] == {"A": True}
+        computed = DataComputer().compute({"stock_indices": result}, now=now)
+        assert computed["stock_indices"]["is_data_missing"] is True
+
+    def test_process_quotes_uses_config_order_names_and_markets(self) -> None:
+        """Configured indices alone define display order, names and markets."""
+        config = StockIndexSource(
+            quote_url="https://api.example.com/quote",
+            secids=[
+                {"secid": "116.CUSTOM", "name": "自选指数", "market": "HK"},
+                {"secid": "1.000001", "name": "", "market": "A"},
+                {"secid": "100.HSI", "name": "恒生配置名称", "market": "HK"},
+            ],
+            market_timezones={"A": "Asia/Shanghai", "HK": "Asia/Hong_Kong"},
+        )
+        with patch("app.services.stock_index.xcals.get_calendar"):
+            service = StockIndexService(config)
+        now = datetime(2026, 2, 4, tzinfo=timezone.utc)
+        items = service._process_quotes(
+            [
+                {"f12": "000001", "f14": "API名称", "f2": 100, "f3": 1},
+                {"f12": "CUSTOM", "f14": "API名称", "f2": 200, "f3": -1},
+                {"f12": "DJIA", "f14": "Unconfigured"},
+            ],
+            {"HK": False, "A": True},
+            now,
+        )
+
+        assert [item["code"] for item in items] == ["CUSTOM", "000001", "HSI"]
+        assert [item["name"] for item in items] == ["自选指数", "", "恒生配置名称"]
+        assert [item["market"] for item in items] == ["HK", "A", "HK"]
+        assert [item["is_trading_day"] for item in items] == [False, True, False]
+        assert items[2]["price"] is None
+
+    def test_trading_days_only_uses_configured_markets(self) -> None:
+        """Unknown calendars fall back to each configured market's local weekday."""
+        config = StockIndexSource(
+            quote_url="https://api.example.com/quote",
+            secids=[{"secid": "999.TEST", "name": "Test", "market": "OTHER"}],
+            market_timezones={"OTHER": "Asia/Tokyo", "US": "America/New_York"},
+        )
+        with patch("app.services.stock_index.xcals.get_calendar") as get_calendar:
+            service = StockIndexService(config)
+        get_calendar.assert_not_called()
+
+        # Sunday UTC is already Monday in Tokyo.
+        monday = datetime(2026, 2, 8, 16, tzinfo=timezone.utc)
+        assert service._get_trading_days(monday) == {"OTHER": True}
+        assert service._get_trading_days(monday - timedelta(days=1)) == {"OTHER": False}
 
     @respx.mock
     @pytest.mark.asyncio

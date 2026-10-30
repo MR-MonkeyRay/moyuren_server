@@ -452,6 +452,34 @@ class TestComputeStockIndicesEdgeCases:
     def aggregator(self) -> DomainDataAggregator:
         return DomainDataAggregator()
 
+    @pytest.mark.parametrize("items", [[], [None, "invalid", 42]])
+    def test_empty_or_non_dict_items_mean_failure(
+        self, aggregator: DomainDataAggregator, items: list[Any]
+    ) -> None:
+        """An empty processed list cannot describe a closed trading day."""
+        result = aggregator._compute_stock_indices({"stock_indices": {"items": items}})
+        assert result["is_data_missing"] is True
+        assert result["indices"] == []
+
+    def test_explicit_data_missing_flag_is_preserved(
+        self, aggregator: DomainDataAggregator
+    ) -> None:
+        """The service's failure flag takes precedence over available items."""
+        result = aggregator._compute_stock_indices(
+            {"stock_indices": {"items": [{"name": "Test"}], "is_data_missing": True}}
+        )
+        assert result["is_data_missing"] is True
+
+    def test_closed_market_items_are_not_missing(
+        self, aggregator: DomainDataAggregator
+    ) -> None:
+        """Real closed-day data still contains configured index entries."""
+        result = aggregator._compute_stock_indices(
+            {"stock_indices": {"items": [{"name": "Test", "is_trading_day": False}]}}
+        )
+        assert result["is_data_missing"] is False
+        assert result["indices"][0]["is_trading_day"] is False
+
     def test_items_not_list_returns_data_missing(self, aggregator: DomainDataAggregator) -> None:
         """Test when items is not a list."""
         raw_data = {"stock_indices": {"items": "not a list", "updated": "2026-02-04"}}
@@ -898,6 +926,39 @@ class TestComputeHolidays:
         result = aggregator._compute_holidays(now, raw_data)
         assert result[0]["duration"] == 3
         assert result[0]["days_left"] == 25
+
+
+@pytest.mark.parametrize("template_name", ["moyuren.html", "moyuren_cute.html"])
+@pytest.mark.parametrize("state", ["empty", "invalid", "flagged", "closed"])
+def test_stock_templates_distinguish_failure_from_closed_markets(
+    template_name: str, state: str
+) -> None:
+    """Both templates show failures while retaining real closed-day entries."""
+    from app.services.compute import DataComputer
+    from app.services.renderer import format_datetime
+
+    now = datetime(2026, 3, 12, 10, tzinfo=timezone(timedelta(hours=8)))
+    item = {"name": "测试指数", "price": 100, "is_trading_day": False}
+    items = [] if state == "empty" else ([None, "invalid"] if state == "invalid" else [item])
+    raw_data = {
+        "holidays": [],
+        "stock_indices": {"items": items, "is_data_missing": state == "flagged"},
+    }
+    data = DataComputer().compute(raw_data, now=now)
+    data["holidays"] = []
+    data["show_stock"] = True
+    templates_dir = Path(__file__).resolve().parents[2] / "templates"
+    env = Environment(loader=FileSystemLoader(templates_dir), autoescape=True)
+    env.filters["format_datetime"] = format_datetime
+
+    html = env.get_template(template_name).render(data)
+
+    assert ("数据更新失败" in html) is (state != "closed")
+    assert ("测试指数" in html) is (state == "closed")
+    assert "今日休市" not in html
+    assert "股市休息中" not in html
+    if state == "closed":
+        assert "休市" in html
 
 
 @pytest.mark.parametrize("template_name", ["moyuren.html", "moyuren_cute.html"])

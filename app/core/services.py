@@ -20,7 +20,7 @@ class AppServices:
     """应用服务容器 - 类型安全的服务访问"""
 
     data_fetcher: "CachedDataFetcher | None"
-    holiday_service: "CachedHolidayService"
+    holiday_service: "CachedHolidayService | None"
     fun_content_service: "CachedFunContentService | None"
     kfc_service: "CachedKfcService | None"
     stock_index_service: "StockIndexService | None"

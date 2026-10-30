@@ -115,11 +115,13 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
         """获取节假日数据。
 
         Returns:
-            节假日列表；获取失败或返回空值时返回空列表。
+            节假日列表；服务不存在、获取失败或返回空值时返回空列表。
 
         Side Effects:
             捕获异常并写入警告日志。
         """
+        if not holiday_service:
+            return []
         try:
             holidays = await holiday_service.get()
             return holidays if holidays is not None else []

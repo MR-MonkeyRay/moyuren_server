@@ -91,11 +91,11 @@ data_sources:
     quote_url: "https://push2delay.eastmoney.com/api/qt/ulist.np/get"
     timeout_sec: 5
     secids:
-      - "1.000001"   # 上证指数
-      - "0.399001"   # 深证成指
-      - "0.399006"   # 创业板指
-      - "100.HSI"    # 恒生指数
-      - "100.DJIA"   # 道琼斯
+      - {secid: "1.000001", name: "上证指数", market: "A"}
+      - {secid: "0.399001", name: "深证成指", market: "A"}
+      - {secid: "0.399006", name: "创业板指", market: "A"}
+      - {secid: "100.HSI", name: "恒生指数", market: "HK"}
+      - {secid: "100.DJIA", name: "道琼斯", market: "US"}
     market_timezones:
       A: "Asia/Shanghai"
       HK: "Asia/Hong_Kong"

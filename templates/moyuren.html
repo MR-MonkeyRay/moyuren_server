@@ -982,7 +982,7 @@
                 {% if show_stock %}
                 <div class="box market-card">
                     <h2><span role="img" aria-label="股票">📈</span> 大盘指数</h2>
-                    {% if stock_indices and stock_indices.indices %}
+                    {% if stock_indices and not stock_indices.is_data_missing and stock_indices.indices %}
                     <ul class="market-list" role="list" aria-label="大盘指数列表">
                         {% for index in stock_indices.indices %}
                         <li class="market-item{{ ' closed' if not index.is_trading_day else '' }}">

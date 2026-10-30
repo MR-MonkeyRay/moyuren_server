@@ -64,14 +64,18 @@ def build_services(
 
     data_computer = DataComputer(DomainDataAggregator(), TemplateAdapter())
     holiday_source = config.get_source(HolidaySource)
-    holiday_service = CachedHolidayService(
-        logger=logger,
-        cache_dir=daily_cache_dir,
-        raw_cache_dir=cache_dir / "holidays",
-        ghproxy_urls=config.network.ghproxy_urls,
-        timeout_sec=holiday_source.timeout_sec if holiday_source else 10,
-        proxy_url=config.network.proxy_url,
-        http_client=http_client,
+    holiday_service = (
+        CachedHolidayService(
+            logger=logger,
+            cache_dir=daily_cache_dir,
+            raw_cache_dir=cache_dir / "holidays",
+            ghproxy_urls=config.network.ghproxy_urls,
+            timeout_sec=holiday_source.timeout_sec,
+            proxy_url=config.network.proxy_url,
+            http_client=http_client,
+        )
+        if holiday_source
+        else None
     )
 
     fun_content_source = config.get_source(FunContentSource)
@@ -213,10 +217,9 @@ async def warmup_daily_cache(
 ) -> None:
     """Warm daily data source caches."""
     logger.info("Warming up daily cache...")
-    named_tasks: list[tuple[str, Awaitable[object]]] = [
-        ("holiday", services.holiday_service.get())
-    ]
+    named_tasks: list[tuple[str, Awaitable[object]]] = []
     optional_services = (
+        ("holiday", services.holiday_service),
         ("data_fetcher", services.data_fetcher),
         ("fun_content", services.fun_content_service),
         ("kfc", services.kfc_service),

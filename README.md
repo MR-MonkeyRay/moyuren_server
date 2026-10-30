@@ -352,6 +352,8 @@ sudo chown -R 1000:1000 cache logs
 | `network.ghproxy_urls` | `MOYUREN_NETWORK_GHPROXY_URLS` | GitHub 代理 URL 列表（JSON 数组，用于加速节假日数据、ECDICT 下载和新闻静态镜像回退） |
 | `data_sources` | - | 外部数据源配置列表（新闻、趣味内容等） |
 | `data_sources[].type` | - | 数据源类型（news/fun_content/crazy_thursday/holiday/stock_index/gold_price/daily_english） |
+| `data_sources[type=holiday].enabled` | `true` | 节假日服务开关；未配置 holiday 项时默认启用，显式设为 `false` 时不创建、预热或调用节假日服务 |
+| `data_sources[type=stock_index].secids` | - | 指数对象列表（`secid`、`name`、`market`）；列表顺序即显示顺序，名称以配置为准；旧字符串格式仍兼容 |
 | `data_sources[type=daily_english].backend.db_path` | - | ECDICT 数据库路径，默认 `ecdict/stardict.db`；相对路径基于 `paths.cache_dir`，兼容旧配置 `cache/ecdict/stardict.db`（去掉开头的 `cache/` 后解析），绝对路径保持不变 |
 | `instances.list_url` | `MOYUREN_INSTANCES_LIST_URL` | 60s 公共实例列表文档地址（Markdown），由 news/fun_content/crazy_thursday/gold_price 共享；`null` 关闭自动发现 |
 | `instances.urls` | `MOYUREN_INSTANCES_URLS` | 额外/兜底的实例基地址 JSON 数组（可选，优先于自动发现结果；端点路径沿用各数据源的 `url`） |
@@ -462,22 +464,26 @@ data_sources:
     timeout_sec: 5
 
   - type: "holiday"
+    enabled: true
     timeout_sec: 10
 
   - type: "stock_index"
     quote_url: "https://push2delay.eastmoney.com/api/qt/ulist.np/get"
     timeout_sec: 5
     secids:
-      - "1.000001"   # 上证指数
-      - "0.399001"   # 深证成指
-      - "0.399006"   # 创业板指
-      - "100.HSI"    # 恒生指数
-      - "100.DJIA"   # 道琼斯
+      - {secid: "1.000001", name: "上证指数", market: "A"}
+      - {secid: "0.399001", name: "深证成指", market: "A"}
+      - {secid: "0.399006", name: "创业板指", market: "A"}
+      - {secid: "100.HSI", name: "恒生指数", market: "HK"}
+      - {secid: "100.DJIA", name: "道琼斯", market: "US"}
     market_timezones:
       A: "Asia/Shanghai"
       HK: "Asia/Hong_Kong"
       US: "America/New_York"
     cache_ttl_sec: 60
+
+    # 兼容旧格式，例如：secids: ["1.000001", "100.HSI"]。
+    # 已知指数使用内置中文名和市场；未知代码按前缀推断市场，无法推断时须使用对象格式。
 
   - type: "gold_price"
     url: "https://60s.viki.moe/v2/gold-price"

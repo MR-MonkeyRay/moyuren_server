@@ -295,7 +295,7 @@ class DomainDataAggregator:
             "indices": items,
             "updated": data.get("updated"),
             "is_stale": data.get("is_stale", False),
-            "is_data_missing": False,  # 数据正常获取
+            "is_data_missing": bool(data.get("is_data_missing")) or not items,
         }
 
     def _compute_gold_price(self, raw_data: dict[str, Any]) -> dict[str, Any] | None:

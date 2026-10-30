@@ -4,15 +4,16 @@ import logging
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 
 import app.core.bootstrap as bootstrap_module
-from app.core.bootstrap import build_services, register_scheduled_jobs
-from app.core.config import AppConfig
+from app.core.bootstrap import build_services, register_scheduled_jobs, warmup_daily_cache
+from app.core.config import AppConfig, HolidaySource
 from app.core.scheduler import TaskScheduler
+from app.core.services import AppServices
 
 
 def test_register_scheduled_jobs_registers_each_daily_time() -> None:
@@ -93,23 +94,23 @@ def test_register_scheduled_jobs_registers_hourly_job() -> None:
     scheduler.add_daily_job.assert_not_called()
 
 
-def test_build_services_leaves_absent_optional_sources_disabled(
+def test_build_services_leaves_missing_or_disabled_optional_sources_disabled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Missing optional sources produce a container with disabled services."""
+    """Disabled holiday and missing optional sources produce disabled services."""
+    data_sources = [HolidaySource(type="holiday", enabled=False)]
     config = SimpleNamespace(
         paths=SimpleNamespace(cache_dir=str(tmp_path)),
         network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),
         instances=SimpleNamespace(),
         templates=SimpleNamespace(config=SimpleNamespace()),
         cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
-        get_source=lambda source_type: None,
+        data_sources=data_sources,
         get_templates_config=lambda: SimpleNamespace(items=[]),
     )
-    holiday_service = MagicMock()
-    monkeypatch.setattr(
-        bootstrap_module, "CachedHolidayService", lambda **kwargs: holiday_service
-    )
+    config.get_source = lambda source_type: AppConfig.get_source(config, source_type)
+    holiday_service_factory = MagicMock()
+    monkeypatch.setattr(bootstrap_module, "CachedHolidayService", holiday_service_factory)
     monkeypatch.setattr(bootstrap_module, "ImageRenderer", lambda **kwargs: MagicMock())
     monkeypatch.setattr(bootstrap_module, "CacheCleaner", lambda **kwargs: MagicMock())
     monkeypatch.setattr(bootstrap_module, "ImageGenerator", lambda: MagicMock())
@@ -118,13 +119,37 @@ def test_build_services_leaves_absent_optional_sources_disabled(
         cast(AppConfig, config), logging.getLogger(__name__), MagicMock()
     )
 
-    assert services.holiday_service is holiday_service
+    assert services.holiday_service is None
+    holiday_service_factory.assert_not_called()
     assert services.data_fetcher is None
     assert services.fun_content_service is None
     assert services.kfc_service is None
     assert services.stock_index_service is None
     assert services.gold_price_service is None
     assert services.daily_english_service is None
+
+
+@pytest.mark.asyncio
+async def test_warmup_daily_cache_skips_missing_holiday_service() -> None:
+    """Disabled holiday data does not add a cache warmup task."""
+    data_fetcher = SimpleNamespace(get=AsyncMock(return_value={}))
+    services = SimpleNamespace(
+        holiday_service=None,
+        data_fetcher=data_fetcher,
+        fun_content_service=None,
+        kfc_service=None,
+        gold_price_service=None,
+        daily_english_service=None,
+    )
+    config = SimpleNamespace(network=SimpleNamespace(proxy_url=None))
+
+    await warmup_daily_cache(
+        cast(AppServices, services),
+        cast(AppConfig, config),
+        logging.getLogger(__name__),
+    )
+
+    data_fetcher.get.assert_awaited_once_with()
 
 
 def test_build_services_leaves_disabled_daily_english_unconstructed(

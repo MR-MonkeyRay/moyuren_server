@@ -20,6 +20,7 @@ from app.core.config import (
     SchedulerConfig,
     ServerConfig,
     SQLiteBackendConfig,
+    StockIndexItem,
     StockIndexSource,
     TemplateItemConfig,
     TemplateRenderConfig,
@@ -418,6 +419,32 @@ class TestHolidaySource:
         with pytest.raises(ValidationError):
             HolidaySource(type="holiday", timeout_sec=0)
 
+    @pytest.mark.parametrize(
+        ("holiday_entry", "expected_enabled"),
+        [(None, True), ({"type": "holiday", "enabled": False}, False)],
+    )
+    def test_holiday_defaults_on_unless_explicitly_disabled(
+        self,
+        tmp_path: Path,
+        holiday_entry: dict[str, object] | None,
+        expected_enabled: bool,
+    ) -> None:
+        """Test a config without a holiday entry keeps holidays enabled."""
+        import yaml
+
+        raw = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
+        raw["data_sources"] = [
+            source for source in raw["data_sources"] if source["type"] != "holiday"
+        ]
+        if holiday_entry is not None:
+            raw["data_sources"].append(holiday_entry)
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(yaml.safe_dump(raw, allow_unicode=True), encoding="utf-8")
+
+        config = load_config(str(config_path))
+
+        assert (config.get_source(HolidaySource) is not None) is expected_enabled
+
 
 class TestCrazyThursdaySource:
     """Tests for CrazyThursdaySource model."""
@@ -457,7 +484,89 @@ class TestStockIndexSource:
             cache_ttl_sec=60,
         )
         assert len(config.secids) == 2
+        assert config.secids == [
+            StockIndexItem(
+                secid="1.000001", code="000001", name="上证指数", market="A"
+            ),
+            StockIndexItem(
+                secid="0.399001", code="399001", name="深证成指", market="A"
+            ),
+        ]
         assert config.cache_ttl_sec == 60
+
+    def test_object_items_preserve_configured_order_and_names(self) -> None:
+        """Test object items normalize codes while preserving order and names."""
+        config = StockIndexSource(
+            type="stock_index",
+            quote_url="https://api.example.com/quote",
+            secids=[
+                {"secid": "100.DJIA", "name": "道指", "market": "US"},
+                {"secid": "1.000001", "name": "沪指", "market": "A"},
+            ],
+            market_timezones={"A": "Asia/Shanghai", "US": "America/New_York"},
+        )
+
+        assert [item.code for item in config.secids] == ["DJIA", "000001"]
+        assert [item.name for item in config.secids] == ["道指", "沪指"]
+
+    @pytest.mark.parametrize(
+        ("secid", "expected_market"),
+        [("116.UNKNOWN", "HK"), ("105.SPX", "US"), ("0.123456", "A")],
+    )
+    def test_unknown_legacy_code_infers_market(
+        self, secid: str, expected_market: str
+    ) -> None:
+        """Test unknown legacy codes use the supported prefix mapping."""
+        config = StockIndexSource(
+            type="stock_index",
+            quote_url="https://api.example.com/quote",
+            secids=[secid],
+            market_timezones={expected_market: "UTC"},
+        )
+
+        assert config.secids[0].name == config.secids[0].code
+        assert config.secids[0].market == expected_market
+
+    @pytest.mark.parametrize("secid", ["000001", "x.000001", "1.", "1.A-B"])
+    def test_invalid_secid_format_raises_error(self, secid: str) -> None:
+        """Test malformed secids are rejected for both supported forms."""
+        with pytest.raises(ValidationError, match="secid must match"):
+            StockIndexSource(
+                type="stock_index",
+                quote_url="https://api.example.com/quote",
+                secids=[secid],
+                market_timezones={"A": "Asia/Shanghai"},
+            )
+
+    def test_unknown_legacy_prefix_requires_object_form(self) -> None:
+        """Test legacy entries with unknown prefixes provide migration guidance."""
+        with pytest.raises(ValidationError, match="use object form"):
+            StockIndexSource(
+                type="stock_index",
+                quote_url="https://api.example.com/quote",
+                secids=["999.UNKNOWN"],
+                market_timezones={"A": "Asia/Shanghai"},
+            )
+
+    def test_duplicate_codes_raise_error(self) -> None:
+        """Test duplicate codes are rejected even across different prefixes."""
+        with pytest.raises(ValidationError, match="duplicate stock index code"):
+            StockIndexSource(
+                type="stock_index",
+                quote_url="https://api.example.com/quote",
+                secids=["1.000001", "0.000001"],
+                market_timezones={"A": "Asia/Shanghai"},
+            )
+
+    def test_item_market_must_have_timezone(self) -> None:
+        """Test every configured item market has a timezone mapping."""
+        with pytest.raises(ValidationError, match="must be a key of market_timezones"):
+            StockIndexSource(
+                type="stock_index",
+                quote_url="https://api.example.com/quote",
+                secids=[{"secid": "100.HSI", "name": "恒生指数", "market": "HK"}],
+                market_timezones={"A": "Asia/Shanghai"},
+            )
 
 
 class TestTemplateRenderConfig:

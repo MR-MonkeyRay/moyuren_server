@@ -880,7 +880,11 @@
       <div class="stock-updated">更新于 {{ stock_indices.updated | format_datetime }}</div>
       {% endif %}
       {% else %}
+      {% if stock_indices and stock_indices.is_data_missing %}
+      <div class="empty-state font-cute">数据更新失败，请稍后再试</div>
+      {% else %}
       <div class="empty-state font-cute">(っ˘ω˘ς ) 股市休息中...</div>
+      {% endif %}
       {% if gold_price %}
       <div class="stock-item gold-item trend-{{ gold_price.trend }}" style="margin-top: 10px;">
         <div class="stock-name">💰 {{ gold_price.name }}</div>

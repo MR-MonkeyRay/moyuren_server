@@ -28,6 +28,25 @@ _TEMPLATE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 _FUN_CONTENT_ENDPOINT_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _DAILY_TIME_PATTERN = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 _UTC_OFFSET_PATTERN = re.compile(r"^UTC([+-])(\d{1,2})(?::(\d{2}))?$", re.IGNORECASE)
+_STOCK_INDEX_SECID_PATTERN = re.compile(r"^\d+\.[A-Za-z0-9]+$")
+
+_LEGACY_STOCK_INDEX_DEFAULTS: dict[str, tuple[str, str]] = {
+    "000001": ("上证指数", "A"),
+    "399001": ("深证成指", "A"),
+    "399006": ("创业板指", "A"),
+    "HSI": ("恒生指数", "HK"),
+    "DJIA": ("道琼斯", "US"),
+}
+
+_STOCK_INDEX_PREFIX_MARKETS: dict[str, str] = {
+    "0": "A",
+    "1": "A",
+    "116": "HK",
+    "100": "US",
+    "105": "US",
+    "106": "US",
+    "107": "US",
+}
 
 
 class ServerConfig(BaseModel):
@@ -552,12 +571,49 @@ class DailyEnglishSource(DataSourceBase):
         return value
 
 
+class StockIndexItem(BaseModel):
+    """Normalized stock index configuration item."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    secid: str
+    code: str = ""
+    name: str
+    market: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def derive_code(cls, data: Any) -> Any:
+        """校验 secid 格式并派生指数代码.
+
+        Args:
+            data: Pydantic 传入的原始配置数据.
+
+        Returns:
+            包含派生 code 字段的配置数据.
+
+        Raises:
+            ValueError: secid 格式不符合要求时抛出.
+        """
+        if not isinstance(data, dict):
+            return data
+        normalized = dict(data)
+        secid = normalized.get("secid")
+        if not isinstance(secid, str) or not _STOCK_INDEX_SECID_PATTERN.fullmatch(secid):
+            raise ValueError(
+                "secid must match '<market_prefix>.<code>' "
+                "using only letters and digits"
+            )
+        normalized["code"] = secid.split(".", 1)[1]
+        return normalized
+
+
 class StockIndexSource(DataSourceBase):
     """Stock index data source configuration."""
 
     type: Literal["stock_index"] = "stock_index"
     quote_url: str
-    secids: list[str]
+    secids: list[StockIndexItem]
     market_timezones: dict[str, str]
     cache_ttl_sec: int = 60
 
@@ -579,23 +635,51 @@ class StockIndexSource(DataSourceBase):
             raise ValueError("quote_url cannot be empty")
         return value
 
-    @field_validator("secids")
+    @field_validator("secids", mode="before")
     @classmethod
-    def validate_secids(cls, value: list[str]) -> list[str]:
-        """校验股票指数 secid 列表非空.
+    def normalize_secids(cls, value: Any) -> Any:
+        """将旧字符串格式与对象格式统一为指数配置对象.
 
         Args:
-            value: 股票指数 secid 列表.
+            value: 股票指数 secid 配置列表.
 
         Returns:
-            原始 secid 列表.
+            标准化后的指数配置对象列表.
 
         Raises:
-            ValueError: 列表为空时抛出.
+            ValueError: 列表为空或旧格式无法推断市场时抛出.
         """
         if not value:
             raise ValueError("secids cannot be empty")
-        return value
+        if not isinstance(value, list):
+            return value
+
+        normalized: list[Any] = []
+        for item in value:
+            if not isinstance(item, str):
+                normalized.append(item)
+                continue
+            if not _STOCK_INDEX_SECID_PATTERN.fullmatch(item):
+                raise ValueError(
+                    "secid must match '<market_prefix>.<code>' "
+                    "using only letters and digits"
+                )
+            prefix, code = item.split(".", 1)
+            default = _LEGACY_STOCK_INDEX_DEFAULTS.get(code)
+            if default is None:
+                market = _STOCK_INDEX_PREFIX_MARKETS.get(prefix)
+                if market is None:
+                    raise ValueError(
+                        f"cannot infer market for legacy secid '{item}'; "
+                        "use object form with secid, name, and market"
+                    )
+                name = code
+            else:
+                name, market = default
+            normalized.append(
+                {"secid": item, "code": code, "name": name, "market": market}
+            )
+        return normalized
 
     @field_validator("market_timezones")
     @classmethod
@@ -614,6 +698,28 @@ class StockIndexSource(DataSourceBase):
         if not value:
             raise ValueError("market_timezones cannot be empty")
         return value
+
+    @model_validator(mode="after")
+    def validate_stock_indices(self) -> "StockIndexSource":
+        """校验指数代码唯一且市场已配置时区.
+
+        Returns:
+            通过校验的数据源配置.
+
+        Raises:
+            ValueError: 指数代码重复或市场缺少时区配置时抛出.
+        """
+        seen_codes: set[str] = set()
+        for item in self.secids:
+            if item.code in seen_codes:
+                raise ValueError(f"duplicate stock index code: {item.code}")
+            seen_codes.add(item.code)
+            if item.market not in self.market_timezones:
+                raise ValueError(
+                    f"stock index market '{item.market}' must be a key "
+                    "of market_timezones"
+                )
+        return self
 
     @field_validator("cache_ttl_sec")
     @classmethod
@@ -1138,6 +1244,9 @@ class AppConfig(BaseSettings):
         source_types = [source.type for source in self.data_sources]
         if len(set(source_types)) != len(source_types):
             raise ValueError("data_sources types must be unique")
+        # 节假日默认启用：未配置时补默认项，仅显式 enabled: false 才禁用
+        if "holiday" not in source_types:
+            self.data_sources.append(HolidaySource())
         return self
 
     @classmethod

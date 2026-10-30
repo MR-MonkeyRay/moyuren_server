@@ -15,24 +15,12 @@ from app.core.network import create_async_client, safe_exception_for_log
 
 logger = logging.getLogger(__name__)
 
-# Index code to market mapping
-INDEX_MARKET_MAP = {
-    "000001": "A",  # 上证指数
-    "399001": "A",  # 深证成指
-    "399006": "A",  # 创业板指
-    "HSI": "HK",  # 恒生指数
-    "DJIA": "US",  # 道琼斯
-}
-
 # Market to exchange calendar mapping
 MARKET_CALENDAR_MAP = {
     "A": "XSHG",  # 上海证券交易所
     "HK": "XHKG",  # 香港交易所
     "US": "XNYS",  # 纽约证券交易所
 }
-
-# Index display order
-INDEX_ORDER = ["000001", "399001", "399006", "HSI", "DJIA"]
 
 # Default timezone for fallback
 DEFAULT_TIMEZONE = "Asia/Shanghai"
@@ -64,8 +52,11 @@ class StockIndexService:
         self._init_calendars()
 
     def _init_calendars(self) -> None:
-        """Initialize exchange calendars for all markets."""
-        for market, calendar_code in MARKET_CALENDAR_MAP.items():
+        """Initialize exchange calendars for configured markets."""
+        for market in dict.fromkeys(item.market for item in self.config.secids):
+            calendar_code = MARKET_CALENDAR_MAP.get(market)
+            if calendar_code is None:
+                continue
             try:
                 self._calendars[market] = xcals.get_calendar(calendar_code)
                 logger.debug(f"Initialized calendar for {market}: {calendar_code}")
@@ -168,7 +159,7 @@ class StockIndexService:
 
     async def _fetch_quotes(self) -> list[dict[str, Any]]:
         """Fetch quotes from Eastmoney API."""
-        secids = ",".join(self.config.secids)
+        secids = ",".join(item.secid for item in self.config.secids)
         url = f"{self.config.quote_url}?fltt=2&fields=f2,f3,f4,f12,f14&secids={secids}"
 
         client = await self._get_http_client()
@@ -195,9 +186,9 @@ class StockIndexService:
         Returns:
             Dictionary mapping market code to trading day status.
         """
-        trading_days = {}
+        trading_days: dict[str, bool] = {}
 
-        for market in ["A", "HK", "US"]:
+        for market in dict.fromkeys(item.market for item in self.config.secids):
             # Get local date for each market's timezone
             tz = self._get_timezone(market)
             local_now = now.astimezone(tz)
@@ -235,14 +226,15 @@ class StockIndexService:
         trading_days: dict[str, bool],
         now: datetime,
     ) -> list[dict[str, Any]]:
-        """Process raw quotes into standardized format."""
+        """Process quotes in config order, always using configured names."""
         # Create lookup by code
         quote_map = {q.get("f12"): q for q in quotes}
 
         items = []
-        for code in INDEX_ORDER:
+        for item in self.config.secids:
+            code = item.code
             quote = quote_map.get(code)
-            market = INDEX_MARKET_MAP.get(code, "A")
+            market = item.market
             is_trading_day = trading_days.get(market, True)
 
             if not quote:
@@ -250,7 +242,7 @@ class StockIndexService:
                 items.append(
                     {
                         "code": code,
-                        "name": self._get_index_name(code),
+                        "name": item.name,
                         "price": None,
                         "change": None,
                         "change_pct": None,
@@ -280,7 +272,7 @@ class StockIndexService:
             items.append(
                 {
                     "code": code,
-                    "name": quote.get("f14", self._get_index_name(code)),
+                    "name": item.name,
                     "price": price,
                     "change": change,
                     "change_pct": change_pct,
@@ -292,23 +284,13 @@ class StockIndexService:
 
         return items
 
-    def _get_index_name(self, code: str) -> str:
-        """Get default index name by code."""
-        names = {
-            "000001": "上证指数",
-            "399001": "深证成指",
-            "399006": "创业板指",
-            "HSI": "恒生指数",
-            "DJIA": "道琼斯",
-        }
-        return names.get(code, code)
-
     def _get_placeholder_data(self, now: datetime) -> dict[str, Any]:
         """Get placeholder data when API fails."""
         return {
             "items": [],
             "updated": now.strftime("%Y/%m/%d %H:%M:%S"),
             "updated_at": int(now.timestamp() * 1000),
-            "trading_day": {"A": False, "HK": False, "US": False},
+            "trading_day": self._get_trading_days(now),
             "is_stale": True,
+            "is_data_missing": True,
         }
