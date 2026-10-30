@@ -465,6 +465,19 @@ class CalendarService:
             }
 
     @staticmethod
+    def get_day_off_status(dt: date) -> tuple[bool, str | None]:
+        """返回休息状态和法定假日名称，补班优先于普通周末。"""
+        try:
+            solar = SolarDay.from_ymd(dt.year, dt.month, dt.day)
+            legal_holiday = solar.get_legal_holiday()
+            if legal_holiday is not None:
+                is_off = not legal_holiday.is_work()
+                return is_off, legal_holiday.get_name() if is_off else None
+        except Exception as e:
+            logger.warning("Failed to check day-off status for %s: %s", dt, e)
+        return dt.weekday() >= 5, None
+
+    @staticmethod
     def is_holiday(dt: date) -> bool:
         """Check if the given date is a holiday.
 

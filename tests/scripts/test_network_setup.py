@@ -86,7 +86,9 @@ def _fake_config(
             ghproxy_urls=["https://mirror.example/"],
         ),
         instances=SimpleNamespace(list_url=None, urls=None),
-        templates=SimpleNamespace(config=SimpleNamespace(text_limits=TextLimitsConfig())),
+        templates=SimpleNamespace(
+            config=SimpleNamespace(text_limits=TextLimitsConfig(), work_end_time="18:00")
+        ),
         get_source=get_source,
         get_templates_config=lambda: SimpleNamespace(
             items=[SimpleNamespace(name="moyuren")]

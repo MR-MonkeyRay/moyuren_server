@@ -864,6 +864,7 @@ class TemplateRenderConfig(BaseModel):
     use_china_cdn: bool = True
     local_fonts_dir: str = "templates/fonts"
     remote_font_fallback: bool = True
+    work_end_time: str = "18:00"
     remote_resource_cache_enabled: bool = True
     remote_resource_cache_ttl_sec: int = 7 * 24 * 60 * 60
     remote_resource_timeout_sec: float = 5.0
@@ -878,6 +879,14 @@ class TemplateRenderConfig(BaseModel):
         "fonts.gstatic.cn",
     ])
     text_limits: TextLimitsConfig = Field(default_factory=TextLimitsConfig)
+
+    @field_validator("work_end_time")
+    @classmethod
+    def validate_work_end_time(cls, value: str) -> str:
+        """校验下班时间，使用严格的 HH:MM 格式。"""
+        if not re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", value):
+            raise ValueError("work_end_time must use HH:MM format")
+        return value
 
     @field_validator("allowed_resource_hosts")
     @classmethod

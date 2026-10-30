@@ -23,14 +23,14 @@
 | 获取 | `app/services/fetcher.py` | 异步并行 HTTP 请求（主源 + 公共实例智能切换 + 静态镜像兜底） |
 | 实例路由 | `app/services/instances.py` | 解析 60s 公共实例列表文档（带 TTL 缓存）并在主源/实例间智能切换 |
 | 实例配置 | `config.yaml` `instances.*` | 全局 60s 公共实例清单（news/fun_content/crazy_thursday/gold_price 共享） |
-| 日历 | `app/services/calendar.py` | 农历、节气、时区管理（CalendarService） |
+| 日历 | `app/services/calendar.py` | 农历、节气、时区管理与法定休假/补班判断（CalendarService） |
 | 节假日 | `app/services/holiday.py` | 中国法定节假日数据获取与处理 |
 | 趣味内容 | `app/services/fun_content.py` | 随机获取冷笑话/一言/段子（主源不可用时切换公共实例） |
 | KFC | `app/services/kfc.py` | 疯狂星期四文案（周四刷新，主源不可用时切换公共实例） |
 | 金价 | `app/services/gold_price.py` | 实时金价数据获取与缓存（主源不可用时切换公共实例） |
 | 股票指数 | `app/services/stock_index.py` | 大盘指数实时行情（StockIndexService） |
 | 每日英语 | `app/services/daily_english.py` | 每日英语单词服务（ECDICT + 随机 API） |
-| 计算 | `app/services/compute.py` | 原始数据 → 模板上下文，按业务日期与缓存降级计算数据新鲜度 |
+| 计算 | `app/services/compute.py` | 原始数据 → 模板上下文，合并假期内节日，按业务快照计算休息日/下班倒计时与数据新鲜度 |
 | 渲染 | `app/services/renderer.py` | Jinja2 + Playwright 截图；通过虚拟域名提供本地 WOFF2 字体，Google Fonts 仅作缺字回退 |
 | 浏览器 | `app/services/browser.py` | Playwright 浏览器生命周期管理 |
 | 模板发现 | `app/services/template_discovery.py` | 自动扫描模板目录，解析 meta 标签 |

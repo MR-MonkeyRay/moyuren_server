@@ -237,6 +237,68 @@ class TestImageRenderer:
         assert env1 is env2
 
     @pytest.mark.asyncio
+    async def test_fit_viewport_shrinks_to_content(
+        self, renderer: ImageRenderer
+    ) -> None:
+        """Content shorter than the declared viewport removes the trailing blank band."""
+        page = AsyncMock()
+        page.evaluate.side_effect = [420, 420]
+        viewport = ViewportConfig(width=800, height=600)
+
+        use_full_page = await renderer._fit_viewport_to_content(page, viewport, "test")
+
+        assert use_full_page is True
+        assert page.evaluate.await_count == 2
+        page.set_viewport_size.assert_awaited_once_with({"width": 800, "height": 420})
+
+    @pytest.mark.asyncio
+    async def test_fit_viewport_grows_and_uses_remeasured_height(
+        self, renderer: ImageRenderer
+    ) -> None:
+        """Content growth and layout reflow both contribute to the final height."""
+        page = AsyncMock()
+        page.evaluate.side_effect = [900, 940]
+        viewport = ViewportConfig(width=800, height=600)
+
+        use_full_page = await renderer._fit_viewport_to_content(page, viewport, "test")
+
+        assert use_full_page is True
+        assert page.set_viewport_size.await_args_list == [
+            (({"width": 800, "height": 900},), {}),
+            (({"width": 800, "height": 940},), {}),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_fit_viewport_clips_content_at_maximum(
+        self, renderer: ImageRenderer
+    ) -> None:
+        """Oversized content uses the maximum viewport and disables full-page capture."""
+        page = AsyncMock()
+        page.evaluate.side_effect = [5000, 5000]
+        viewport = ViewportConfig(width=800, height=600)
+
+        use_full_page = await renderer._fit_viewport_to_content(page, viewport, "test")
+
+        assert use_full_page is False
+        page.set_viewport_size.assert_awaited_once_with(
+            {"width": 800, "height": renderer.MAX_VIEWPORT_HEIGHT}
+        )
+
+    @pytest.mark.asyncio
+    async def test_fit_viewport_keeps_declared_height_for_zero_measurement(
+        self, renderer: ImageRenderer
+    ) -> None:
+        """An empty or failed measurement keeps the configured viewport height."""
+        page = AsyncMock()
+        page.evaluate.return_value = 0
+        viewport = ViewportConfig(width=800, height=600)
+
+        use_full_page = await renderer._fit_viewport_to_content(page, viewport, "test")
+
+        assert use_full_page is True
+        page.set_viewport_size.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_render_success(self, renderer: ImageRenderer) -> None:
         """Test successful render."""
         template_data = {"title": "Test Title"}

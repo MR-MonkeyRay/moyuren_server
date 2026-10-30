@@ -495,7 +495,10 @@ async def main():
         fun_content_service = FunContentService(
             fun_content_source, proxy_url=proxy_url, instances=config.instances
         )
-        data_computer = DataComputer(text_limits=config.templates.config.text_limits)
+        data_computer = DataComputer(
+            text_limits=config.templates.config.text_limits,
+            work_end_time=config.templates.config.work_end_time,
+        )
 
         # Initialize stock index service
         stock_index_service = None

@@ -139,6 +139,7 @@
     }
     .badge-relax { background: rgba(181, 234, 215, 0.4); }
     .badge-work { background: rgba(255, 183, 178, 0.4); }
+    .off-work-badge { font-size: 13px; color: var(--line-coffee); }
 
     /* --- 2. 进度条区域 --- */
     .progress-section {
@@ -539,8 +540,7 @@
     .footer {
       text-align: center;
       font-size: 14px;
-      color: var(--line-coffee);
-      opacity: 0.6;
+      color: #665040;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -586,15 +586,25 @@
     <header class="header card">
       <div class="header-left">
         <div class="date-main font-cute">{{ date.year_month }} {{ date.day }}日</div>
-        <div class="date-sub">{{ date.lunar_year }}年 {{ date.lunar_date }}</div>
+        {% set lunar_year = date.lunar_year | string %}
+        <div class="date-sub">{{ lunar_year }}{% if not lunar_year.endswith('年') %}年{% endif %} {{ date.lunar_date }}</div>
         <div class="date-sub">{{ date.week_en }}</div>
       </div>
       <div class="header-right">
         <div class="badge-week font-cute">{{ date.week_cn }}</div>
-        {% if weekend.is_weekend %}
+        {% if next_rest_day is defined %}
+        {% if next_rest_day.is_today_off %}
+        <div class="badge-weekend badge-relax font-cute">🎉 {% if next_rest_day.today_name %}{{ next_rest_day.today_name }}快乐！{% else %}休息啦！{% endif %}</div>
+        {% else %}
+        <div class="badge-weekend badge-work font-cute">⏳ 距休息 {{ next_rest_day.days_left }} 天</div>
+        {% endif %}
+        {% elif weekend.is_weekend %}
         <div class="badge-weekend badge-relax font-cute">🎉 周末啦！</div>
         {% else %}
         <div class="badge-weekend badge-work font-cute">⏳ 距周末 {{ weekend.days_left }} 天</div>
+        {% endif %}
+        {% if off_work is defined and off_work %}
+        <div class="off-work-badge font-cute">{% if off_work.done %}已下班{% else %}距下班 {{ off_work.hours }}h {{ off_work.minutes }}m{% endif %}</div>
         {% endif %}
       </div>
     </header>

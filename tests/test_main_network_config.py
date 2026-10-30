@@ -82,7 +82,9 @@ def _fake_config(tmp_path: Path) -> SimpleNamespace:
             ghproxy_urls=["https://mirror.example/"],
         ),
         instances=SimpleNamespace(list_url=None, urls=None),
-        templates=SimpleNamespace(config=SimpleNamespace(text_limits=TextLimitsConfig())),
+        templates=SimpleNamespace(
+            config=SimpleNamespace(text_limits=TextLimitsConfig(), work_end_time="18:00")
+        ),
         cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
         scheduler=SimpleNamespace(mode="hourly", minute_of_hour=0, daily_times=[]),
         get_source=get_source,

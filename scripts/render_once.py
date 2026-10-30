@@ -137,7 +137,10 @@ async def main() -> None:
                 proxy_url=config.network.proxy_url,
             )
 
-        data_computer = DataComputer(text_limits=config.templates.config.text_limits)
+        data_computer = DataComputer(
+            text_limits=config.templates.config.text_limits,
+            work_end_time=config.templates.config.work_end_time,
+        )
 
         # Get templates configuration
         templates_config = config.get_templates_config()

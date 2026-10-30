@@ -5,6 +5,7 @@ import hashlib
 import inspect
 import json
 import logging
+import math
 import os
 import re
 import tempfile
@@ -158,6 +159,40 @@ class ImageRenderer:
     """HTML template renderer and screenshot generator using reusable browser."""
 
     MAX_VIEWPORT_HEIGHT = 4000  # Maximum viewport height to prevent memory/CPU issues
+    _CONTENT_HEIGHT_SCRIPT = """() => {
+        const body = document.body;
+        if (!body) {
+            return 0;
+        }
+
+        const visibleElements = Array.from(body.querySelectorAll("*"))
+            .map(element => ({ element, rect: element.getBoundingClientRect() }))
+            .filter(({ element, rect }) => {
+                const style = getComputedStyle(element);
+                return style.display !== "none" && (rect.width > 0 || rect.height > 0);
+            });
+        if (visibleElements.length === 0) {
+            return 0;
+        }
+
+        const scrollY = window.scrollY;
+        let contentBottom = -Infinity;
+        for (const { element, rect } of visibleElements) {
+            contentBottom = Math.max(contentBottom, rect.bottom + scrollY);
+            if (element.parentElement === body) {
+                const marginBottom = Number.parseFloat(getComputedStyle(element).marginBottom) || 0;
+                contentBottom = Math.max(contentBottom, rect.bottom + scrollY + marginBottom);
+            }
+        }
+
+        const bodyStyle = getComputedStyle(body);
+        const paddingBottom = Number.parseFloat(bodyStyle.paddingBottom) || 0;
+        const borderBottom = Number.parseFloat(bodyStyle.borderBottomWidth) || 0;
+        const marginBottom = Number.parseFloat(bodyStyle.marginBottom) || 0;
+        // Element rects use page coordinates, so body/child top margins are already
+        // included. Bottom padding, borders, and collapsed outer margins need adding.
+        return Math.ceil(contentBottom + paddingBottom + borderBottom + marginBottom);
+    }"""
 
     def __init__(
         self,
@@ -376,31 +411,9 @@ class ImageRenderer:
                 time.monotonic() - set_content_start,
             )
 
-            use_full_page = True
-            # Adjust viewport height to match actual content height
-            # This ensures full_page=True captures content without extra blank space
-            content_height = await page.evaluate(
-                "Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
+            use_full_page = await self._fit_viewport_to_content(
+                page, viewport, template_name
             )
-            if content_height and content_height != viewport.height:
-                original_height = content_height
-                content_height = min(content_height, self.MAX_VIEWPORT_HEIGHT)
-                if original_height > self.MAX_VIEWPORT_HEIGHT:
-                    self.logger.error(
-                        "Screenshot truncated: content height %spx exceeds max %spx, output will be clipped",
-                        original_height,
-                        self.MAX_VIEWPORT_HEIGHT,
-                    )
-                    use_full_page = False
-                self.logger.info(
-                    "Adjusting viewport for '%s' from %spx to %spx",
-                    template_name,
-                    viewport.height,
-                    content_height,
-                )
-                await page.set_viewport_size(
-                    {"width": viewport.width, "height": content_height}
-                )
 
             # Take screenshot as JPEG
             screenshot_start = time.monotonic()
@@ -433,6 +446,78 @@ class ImageRenderer:
                         await font_requests.abort_pending()
                 finally:
                     await browser_manager.release_page(page)
+
+    async def _fit_viewport_to_content(
+        self, page: Any, viewport: ViewportConfig, template_name: str
+    ) -> bool:
+        """Fit the viewport to rendered content and report whether full-page capture is safe."""
+        measured_height = self._valid_content_height(
+            await page.evaluate(self._CONTENT_HEIGHT_SCRIPT)
+        )
+        if measured_height is None:
+            return True
+
+        use_full_page = measured_height <= self.MAX_VIEWPORT_HEIGHT
+        target_height = min(measured_height, self.MAX_VIEWPORT_HEIGHT)
+        if target_height == viewport.height:
+            return use_full_page
+
+        await self._set_viewport_height(
+            page, viewport, template_name, viewport.height, target_height
+        )
+
+        # A viewport change can reflow 100vh/min-height and flex-fill layouts. Measure
+        # once more after layout settles so the final capture follows the new geometry.
+        remeasured_height = self._valid_content_height(
+            await page.evaluate(self._CONTENT_HEIGHT_SCRIPT)
+        )
+        if remeasured_height is None:
+            remeasured_height = measured_height
+        use_full_page = use_full_page and remeasured_height <= self.MAX_VIEWPORT_HEIGHT
+        final_height = min(remeasured_height, self.MAX_VIEWPORT_HEIGHT)
+        if final_height != target_height:
+            await self._set_viewport_height(
+                page, viewport, template_name, target_height, final_height
+            )
+
+        if not use_full_page:
+            self.logger.error(
+                "Screenshot truncated: content height %spx exceeds max %spx, output will be clipped",
+                max(measured_height, remeasured_height),
+                self.MAX_VIEWPORT_HEIGHT,
+            )
+        return use_full_page
+
+    @staticmethod
+    def _valid_content_height(value: Any) -> int | None:
+        """Normalize a browser measurement, preserving the declared-height fallback."""
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value <= 0
+        ):
+            return None
+        return math.ceil(value)
+
+    async def _set_viewport_height(
+        self,
+        page: Any,
+        viewport: ViewportConfig,
+        template_name: str,
+        previous_height: int,
+        content_height: int,
+    ) -> None:
+        """Apply a measured viewport height while keeping its configured width."""
+        self.logger.info(
+            "Adjusting viewport for '%s' from %spx to %spx",
+            template_name,
+            previous_height,
+            content_height,
+        )
+        await page.set_viewport_size(
+            {"width": viewport.width, "height": content_height}
+        )
 
     def _timeout_ms(self, timeout_sec: float) -> int:
         """Convert seconds to Playwright timeout milliseconds."""

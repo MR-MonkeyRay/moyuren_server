@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from app import __github_url__, __version__
-from app.core.config import TextLimitsConfig
+from app.core.config import TemplateRenderConfig, TextLimitsConfig
 from app.services.calendar import CalendarService, get_business_timezone, now_business
 
 logger = logging.getLogger(__name__)
@@ -205,9 +205,18 @@ class DomainDataAggregator:
         {"num": 5, "text": "工作中遇到困难时，深呼吸，放轻松。"},
     ]
 
-    def __init__(self, text_limits: TextLimitsConfig | None = None) -> None:
+    def __init__(
+        self,
+        text_limits: TextLimitsConfig | None = None,
+        work_end_time: str | None = None,
+    ) -> None:
         """Initialize the aggregator with external text limits."""
         self._text_limits = text_limits or TextLimitsConfig()
+        self._work_end_time = (
+            TemplateRenderConfig(work_end_time=work_end_time)
+            if work_end_time is not None
+            else TemplateRenderConfig()
+        ).work_end_time
 
     @staticmethod
     def _truncate(value: str, limit: int) -> str:
@@ -251,6 +260,7 @@ class DomainDataAggregator:
         holidays = self._compute_holidays(now, raw_data)
         history = self._compute_history(raw_data)
         gold_price = self._compute_gold_price(raw_data)
+        next_rest_day = self._compute_next_rest_day(now, raw_data)
 
         # 检测降级模式：当多个外部数据源都失败时
         is_fallback_mode = (
@@ -262,6 +272,8 @@ class DomainDataAggregator:
         return {
             "date": self._compute_date(now),
             "weekend": self._compute_weekend(now),
+            "next_rest_day": next_rest_day,
+            "off_work": self._compute_off_work(now, next_rest_day["is_today_off"]),
             **self._compute_progress(now),
             "solar_term": self._compute_solar_term(now),
             "guide": self._compute_guide(now),
@@ -486,6 +498,77 @@ class DomainDataAggregator:
         else:
             days_left = 5 - weekday
         return {"days_left": days_left, "is_weekend": is_weekend}
+
+    def _compute_next_rest_day(
+        self, now: datetime, raw_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """按法定假期与补班安排寻找今天之后的下一个休息日。"""
+        raw_holidays = raw_data.get("holidays")
+        ranges: list[tuple[date, date, bool, str | None]] = []
+        if isinstance(raw_holidays, list):
+            for holiday in raw_holidays:
+                if not isinstance(holiday, dict):
+                    continue
+                try:
+                    start = date.fromisoformat(holiday["start_date"])
+                    end = date.fromisoformat(holiday.get("end_date") or holiday["start_date"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                off_value = holiday.get("is_off_day", True)
+                is_off = (
+                    off_value.lower() not in ["false", "0", ""]
+                    if isinstance(off_value, str)
+                    else off_value is None or bool(off_value)
+                )
+                name = holiday.get("name")
+                ranges.append((start, end, is_off, name if isinstance(name, str) else None))
+
+        def day_status(target: date) -> tuple[bool, str | None]:
+            """优先采用 holiday-cn 休假区间，再复用日历服务的补班规则。"""
+            matching = [entry for entry in ranges if entry[0] <= target <= entry[1]]
+            for _, _, is_off, name in matching:
+                if is_off:
+                    return True, self._truncate_holiday_name(name)
+            if isinstance(raw_holidays, list):
+                is_off, name = CalendarService.get_day_off_status(target)
+                return is_off, self._truncate_holiday_name(name)
+            # 无节假日数据时保持普通周末降级逻辑。
+            return target.weekday() >= 5, None
+
+        today = now.date()
+        is_today_off, today_name = day_status(today)
+        for days_left in range(1, 32):
+            candidate = today + timedelta(days=days_left)
+            is_off, name = day_status(candidate)
+            if is_off:
+                break
+        else:
+            # 限制检索范围；异常连续工作安排退回下一个普通周六。
+            days_left = (5 - today.weekday()) % 7 or 7
+            candidate = today + timedelta(days=days_left)
+            name = None
+        return {
+            "date": candidate.isoformat(),
+            "days_left": days_left,
+            "is_today_off": is_today_off,
+            "name": name,
+            "today_name": today_name,
+        }
+
+    def _compute_off_work(self, now: datetime, is_today_off: bool) -> dict[str, Any] | None:
+        """使用本次生成的业务时间快照计算下班倒计时。"""
+        if is_today_off:
+            return None
+        hour, minute = (int(part) for part in self._work_end_time.split(":"))
+        end = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if now >= end:
+            return {"done": True}
+        minutes_left = math.ceil((end - now).total_seconds() / 60)
+        return {
+            "hours": minutes_left // 60,
+            "minutes": minutes_left % 60,
+            "end_time": self._work_end_time,
+        }
 
     def _compute_progress(self, now: datetime) -> dict[str, float]:
         """Compute week/month/year progress percentages.
@@ -787,6 +870,27 @@ class DomainDataAggregator:
                     return True
             return False
 
+        def merge_contained_festival(name: str, solar_date: Any) -> bool:
+            """将假期区间内的不同名节日并入法定休假行，保留列表名额。"""
+            try:
+                festival_date = date.fromisoformat(solar_date)
+            except (TypeError, ValueError):
+                return False
+            for holiday in name_map.values():
+                if not holiday["is_legal_holiday"] or not holiday["is_off_day"]:
+                    continue
+                try:
+                    start = date.fromisoformat(holiday["start_date"])
+                    end = date.fromisoformat(holiday["end_date"])
+                except (TypeError, ValueError):
+                    continue
+                if start <= festival_date <= end:
+                    names = holiday["name"].split(" · ")
+                    if not any(normalize_name(item) == normalize_name(name) for item in names):
+                        holiday["name"] = f"{holiday['name']} · {name}"
+                    return True
+            return False
+
         # 加入农历节日（如果该名称没有法定假日）
         for f in lunar_festivals:
             if not isinstance(f, dict):
@@ -809,6 +913,8 @@ class DomainDataAggregator:
             except (TypeError, ValueError):
                 continue
 
+            if merge_contained_festival(festival_name, solar_date):
+                continue
             if festival_name not in name_map and not is_duplicate_name(festival_name):
                 name_map[festival_name] = {
                     "name": festival_name,
@@ -843,6 +949,8 @@ class DomainDataAggregator:
             except (TypeError, ValueError):
                 continue
 
+            if merge_contained_festival(festival_name, solar_date):
+                continue
             if festival_name not in name_map and not is_duplicate_name(festival_name):
                 name_map[festival_name] = {
                     "name": festival_name,
@@ -933,6 +1041,7 @@ class DataComputer:
         aggregator: DomainDataAggregator | None = None,
         adapter: TemplateAdapter | None = None,
         text_limits: TextLimitsConfig | None = None,
+        work_end_time: str | None = None,
     ) -> None:
         """Initialize DataComputer with optional aggregator and adapter.
 
@@ -940,8 +1049,11 @@ class DataComputer:
             aggregator: Domain data aggregator instance.
             adapter: Template adapter instance.
             text_limits: Limits for externally sourced text.
+            work_end_time: Configured business-time workday end in HH:MM format.
         """
-        self._aggregator = aggregator or DomainDataAggregator(text_limits=text_limits)
+        self._aggregator = aggregator or DomainDataAggregator(
+            text_limits=text_limits, work_end_time=work_end_time
+        )
         self._adapter = adapter or TemplateAdapter(text_limits=text_limits)
 
     def compute(

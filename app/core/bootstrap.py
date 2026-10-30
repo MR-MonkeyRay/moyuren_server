@@ -62,7 +62,10 @@ def build_services(
         else None
     )
 
-    data_computer = DataComputer(text_limits=config.templates.config.text_limits)
+    data_computer = DataComputer(
+        text_limits=config.templates.config.text_limits,
+        work_end_time=config.templates.config.work_end_time,
+    )
     holiday_source = config.get_source(HolidaySource)
     holiday_service = (
         CachedHolidayService(

@@ -51,6 +51,7 @@ templates:
     use_china_cdn: true
     local_fonts_dir: "templates/fonts"  # 本地 WOFF2 字体及 fonts.css 目录；相对路径基于进程工作目录（通常为项目根目录）
     remote_font_fallback: true  # 本地子集缺字时加载 Google Fonts；离线部署可设为 false
+    work_end_time: "18:00"  # 业务时区下班时间，严格 HH:MM；图片显示生成时的倒计时快照
     remote_resource_cache_enabled: true
     remote_resource_cache_ttl_sec: 604800
     remote_resource_timeout_sec: 5.0

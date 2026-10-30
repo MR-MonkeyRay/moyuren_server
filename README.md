@@ -368,6 +368,7 @@ pytest -m "not e2e"
 | `templates.config.use_china_cdn` | - | 字体 CDN 开关（true: 大陆 CDN, false: 国际 CDN） |
 | `templates.config.local_fonts_dir` | - | 本地 WOFF2 字体目录，默认 `templates/fonts`；与 `templates.dir` 一样，相对路径基于进程工作目录解析（通常为项目根目录） |
 | `templates.config.remote_font_fallback` | - | 是否加载 Google Fonts 作为本地子集的缺字回退，默认 `true`；离线部署可设为 `false` |
+| `templates.config.work_end_time` | - | 业务时区下班时间，默认 `"18:00"`，严格 `HH:MM`（00:00–23:59）；仅工作日显示下班倒计时 |
 | `templates.config.allowed_resource_hosts` | - | 渲染资源主机白名单，默认 `["fonts.googleapis.com", "fonts.googleapis.cn", "fonts.gstatic.com", "fonts.gstatic.cn"]`；仅允许这些主机及其子域名的 HTTP(S) 请求；`[]` 拒绝所有远程资源 |
 | `templates.config.remote_resource_max_redirects` | - | 资源请求的重定向次数上限，默认 5（整数 0–20；0 禁止重定向）；每跳检查白名单，允许白名单内跨主机及 HTTP→HTTPS 重定向 |
 | `templates.config.text_limits` | - | 外部文本及新闻条数上限，所有值必须为正整数；各字段与默认值见下表 |
@@ -402,6 +403,10 @@ pytest -m "not e2e"
 `instances.allowlist` 接受裸主机名或 `*.suffix`，统一转为小写。裸主机名仅匹配该主机；`*.example.com` 匹配 `api.example.com` 和更深的子域名，**不匹配** `example.com` 或 `badexample.com`。白名单仅筛选社区文档自动发现的实例。
 
 `templates.config.text_limits` 在 compute 层截断文本，超长内容以 `…` 结尾，省略号计入字符上限；短文本保持原样。模板上下文与持久化数据使用相同的截断值，详情 API 字段保持不变。
+
+两套模板显示调休感知的休息日与下班倒计时。`next_rest_day` 包含 `date`（今天之后下一个休息日的 ISO 日期）、`days_left`、`is_today_off`、`name`（下一个休息日的法定假日名或 null）及 `today_name`（今天的法定假日名或 null）；原有 `weekend.days_left` / `weekend.is_weekend` 保持兼容。holiday-cn 的休假区间优先，其余日期复用日历服务判断补班、法定假日和普通周末；缺少节假日数据时退回普通周末规则，最多搜索 31 天。假期列表将区间内的节日合并为如“劳动节 · 青年节”，合并后再取前 10 项。
+
+`off_work` 在休息日为 null，工作日下班前为 `{hours, minutes, end_time}`，到达或超过下班时间为 `{done: true}`。倒计时使用同一次生成的业务时间快照，图片按配置的调度时间生成，不会实时跳动。渲染器按内容实际高度收缩或扩展截图，最高 4000 像素；主模板新闻自然排列，短趣味内容使用更大字号，两套模板页脚提高了文字对比度。
 
 | 字段（`templates.config.text_limits.*`） | 默认值 | 内容 |
 | --- | --- | --- |
@@ -550,6 +555,7 @@ templates:
     use_china_cdn: true
     local_fonts_dir: "templates/fonts"
     remote_font_fallback: true
+    work_end_time: "18:00"  # 业务时区下班时间（HH:MM）
     allowed_resource_hosts: ["fonts.googleapis.com", "fonts.googleapis.cn", "fonts.gstatic.com", "fonts.gstatic.cn"]
     remote_resource_max_redirects: 5
     text_limits:

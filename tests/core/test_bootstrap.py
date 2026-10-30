@@ -103,7 +103,9 @@ def test_build_services_leaves_missing_or_disabled_optional_sources_disabled(
         paths=SimpleNamespace(cache_dir=str(tmp_path)),
         network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),
         instances=SimpleNamespace(),
-        templates=SimpleNamespace(config=SimpleNamespace(text_limits=TextLimitsConfig())),
+        templates=SimpleNamespace(
+            config=SimpleNamespace(text_limits=TextLimitsConfig(), work_end_time="18:00")
+        ),
         cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
         data_sources=data_sources,
         get_templates_config=lambda: SimpleNamespace(items=[]),
@@ -167,7 +169,9 @@ def test_build_services_leaves_disabled_daily_english_unconstructed(
         paths=SimpleNamespace(cache_dir=str(tmp_path)),
         network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),
         instances=SimpleNamespace(),
-        templates=SimpleNamespace(config=SimpleNamespace(text_limits=TextLimitsConfig())),
+        templates=SimpleNamespace(
+            config=SimpleNamespace(text_limits=TextLimitsConfig(), work_end_time="18:00")
+        ),
         cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
         get_source=get_source,
         get_templates_config=lambda: SimpleNamespace(items=[]),
@@ -204,7 +208,9 @@ def test_build_services_passes_http_client_to_all_network_services(
         paths=SimpleNamespace(cache_dir=str(tmp_path)),
         network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),
         instances=SimpleNamespace(),
-        templates=SimpleNamespace(config=SimpleNamespace(text_limits=TextLimitsConfig())),
+        templates=SimpleNamespace(
+            config=SimpleNamespace(text_limits=TextLimitsConfig(), work_end_time="18:00")
+        ),
         cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
         get_source=lambda source_type: source,
         get_templates_config=lambda: SimpleNamespace(items=[]),
