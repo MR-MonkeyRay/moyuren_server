@@ -38,6 +38,8 @@ _CACHEABLE_HOST_SUFFIXES = (
     "fonts.gstatic.cn",
 )
 _CONTENT_NEGOTIATION_HEADERS = ("user-agent", "accept")
+_LOCAL_FONT_HOST = "fonts.moyuren.invalid"
+_LOCAL_FONT_PATH = re.compile(r"/[A-Za-z0-9._-]+\.(woff2|css)")
 
 
 @dataclass
@@ -182,6 +184,14 @@ class ImageRenderer:
         self.resource_cache_dir = self.images_dir.parent / "render_resources"
         self._render_degraded: bool = False
         self._proxy_url = proxy_url
+        self.local_fonts_dir = Path(render_config.local_fonts_dir).resolve()
+        self._local_font_cache: dict[str, bytes] = {}
+        self._local_fonts_available = (self.local_fonts_dir / "fonts.css").is_file()
+        if not self._local_fonts_available:
+            self.logger.warning(
+                "Local font bundle missing at %s; using configured remote/system font fallbacks",
+                self.local_fonts_dir,
+            )
 
         # Ensure images directory exists
         self.images_dir.mkdir(parents=True, exist_ok=True)
@@ -289,6 +299,7 @@ class ImageRenderer:
             render_context = {
                 **data,
                 "use_china_cdn": self.render_config.use_china_cdn,
+                "remote_font_fallback": self.render_config.remote_font_fallback,
                 "show_kfc": template_item.show_kfc,
                 "show_stock": template_item.show_stock,
                 "show_daily_english": template_item.show_daily_english,
@@ -544,6 +555,40 @@ class ImageRenderer:
             self.logger.warning("Font readiness wait failed for %s; continuing", template_name)
         return result not in ("timeout", "error")
 
+    async def _serve_local_font(self, route: Any) -> None:
+        """Serve bundled fonts at the virtual origin without any network access."""
+        parsed = urlparse(route.request.url)
+        headers = {"Access-Control-Allow-Origin": "*"}
+        if (
+            route.request.method != "GET"
+            or parsed.scheme.lower() not in {"http", "https"}
+            or parsed.params
+            or not _LOCAL_FONT_PATH.fullmatch(parsed.path)
+            or not self._local_fonts_available
+        ):
+            await route.fulfill(status=404, headers=headers, body=b"")
+            return
+
+        name = parsed.path[1:]
+        try:
+            path = (self.local_fonts_dir / name).resolve()
+            if not path.is_relative_to(self.local_fonts_dir):
+                await route.fulfill(status=404, headers=headers, body=b"")
+                return
+            if name not in self._local_font_cache:
+                self._local_font_cache[name] = path.read_bytes()
+            body = self._local_font_cache[name]
+        except (OSError, RuntimeError):
+            await route.fulfill(status=404, headers=headers, body=b"")
+            return
+
+        await route.fulfill(
+            status=200,
+            content_type="font/woff2" if name.endswith(".woff2") else "text/css; charset=utf-8",
+            headers=headers,
+            body=body,
+        )
+
     async def _install_resource_cache_routes(self, page: Any) -> _FontRequests:
         """Keep font requests abortable and optionally cache remote resources."""
         fonts = _FontRequests(logger=self.logger)
@@ -576,6 +621,9 @@ class ImageRenderer:
             resource_type = getattr(request, "resource_type", "")
             parsed = urlparse(url)
             scheme = parsed.scheme.lower()
+            if (parsed.hostname or "").lower() == _LOCAL_FONT_HOST:
+                await self._serve_local_font(route)
+                return
             if scheme in {"data", "blob"}:
                 await route.continue_()
                 return

@@ -31,7 +31,7 @@
 | 股票指数 | `app/services/stock_index.py` | 大盘指数实时行情（StockIndexService） |
 | 每日英语 | `app/services/daily_english.py` | 每日英语单词服务（ECDICT + 随机 API） |
 | 计算 | `app/services/compute.py` | 原始数据 → 模板上下文，按业务日期与缓存降级计算数据新鲜度 |
-| 渲染 | `app/services/renderer.py` | Jinja2 + Playwright 截图 |
+| 渲染 | `app/services/renderer.py` | Jinja2 + Playwright 截图；通过虚拟域名提供本地 WOFF2 字体，Google Fonts 仅作缺字回退 |
 | 浏览器 | `app/services/browser.py` | Playwright 浏览器生命周期管理 |
 | 模板发现 | `app/services/template_discovery.py` | 自动扫描模板目录，解析 meta 标签 |
 | 图片生成 | `app/services/generator.py` | 图片生成流水线（文件锁防并发、缓存管理） |
@@ -70,6 +70,8 @@ Docker：`docker-compose up -d`
 - `ops.api_key`：Ops API 鉴权密钥（留空则禁用 Ops 端点，所有请求返回 401）
 - `metrics.enabled`：默认 false；环境变量 `MOYUREN_METRICS_ENABLED`；只控制 `/metrics` 是否对外提供，指标记录始终开启
 - `templates.dir`：模板目录路径（默认 `templates`，自动扫描 `*.html`）
+- `templates.config.local_fonts_dir`：本地 WOFF2 字体目录（默认 `templates/fonts`；与 `templates.dir` 一样，相对路径基于进程工作目录，通常为项目根目录）
+- `templates.config.remote_font_fallback`：是否启用 Google Fonts 缺字回退（默认 true，离线部署可关闭）
 - `logging.*`：日志配置
 - `network.ghproxy_urls`：GitHub 代理 URL 列表（加速节假日数据/ECDICT 下载）
 - `data_sources`：数据源配置统一在此列表中管理（news/fun_content/crazy_thursday/holiday/stock_index/gold_price/daily_english）
@@ -86,6 +88,7 @@ Docker：`docker-compose up -d`
 - **修改每日英语**：`daily_english.py` → `compute.py` → 模板
 - **修改日历/农历**：`calendar.py` → `compute.py`
 - **添加新模板**：在 `templates/` 目录创建 HTML 文件，在 `<head>` 中添加 `<meta name="moyuren:viewport-width" content="794">` 等 meta 标签，重启后自动发现
+- **重建字体子集**：安装开发依赖后运行 `python scripts/build_fonts.py --src /path/to/fontsrc --out templates/fonts`；许可证保存在 `templates/fonts/licenses/`
 - **添加 API**：在 `app/api/v1/` 创建路由 → `main.py` 注册
 - **测试渲染**：`python scripts/render_once.py`
 

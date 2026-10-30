@@ -366,6 +366,8 @@ pytest -m "not e2e"
 | `templates.config.device_scale_factor` | - | 缩放因子（默认 3） |
 | `templates.config.jpeg_quality` | - | JPEG 质量（1-100，默认 100） |
 | `templates.config.use_china_cdn` | - | 字体 CDN 开关（true: 大陆 CDN, false: 国际 CDN） |
+| `templates.config.local_fonts_dir` | - | 本地 WOFF2 字体目录，默认 `templates/fonts`；与 `templates.dir` 一样，相对路径基于进程工作目录解析（通常为项目根目录） |
+| `templates.config.remote_font_fallback` | - | 是否加载 Google Fonts 作为本地子集的缺字回退，默认 `true`；离线部署可设为 `false` |
 | `templates.config.allowed_resource_hosts` | - | 渲染资源主机白名单，默认 `["fonts.googleapis.com", "fonts.googleapis.cn", "fonts.gstatic.com", "fonts.gstatic.cn"]`；仅允许这些主机及其子域名的 HTTP(S) 请求；`[]` 拒绝所有远程资源 |
 | `templates.config.remote_resource_max_redirects` | - | 资源请求的重定向次数上限，默认 5（整数 0–20；0 禁止重定向）；每跳检查白名单，允许白名单内跨主机及 HTTP→HTTPS 重定向 |
 | `templates.config.text_limits` | - | 外部文本及新闻条数上限，所有值必须为正整数；各字段与默认值见下表 |
@@ -546,6 +548,8 @@ templates:
     device_scale_factor: 3
     jpeg_quality: 100
     use_china_cdn: true
+    local_fonts_dir: "templates/fonts"
+    remote_font_fallback: true
     allowed_resource_hosts: ["fonts.googleapis.com", "fonts.googleapis.cn", "fonts.gstatic.com", "fonts.gstatic.cn"]
     remote_resource_max_redirects: 5
     text_limits:
@@ -593,7 +597,8 @@ moyuren_server/
 │   │   ├── generator.py  # 图片生成流水线
 │   │   └── cache.py      # 缓存清理
 │   └── models/           # 数据模型
-├── templates/            # Jinja2 模板
+├── templates/            # Jinja2 模板与本地字体子集
+│   └── fonts/            # WOFF2、fonts.css 与 OFL 许可证
 ├── scripts/              # 工具脚本
 ├── example/              # 示例文件
 │   ├── moyuren_example.jpg        # 示例图片
@@ -612,3 +617,19 @@ moyuren_server/
 ## 许可证
 
 AGPL-3.0
+
+### 字体许可与重建
+
+渲染器优先使用 `templates/fonts/` 中的 WOFF2 子集，并通过保留的虚拟域名 `fonts.moyuren.invalid` 提供给 Playwright；Google Fonts 仅用于补齐子集中缺失的字形。离线部署可将 `templates.config.remote_font_fallback` 设为 `false`。
+
+Noto Sans SC 子集覆盖 GB2312 全部汉字；文楷与站酷快乐体覆盖 GB2312 一级汉字，并补充模板、节气和节日字符。本地目录或 `fonts.css` 缺失时，每个渲染器实例只记录一次警告，并使用已启用的 Google Fonts 回退；显式关闭远程回退时仍只使用系统字体，不发起 Google Fonts 请求。
+
+Noto Sans SC、JetBrains Mono、Poppins、Nunito 与 ZCOOL KuaiLe 来自 [Google Fonts](https://github.com/google/fonts)，LXGW WenKai 来自 [lxgw/LxgwWenKai v1.530](https://github.com/lxgw/LxgwWenKai/releases/tag/v1.530)。WenKai 的 Medium 字重在本地 CSS 中映射为 700，以覆盖模板的粗体标题。这些字体均依照 SIL Open Font License 1.1 使用；各字体许可证副本位于 `templates/fonts/licenses/`。
+
+从已下载的上游 TTF 文件重建字体包：
+
+```bash
+python scripts/build_fonts.py --src /path/to/fontsrc --out templates/fonts
+```
+
+重建工具是开发依赖，需要安装 `requirements-dev.txt`；生成结果包含子集化 WOFF2、`fonts.css` 和许可证副本。

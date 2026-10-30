@@ -862,6 +862,8 @@ class TemplateRenderConfig(BaseModel):
     device_scale_factor: int = 3
     jpeg_quality: int = 100
     use_china_cdn: bool = True
+    local_fonts_dir: str = "templates/fonts"
+    remote_font_fallback: bool = True
     remote_resource_cache_enabled: bool = True
     remote_resource_cache_ttl_sec: int = 7 * 24 * 60 * 60
     remote_resource_timeout_sec: float = 5.0

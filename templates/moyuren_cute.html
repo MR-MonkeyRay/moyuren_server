@@ -9,6 +9,8 @@
   <meta name="moyuren:show-daily-english" content="true">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>摸鱼日历 {{ date.year_month }} - 棉花糖波普版</title>
+  <link rel="stylesheet" href="https://fonts.moyuren.invalid/fonts.css">
+  {% if remote_font_fallback %}
   {% if use_china_cdn %}
   <link rel="preconnect" href="https://fonts.googleapis.cn" crossorigin>
   <link rel="preconnect" href="https://fonts.gstatic.cn" crossorigin>
@@ -17,6 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Nunito:wght@700;900&display=swap" rel="stylesheet">
+  {% endif %}
   {% endif %}
   <style>
     :root {
@@ -52,8 +55,8 @@
       --radius-sm: 8px;
 
       /* 字体系统 */
-      --font-cute: 'ZCOOL KuaiLe', 'PingFang SC', 'Microsoft YaHei', cursive;
-      --font-body: 'Nunito', 'Varela Round', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+      --font-cute: 'Moyuren ZCOOL KuaiLe', 'ZCOOL KuaiLe', 'Moyuren Noto Sans SC', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', cursive;
+      --font-body: 'Moyuren Nunito', 'Nunito', 'Moyuren Noto Sans SC', 'Noto Sans SC', 'Varela Round', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
     }
 
     * {
@@ -491,7 +494,7 @@
       border-radius: 8px;
       background: var(--card-bg);
       box-shadow: 2px 2px 0 var(--line-coffee);
-      font-family: 'DejaVu Sans', 'Noto Sans', var(--font-body);
+      font-family: 'DejaVu Sans', 'Noto Sans', 'Moyuren Noto Sans SC', var(--font-body);
     }
     .english-tags { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
     .english-tag {
