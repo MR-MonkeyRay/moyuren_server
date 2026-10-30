@@ -195,7 +195,14 @@ async def test_startup_preserves_valid_cache(startup_app: FastAPI, cached_date: 
     data_dir.mkdir(parents=True)
     data_file = data_dir / "2026-02-04.json"
     data_file.write_text(
-        json.dumps({"date": cached_date, "updated_at": 1, "images": {"moyuren": "x.jpg"}}),
+        json.dumps(
+            {
+                "date": cached_date,
+                "updated": "2026/02/04 00:00:00",
+                "updated_at": 1,
+                "images": {"moyuren": "x.jpg"},
+            }
+        ),
         encoding="utf-8",
     )
     async with asyncio.timeout(1), main_module.lifespan(startup_app):
@@ -233,7 +240,14 @@ async def test_expired_cache_refresh_failure_preserves_stale_data(
     data_dir.mkdir(parents=True)
     data_file = data_dir / "2026-02-04.json"
     data_file.write_text(
-        json.dumps({"date": "2026-02-03", "updated_at": 1, "images": {"moyuren": "x.jpg"}}),
+        json.dumps(
+            {
+                "date": "2026-02-03",
+                "updated": "2026/02/03 00:00:00",
+                "updated_at": 1,
+                "images": {"moyuren": "x.jpg"},
+            }
+        ),
         encoding="utf-8",
     )
     startup_app.state.services.generator.generate.side_effect = RuntimeError(
@@ -258,7 +272,14 @@ async def test_shutdown_cancels_initial_generation(
         data_dir = Path(startup_app.state.config.paths.cache_dir) / "data"
         data_dir.mkdir(parents=True)
         (data_dir / "2026-02-04.json").write_text(
-            json.dumps({"date": "2026-02-03", "updated_at": 1, "images": {"moyuren": "x.jpg"}}),
+            json.dumps(
+                {
+                    "date": "2026-02-03",
+                    "updated": "2026/02/03 00:00:00",
+                    "updated_at": 1,
+                    "images": {"moyuren": "x.jpg"},
+                }
+            ),
             encoding="utf-8",
         )
 

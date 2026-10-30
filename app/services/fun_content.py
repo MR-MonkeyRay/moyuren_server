@@ -23,6 +23,7 @@ class FunContentService:
     _DEFAULT_CONTENT = {
         "title": "🐟 摸鱼小贴士",
         "content": "工作再忙，也要记得摸鱼。适当休息，效率更高！",
+        "type": "default",
     }
 
     def __init__(
@@ -57,7 +58,7 @@ class FunContentService:
             target_date: The date to use for random seed.
 
         Returns:
-            Dictionary with 'title' and 'content' keys.
+            Dictionary with 'title', 'content', and 'type' keys.
         """
         endpoints = self._shuffle_by_date(target_date)
 
@@ -100,7 +101,8 @@ class FunContentService:
             endpoint: The endpoint configuration.
 
         Returns:
-            Dictionary with 'title' and 'content' if successful, None otherwise.
+            Dictionary with 'title', 'content', and 'type' if successful,
+            None otherwise.
         """
         result = await self._router.fetch_json(
             client,
@@ -110,7 +112,11 @@ class FunContentService:
         )
         if result is None:
             return None
-        return {"title": endpoint.display_title, "content": result[1]}
+        return {
+            "title": endpoint.display_title,
+            "content": result[1],
+            "type": endpoint.name,
+        }
 
     def _extract_content(self, data: Any, endpoint: FunContentEndpoint) -> str | None:
         """从端点响应中提取可用文案.
@@ -184,7 +190,7 @@ class CachedFunContentService(DailyCache[dict[str, str]]):
         """从网络获取新鲜数据。
 
         Returns:
-            趣味内容字典（包含 title 和 content），如果获取失败返回 None
+            趣味内容字典（包含 title、content 和 type），如果获取失败返回 None
         """
         try:
             return await self._service.fetch_content(today_business())

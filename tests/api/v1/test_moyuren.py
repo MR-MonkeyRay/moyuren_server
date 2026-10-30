@@ -101,6 +101,7 @@ class TestMoyurenAPI:
         # Simple response should not include detail fields
         assert "weekday" not in data
         assert "fun_content" not in data
+        assert "schema_version" not in data
 
     def test_get_moyuren_json_detail(self, client: TestClient, mock_today: MagicMock) -> None:
         """Test GET /api/v1/moyuren?detail=true."""
@@ -117,6 +118,7 @@ class TestMoyurenAPI:
         assert data["is_crazy_thursday"] is False
         assert "guide" in data
         assert "news_list" in data
+        assert "schema_version" not in data
 
     def test_get_moyuren_text(self, client: TestClient, mock_today: MagicMock) -> None:
         """Test GET /api/v1/moyuren?encode=text."""

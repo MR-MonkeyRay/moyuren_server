@@ -1,6 +1,5 @@
 """Moyuren image API endpoints."""
 
-import json
 import logging
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -9,7 +8,7 @@ from fastapi import APIRouter, Query, Request, status
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 
 from app.core.errors import ErrorCode, StorageError, error_response, get_http_status
-from app.models.schemas import ErrorResponse
+from app.models.schemas import DailyDataFile, ErrorResponse
 from app.services.calendar import today_business
 from app.services.generator import GenerationBusyError, generate_and_save_image
 
@@ -103,7 +102,9 @@ def _check_not_modified(request: Request, updated_at: int) -> bool:
     return False
 
 
-def _build_simple_response(data: dict, base_domain: str, template: str | None) -> dict:
+def _build_simple_response(
+    data: DailyDataFile, base_domain: str, template: str | None
+) -> dict[str, object]:
     """Build simple response (encode=json, detail=false).
 
     Returns:
@@ -112,8 +113,7 @@ def _build_simple_response(data: dict, base_domain: str, template: str | None) -
         - updated_at: milliseconds timestamp
         - image: full URL
     """
-    images = data.get("images", {})
-    filename = _get_filename_for_template(images, template)
+    filename = _get_filename_for_template(data.images, template)
     if not filename:
         raise StorageError(
             message=f"No image found for template: {template or 'default'}",
@@ -121,43 +121,51 @@ def _build_simple_response(data: dict, base_domain: str, template: str | None) -
         )
 
     return {
-        "date": data["date"],
-        "updated": data["updated"],
-        "updated_at": data["updated_at"],
+        "date": data.date,
+        "updated": data.updated,
+        "updated_at": data.updated_at,
         "image": _build_image_url(base_domain, filename),
     }
 
 
-def _build_detail_response(data: dict, base_domain: str, template: str | None) -> dict:
+def _build_detail_response(
+    data: DailyDataFile, base_domain: str, template: str | None
+) -> dict[str, object]:
     """Build detailed response (encode=json, detail=true).
 
-    Returns all fields from data file plus image URL.
+    Returns the established public detail fields plus image URL. Internal
+    ``schema_version`` metadata is intentionally excluded from API output.
     """
     simple = _build_simple_response(data, base_domain, template)
+    stored = data.model_dump(
+        mode="json", exclude={"schema_version"}, exclude_unset=True
+    )
 
     # Add all optional fields
     detail_fields = {
-        "weekday": data.get("weekday", ""),
-        "lunar_date": data.get("lunar_date", ""),
-        "fun_content": data.get("fun_content"),
-        "is_crazy_thursday": data.get("is_crazy_thursday", False),
-        "kfc_content": data.get("kfc_content"),
-        "date_info": data.get("date_info"),
-        "weekend": data.get("weekend"),
-        "solar_term": data.get("solar_term"),
-        "guide": data.get("guide"),
-        "news_list": data.get("news_list"),
-        "news_meta": data.get("news_meta"),
-        "holidays": data.get("holidays"),
-        "kfc_content_full": data.get("kfc_content_full"),
-        "stock_indices": data.get("stock_indices"),
-        "gold_price": data.get("gold_price"),
+        "weekday": stored.get("weekday", ""),
+        "lunar_date": stored.get("lunar_date", ""),
+        "fun_content": stored.get("fun_content"),
+        "is_crazy_thursday": stored.get("is_crazy_thursday", False),
+        "kfc_content": stored.get("kfc_content"),
+        "date_info": stored.get("date_info"),
+        "weekend": stored.get("weekend"),
+        "solar_term": stored.get("solar_term"),
+        "guide": stored.get("guide"),
+        "news_list": stored.get("news_list"),
+        "news_meta": stored.get("news_meta"),
+        "holidays": stored.get("holidays"),
+        "kfc_content_full": stored.get("kfc_content_full"),
+        "stock_indices": stored.get("stock_indices"),
+        "gold_price": stored.get("gold_price"),
     }
 
     return {**simple, **detail_fields}
 
 
-def _build_text_response(data: dict, base_domain: str, template: str | None) -> str:
+def _build_text_response(
+    data: DailyDataFile, base_domain: str, template: str | None
+) -> str:
     """Build plain text response (encode=text).
 
     Format:
@@ -173,7 +181,9 @@ def _build_text_response(data: dict, base_domain: str, template: str | None) -> 
     )
 
 
-def _build_markdown_response(data: dict, base_domain: str, template: str | None) -> str:
+def _build_markdown_response(
+    data: DailyDataFile, base_domain: str, template: str | None
+) -> str:
     """Build markdown response (encode=markdown).
 
     Format:
@@ -226,7 +236,7 @@ async def _load_data_for_date(
     template: str | None = None,
     *,
     allow_generation: bool = True,
-) -> tuple[dict | None, JSONResponse | None]:
+) -> tuple[DailyDataFile | None, JSONResponse | None]:
     """Load and validate data file for specified date.
 
     Args:
@@ -264,52 +274,33 @@ async def _load_data_for_date(
         )
 
     try:
-        with data_file.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-    except OSError as e:
-        logger.error(f"Failed to read data file: {e}")
-        return None, JSONResponse(
-            content=error_response(
-                code=ErrorCode.STORAGE_READ_FAILED,
-                message="Failed to read data file",
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        daily_data = DailyDataFile.load(data_file)
+    except StorageError as e:
+        logger.error(f"Failed to load data file: {e.message}")
+        cause = e.__cause__
+        errors = getattr(cause, "errors", None)
+        invalid_image = bool(
+            callable(errors)
+            and any(error.get("loc", ())[:1] == ("images",) for error in errors())
         )
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse data file: {e}")
         return None, JSONResponse(
             content=error_response(
                 code=ErrorCode.STORAGE_READ_FAILED,
-                message="Invalid data file format",
+                message=(
+                    "Invalid filename: contains invalid characters"
+                    if invalid_image
+                    else "Invalid data file format"
+                ),
             ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
-
-    # Validate data structure
-    if not isinstance(data, dict):
-        logger.error(f"Data file has invalid format: expected dict, got {type(data).__name__}")
-        return None, JSONResponse(
-            content=error_response(
-                code=ErrorCode.STORAGE_READ_FAILED,
-                message=f"Invalid data file: expected dict, got {type(data).__name__}",
+            status_code=(
+                status.HTTP_400_BAD_REQUEST
+                if invalid_image
+                else status.HTTP_500_INTERNAL_SERVER_ERROR
             ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
-
-    required_fields = ["date", "updated", "updated_at", "images"]
-    missing_fields = [f for f in required_fields if f not in data]
-    if missing_fields:
-        logger.error(f"Data file missing required fields: {missing_fields}")
-        return None, JSONResponse(
-            content=error_response(
-                code=ErrorCode.STORAGE_READ_FAILED,
-                message=f"Invalid data file: missing required fields: {missing_fields}",
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
     if target_date == today:
-        images = data["images"]
+        images = daily_data.images
         filename = _get_filename_for_template(images, template)
         known_template = template in images if template is not None else bool(images)
         if not known_template:
@@ -334,12 +325,12 @@ async def _load_data_for_date(
                     )
                 return None, image_error
 
-    return data, None
+    return daily_data, None
 
 
 
 def _handle_json_response(
-    data: dict,
+    data: DailyDataFile,
     base_domain: str,
     template: str | None,
     detail: bool,
@@ -362,7 +353,7 @@ def _handle_json_response(
 
 
 def _handle_text_response(
-    data: dict,
+    data: DailyDataFile,
     base_domain: str,
     template: str | None,
     cache_headers: dict[str, str],
@@ -380,7 +371,7 @@ def _handle_text_response(
 
 
 def _handle_markdown_response(
-    data: dict,
+    data: DailyDataFile,
     base_domain: str,
     template: str | None,
     cache_headers: dict[str, str],
@@ -455,7 +446,7 @@ def _get_image_path(
 
 
 def _handle_image_response(
-    data: dict,
+    data: DailyDataFile,
     cache_dir: str,
     template: str | None,
     cache_headers: dict[str, str],
@@ -463,8 +454,7 @@ def _handle_image_response(
     logger: logging.Logger,
 ) -> FileResponse | JSONResponse:
     """Handle image file response (encode=image)."""
-    images = data.get("images", {})
-    filename = _get_filename_for_template(images, template)
+    filename = _get_filename_for_template(data.images, template)
     if not filename:
         return JSONResponse(
             content=error_response(
@@ -557,15 +547,16 @@ async def get_moyuren(
     data, error = await _load_data_for_date(request, target_date, logger, template)
     if error:
         return error
+    assert data is not None
 
     # Check 304 Not Modified for today's data
     today = today_business()
-    if target_date == today and _check_not_modified(request, data["updated_at"]):
-        cache_headers = _build_cache_headers(target_date, data["updated_at"])
+    if target_date == today and _check_not_modified(request, data.updated_at):
+        cache_headers = _build_cache_headers(target_date, data.updated_at)
         return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=cache_headers)
 
     # Build cache headers
-    cache_headers = _build_cache_headers(target_date, data["updated_at"])
+    cache_headers = _build_cache_headers(target_date, data.updated_at)
     config = request.app.state.config
     base_domain = config.server.base_domain
 

@@ -1,11 +1,12 @@
 """Templates API endpoint."""
 
-import json
 from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from app.core.errors import StorageError
+from app.models.schemas import DailyDataFile
 from app.services.calendar import today_business
 
 router = APIRouter(prefix="/api/v1", tags=["templates"])
@@ -22,14 +23,11 @@ async def get_templates(request: Request) -> JSONResponse:
     data_dir = Path(config.paths.cache_dir) / "data"
     today_str = today_business().isoformat()
     data_file = data_dir / f"{today_str}.json"
-    images: dict = {}
+    images: dict[str, str] = {}
     if data_file.exists():
         try:
-            with data_file.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, dict):
-                images = data.get("images", {})
-        except (OSError, json.JSONDecodeError):
+            images = DailyDataFile.load(data_file).images
+        except StorageError:
             pass
 
     result = []

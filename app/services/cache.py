@@ -6,6 +6,8 @@ import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from app.core.errors import StorageError
+from app.models.schemas import DailyDataFile
 from app.services.calendar import get_business_timezone, today_business
 
 
@@ -73,18 +75,9 @@ class CacheCleaner:
         skip_pruning = False
         for data_path in self.data_dir.glob("*.json"):
             try:
-                data = json.loads(data_path.read_text(encoding="utf-8"))
-                if not isinstance(data, dict):
-                    raise ValueError("data must be an object")
-                images = data.get("images", {})
-                if not isinstance(images, dict):
-                    raise ValueError("images must map template names to filenames")
-                referenced_images.update(
-                    value for value in images.values() if isinstance(value, str)
-                )
-                if not all(isinstance(value, str) for value in images.values()):
-                    raise ValueError("images must map template names to filenames")
-            except (OSError, ValueError, UnicodeError) as e:
+                data = DailyDataFile.load(data_path)
+                referenced_images.update(data.images.values())
+            except StorageError as e:
                 try:
                     unsafe_date = datetime.strptime(data_path.stem, "%Y-%m-%d").date()
                     unsafe_dates.add(unsafe_date)

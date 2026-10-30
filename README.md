@@ -392,6 +392,10 @@ cache/
 └── .generation.lock   # 生成锁文件
 ```
 
+`data/YYYY-MM-DD.json` 由 `DailyDataFile` 统一读写并通过临时文件原子替换。必需字段为 `date`（有效的 `YYYY-MM-DD`）、`updated`（显示时区的时间字符串）、`updated_at`（非负整数毫秒时间戳，不接受布尔值）和 `images`（模板名到纯文件名的映射，禁止路径分隔符和 `..`）。`schema_version` 当前为 `1`，旧文件缺少该字段时按版本 1 读取；未知字段会保留。
+
+可选字段包括 `weekday`、`lunar_date`、`is_crazy_thursday`、`date_info`、`weekend`、`solar_term`、`guide`、`holidays`、`news_list`、`news_meta`、`fun_content`、`kfc_content`、`kfc_content_full`、`stock_indices`、`gold_price` 和 `daily_english`。`fun_content.type` 使用数据源端点名称，默认内容为 `default`；缺少类型的旧缓存仍兼容。`schema_version` 仅用于文件格式，不出现在公共 API 的简单或详情 JSON 响应中。
+
 保留期内的图片按模板和日期清理，`cache.max_images_per_template_per_day` 默认为 3（最小为 1），按文件名时间保留最新图片。所有数据 JSON 引用的图片优先保留并计入数量，即使引用数超过上限也不会裁剪；数据 JSON 无法读取或格式无效时，跳过对应日期的图片裁剪。
 
 ### 配置示例

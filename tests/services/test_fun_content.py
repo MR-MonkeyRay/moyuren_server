@@ -1,6 +1,9 @@
 """Tests for app/services/fun_content.py - fun content fetching service."""
 
+import json
+import logging
 from datetime import date
+from pathlib import Path
 
 import httpx
 import pytest
@@ -8,7 +11,7 @@ import respx
 from httpx import Response
 
 from app.core.config import FunContentEndpoint, FunContentSource, InstancesConfig
-from app.services.fun_content import FunContentService
+from app.services.fun_content import CachedFunContentService, FunContentService
 
 
 class TestFunContentService:
@@ -54,7 +57,36 @@ class TestFunContentService:
         # Should get content from one of the endpoints
         assert "title" in result
         assert "content" in result
+        assert result["type"] in {"hitokoto", "joke"}
         assert result["content"] != ""
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_endpoint_name_is_type_when_display_title_changes(self) -> None:
+        """The stable endpoint name is independent of the configured title."""
+        config = FunContentSource(
+            timeout_sec=5,
+            endpoints=[
+                FunContentEndpoint(
+                    name="hitokoto",
+                    url="https://api.example.com/hitokoto",
+                    data_path="data.hitokoto",
+                    display_title="今日灵感",
+                )
+            ],
+        )
+        service = FunContentService(config=config)
+        respx.get("https://api.example.com/hitokoto").mock(
+            return_value=Response(200, json={"data": {"hitokoto": "生活不止眼前"}})
+        )
+
+        result = await service.fetch_content(date(2026, 2, 4))
+
+        assert result == {
+            "title": "今日灵感",
+            "content": "生活不止眼前",
+            "type": "hitokoto",
+        }
 
     @respx.mock
     @pytest.mark.asyncio
@@ -82,6 +114,7 @@ class TestFunContentService:
 
         assert result["title"] == "🐟 摸鱼小贴士"
         assert "摸鱼" in result["content"]
+        assert result["type"] == "default"
 
     @respx.mock
     @pytest.mark.asyncio
@@ -247,3 +280,47 @@ class TestFunContentInstanceSwitching:
 
         assert result["content"] in {"实例一言", "实例笑话"}
         assert result["title"] != "🐟 摸鱼小贴士"
+        assert result["type"] in {"hitokoto", "joke"}
+
+
+class TestCachedFunContentService:
+    """Tests for fun-content cache compatibility."""
+
+    @pytest.fixture
+    def config(self) -> FunContentSource:
+        """Create the minimum valid service configuration."""
+        return FunContentSource(
+            timeout_sec=5,
+            endpoints=[
+                FunContentEndpoint(
+                    name="hitokoto",
+                    url="https://api.example.com/hitokoto",
+                    data_path="data.hitokoto",
+                    display_title="今日灵感",
+                )
+            ],
+        )
+
+    def test_cache_preserves_type(
+        self, config: FunContentSource, tmp_path: Path
+    ) -> None:
+        """New cached dictionaries retain the stable endpoint type."""
+        service = CachedFunContentService(config, logging.getLogger(__name__), tmp_path)
+        expected = {"title": "今日灵感", "content": "内容", "type": "hitokoto"}
+
+        service.save_cache(expected)
+
+        assert service.load_cache() == expected
+
+    def test_legacy_cache_without_type_still_loads(
+        self, config: FunContentSource, tmp_path: Path
+    ) -> None:
+        """Legacy cached dictionaries do not require a type key."""
+        service = CachedFunContentService(config, logging.getLogger(__name__), tmp_path)
+        legacy = {"title": "旧标题", "content": "旧内容"}
+        cache_data = {"date": "2026-02-04", "data": legacy, "fetched_at": 0}
+        (tmp_path / "fun_content.json").write_text(
+            json.dumps(cache_data, ensure_ascii=False), encoding="utf-8"
+        )
+
+        assert service.load_cache() == legacy

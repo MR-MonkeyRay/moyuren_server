@@ -87,9 +87,12 @@ class TestOpsGenerate:
         data_dir = tmp_path / "cache" / "data"
         today_str = "2026-02-10"
         data_file = data_dir / f"{today_str}.json"
-        data_file.write_text(
-            json.dumps({"images": {"moyuren": "moyuren_20260210_072232.jpg"}})
-        )
+        data_file.write_text(json.dumps({
+            "date": today_str,
+            "updated": "2026/02/10 07:22:32",
+            "updated_at": 1739145752000,
+            "images": {"moyuren": "moyuren_20260210_072232.jpg"},
+        }))
 
         with (
             patch(

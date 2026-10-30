@@ -2,15 +2,15 @@
 
 import asyncio
 import hmac
-import json
 import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
-from app.core.errors import ErrorCode, error_response, get_http_status
+from app.core.errors import ErrorCode, StorageError, error_response, get_http_status
 from app.core.services import AppServices
+from app.models.schemas import DailyDataFile
 from app.services.calendar import today_business
 from app.services.generator import GenerationBusyError, generate_and_save_image
 
@@ -73,13 +73,11 @@ async def ops_generate(request: Request) -> JSONResponse:
         data_dir = Path(request.app.state.config.paths.cache_dir) / "data"
         today_str = today_business().isoformat()
         data_file = data_dir / f"{today_str}.json"
-        images: dict = {}
+        images: dict[str, str] = {}
         if data_file.exists():
             try:
-                with data_file.open("r", encoding="utf-8") as f:
-                    data = json.load(f)
-                images = data.get("images", {})
-            except (OSError, json.JSONDecodeError):
+                images = DailyDataFile.load(data_file).images
+            except StorageError:
                 pass
 
         return JSONResponse(

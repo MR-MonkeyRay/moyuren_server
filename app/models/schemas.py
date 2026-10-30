@@ -1,6 +1,17 @@
 """Pydantic data models for request/response validation."""
 
-from pydantic import BaseModel, Field
+import json
+import os
+import tempfile
+from datetime import date as calendar_date
+from pathlib import Path
+from typing import Self
+
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
+
+from app.core.errors import ErrorCode, StorageError
+
+DAILY_DATA_SCHEMA_VERSION = 1
 
 
 class MoyurenImageResponse(BaseModel):
@@ -18,6 +29,87 @@ class FunContentSchema(BaseModel):
     type: str = Field(..., description="Content type (joke, quote, etc.)")
     title: str = Field(..., description="Content title with emoji")
     text: str = Field(..., description="Content text")
+
+
+class DailyDataFile(BaseModel):
+    """Versioned daily cache data with lossless optional source payloads."""
+
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: int = DAILY_DATA_SCHEMA_VERSION
+    date: str
+    updated: str
+    updated_at: int = Field(ge=0, strict=True)
+    images: dict[str, str]
+    # Optional payloads stay as raw JSON: historical files may use older shapes.
+    weekday: JsonValue = None
+    lunar_date: JsonValue = None
+    is_crazy_thursday: JsonValue = None
+    date_info: JsonValue = None
+    weekend: JsonValue = None
+    solar_term: JsonValue = None
+    guide: JsonValue = None
+    holidays: JsonValue = None
+    news_list: JsonValue = None
+    news_meta: JsonValue = None
+    fun_content: JsonValue = None
+    kfc_content: JsonValue = None
+    kfc_content_full: JsonValue = None
+    stock_indices: JsonValue = None
+    gold_price: JsonValue = None
+    daily_english: JsonValue = None
+
+    @field_validator("date")
+    @classmethod
+    def validate_date(cls, value: str) -> str:
+        """Require a calendar date in the canonical YYYY-MM-DD format."""
+        if calendar_date.fromisoformat(value).isoformat() != value:
+            raise ValueError("date must use YYYY-MM-DD format")
+        return value
+
+    @field_validator("images")
+    @classmethod
+    def validate_images(cls, value: dict[str, str]) -> dict[str, str]:
+        """Require image filenames that stay within the images directory."""
+        for filename in value.values():
+            if not filename.strip() or any(part in filename for part in ("/", "\\", "..", "\x00")):
+                raise ValueError("images must contain non-empty filenames without path separators or '..'")
+        return value
+
+    @classmethod
+    def load(cls, path: Path) -> Self:
+        """Read and validate a daily cache file, reporting storage errors."""
+        try:
+            return cls.model_validate_json(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, ValidationError) as exc:
+            raise StorageError(
+                message=f"Failed to read data file {path}: {exc}",
+                code=ErrorCode.STORAGE_READ_FAILED,
+            ) from exc
+
+    def dump_json(self) -> str:
+        """Serialize present fields and extras, always including the schema version."""
+        data = self.model_dump(mode="json", exclude_unset=True)
+        data["schema_version"] = self.schema_version
+        return json.dumps(data, ensure_ascii=False, indent=2)
+
+    def save_atomic(self, path: Path) -> None:
+        """Write a UTF-8 temporary file and atomically replace the daily cache."""
+        tmp_path: Path | None = None
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=path.parent,
+                prefix=".data_", suffix=".tmp", delete=False,
+            ) as tmp_file:
+                tmp_path = Path(tmp_file.name)
+                tmp_file.write(self.dump_json())
+            os.replace(tmp_path, path)
+        except Exception as exc:
+            raise StorageError(message=f"Failed to update data file {path}: {exc}") from exc
+        finally:
+            if tmp_path is not None:
+                tmp_path.unlink(missing_ok=True)
 
 
 class DateInfoSchema(BaseModel):

@@ -1,7 +1,6 @@
 """Application service construction and startup helpers."""
 
 import asyncio
-import json
 import logging
 import shutil
 from collections.abc import Awaitable, Callable
@@ -20,9 +19,11 @@ from app.core.config import (
     NewsSource,
     StockIndexSource,
 )
+from app.core.errors import StorageError
 from app.core.network import safe_exception_for_log
 from app.core.scheduler import TaskScheduler
 from app.core.services import AppServices
+from app.models.schemas import DailyDataFile
 from app.services.cache import CacheCleaner
 from app.services.calendar import today_business
 from app.services.compute import DataComputer, DomainDataAggregator, TemplateAdapter
@@ -295,34 +296,12 @@ def _inspect_today_data(
         logger.info("No existing data file found for today")
         return True, False
     try:
-        with data_file.open("r", encoding="utf-8") as file:
-            data = json.load(file)
-        if not isinstance(data, dict):
-            logger.warning("Data file is not a dictionary")
-            return True, False
-        if not data.get("images"):
-            logger.warning("Data file missing images mapping")
-            return True, False
-        updated_at_ms = data.get("updated_at")
-        if updated_at_ms is None:
-            logger.warning("Data file missing 'updated_at' field")
-            return True, False
-        if not isinstance(updated_at_ms, (int, float)):
-            logger.warning(
-                f"Invalid updated_at type: {type(updated_at_ms).__name__}, expected int or float"
-            )
-            return True, False
-        if updated_at_ms < 0:
-            logger.warning(f"Invalid updated_at value: {updated_at_ms} (negative timestamp)")
-            return True, False
-        cached_date = data.get("date")
+        data = DailyDataFile.load(data_file)
+        cached_date = data.date
         if cached_date != today_str:
             logger.info(f"Cache date mismatch: {cached_date} != {today_str}")
             return True, True
-    except (json.JSONDecodeError, OSError) as exc:
+    except StorageError as exc:
         logger.warning(f"Data file invalid or unreadable: {exc}")
-        return True, False
-    except (TypeError, ValueError, KeyError) as exc:
-        logger.warning(f"Failed to check cache expiration: {exc}")
         return True, False
     return False, False

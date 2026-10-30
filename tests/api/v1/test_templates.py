@@ -59,6 +59,9 @@ class TestTemplatesAPI:
         data_dir = tmp_path / "cache" / "data"
         data_file = data_dir / "2026-02-10.json"
         data_file.write_text(json.dumps({
+            "date": "2026-02-10",
+            "updated": "2026/02/10 07:22:32",
+            "updated_at": 1739145752000,
             "images": {"moyuren": "moyuren_20260210_072232.jpg"},
         }))
 

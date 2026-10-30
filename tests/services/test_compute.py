@@ -551,10 +551,17 @@ class TestComputeNewsListEdgeCases:
 
     def test_history_with_fun_content(self, aggregator: DomainDataAggregator) -> None:
         """Test _compute_history extracts fun_content data."""
-        raw_data = {"fun_content": {"title": "趣味标题", "content": "趣味内容"}}
+        raw_data = {
+            "fun_content": {
+                "title": "趣味标题",
+                "content": "趣味内容",
+                "type": "hitokoto",
+            }
+        }
         result = aggregator._compute_history(raw_data)
         assert result["title"] == "趣味标题"
         assert result["content"] == "趣味内容"
+        assert result["type"] == "hitokoto"
 
     def test_history_fun_content_missing_title(self, aggregator: DomainDataAggregator) -> None:
         """Test _compute_history with missing title falls back to default."""
@@ -562,6 +569,7 @@ class TestComputeNewsListEdgeCases:
         result = aggregator._compute_history(raw_data)
         assert result["title"] == "🐟 摸鱼小贴士"
         assert result["content"] == "内容"
+        assert "type" not in result
 
     def test_news_list_new_api_format(self, aggregator: DomainDataAggregator) -> None:
         """Test _compute_news_list with new API dict format."""

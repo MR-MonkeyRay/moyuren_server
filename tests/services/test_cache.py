@@ -12,6 +12,16 @@ import pytest
 from app.services.cache import CacheCleaner
 
 
+def _daily_data(date_value: str, images: dict[str, str]) -> dict[str, object]:
+    """Build the required daily data fields for cache cleanup tests."""
+    return {
+        "date": date_value,
+        "updated": "2026/02/10 07:22:32",
+        "updated_at": 1,
+        "images": images,
+    }
+
+
 class TestCacheCleaner:
     """Tests for CacheCleaner class."""
 
@@ -107,7 +117,9 @@ class TestCacheCleaner:
             (cleaner.images_dir / filename).write_bytes(b"image")
         for index, filename in enumerate(filenames[:reference_count]):
             data_path = cleaner.data_dir / f"2026-02-{10 - index:02d}.json"
-            data_path.write_text(json.dumps({"images": {"moyuren": filename}}))
+            data_path.write_text(
+                json.dumps(_daily_data(data_path.stem, {"moyuren": filename}))
+            )
 
         with patch("app.services.cache.today_business", return_value=date(2026, 2, 10)):
             result = cleaner.cleanup()
@@ -132,7 +144,9 @@ class TestCacheCleaner:
         referenced.write_bytes(b"referenced")
         newer.write_bytes(b"newer")
         data_file = cleaner.data_dir / data_filename
-        data_file.write_text(json.dumps({"images": {"moyuren": referenced.name}}))
+        data_file.write_text(
+            json.dumps(_daily_data("2025-12-01", {"moyuren": referenced.name}))
+        )
         data_size = data_file.stat().st_size
 
         with patch("app.services.cache.today_business", return_value=date(2026, 2, 10)):
@@ -187,23 +201,26 @@ class TestCacheCleaner:
         assert result["deleted_files"] == 0
         assert "Skipping image pruning for 2026-02-10" in caplog.text
 
-    def test_cleanup_preserves_valid_references_in_invalid_mapping(self, tmp_path: Path) -> None:
-        """Test a malformed mapping still protects valid references to other dates."""
+    def test_cleanup_skips_pruning_for_partially_invalid_mapping(self, tmp_path: Path) -> None:
+        """Test a malformed mapping conservatively disables pruning for its date."""
         cleaner = CacheCleaner(str(tmp_path), 30, logging.getLogger("test"))
         filenames = [f"moyuren_20260210_{hour:02d}0000.jpg" for hour in range(5)]
         for filename in filenames:
             (cleaner.images_dir / filename).write_bytes(b"image")
-        (cleaner.data_dir / "2026-02-09.json").write_text(
-            json.dumps({"images": {"moyuren": filenames[0], "invalid": None}})
+        (cleaner.data_dir / "2026-02-10.json").write_text(
+            json.dumps(
+                {
+                    **_daily_data("2026-02-10", {"moyuren": filenames[0]}),
+                    "images": {"moyuren": filenames[0], "invalid": None},
+                }
+            )
         )
 
         with patch("app.services.cache.today_business", return_value=date(2026, 2, 10)):
             result = cleaner.cleanup()
 
-        assert {path.name for path in cleaner.images_dir.glob("*.jpg")} == {
-            filenames[0], filenames[3], filenames[4]
-        }
-        assert result["pruned_images"] == 2
+        assert {path.name for path in cleaner.images_dir.glob("*.jpg")} == set(filenames)
+        assert result["pruned_images"] == 0
 
     def test_cleanup_expired_data_files(
         self, cleaner: CacheCleaner, cache_dir: Path, mock_today

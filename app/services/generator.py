@@ -1,10 +1,7 @@
 """Image generation service module."""
 
 import asyncio
-import json
 import logging
-import os
-import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +13,7 @@ from app.core.errors import GenerationBusyError, StorageError
 from app.core.filelock import FileLockTimeout, async_file_lock
 from app.core.network import safe_exception_for_log
 from app.core.services import AppServices
+from app.models.schemas import DailyDataFile
 from app.services.cache import CacheCleaner
 from app.services.calendar import get_display_timezone, now_business
 
@@ -25,10 +23,8 @@ INFLIGHT_WAIT_TIMEOUT_SEC = 90
 def _read_data_file(data_file: Path) -> dict | None:
     """读取 data 文件内容"""
     try:
-        with data_file.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else None
-    except (OSError, json.JSONDecodeError):
+        return DailyDataFile.load(data_file).model_dump(mode="json", exclude_unset=True)
+    except StorageError:
         return None
 
 
@@ -66,22 +62,11 @@ def _read_latest_filename(data_file: Path, template_name: str | None = None) -> 
         文件名，如果读取失败则返回 None
     """
     try:
-        with data_file.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-            if not isinstance(data, dict):
-                return None
-
-            # Read from images mapping
-            images = data.get("images")
-            if not isinstance(images, dict):
-                return None
-
-            # If template_name not specified, use first available
-            if not template_name:
-                return next(iter(images.values()), None)
-
-            return images.get(template_name)
-    except (FileNotFoundError, json.JSONDecodeError, KeyError, OSError):
+        images = DailyDataFile.load(data_file).images
+        if not template_name:
+            return next(iter(images.values()), None)
+        return images.get(template_name)
+    except StorageError:
         return None
 
 
@@ -555,15 +540,17 @@ async def _update_data_file(
         fun_content = None
         if fun_content_raw:
             title = fun_content_raw.get("title", "")
-            content_type = "unknown"
-            if "冷笑话" in title:
-                content_type = "dad_joke"
-            elif "一言" in title:
-                content_type = "hitokoto"
-            elif "段子" in title:
-                content_type = "duanzi"
-            elif "摸鱼" in title:
-                content_type = "moyu_quote"
+            content_type = fun_content_raw.get("type")
+            if content_type is None:
+                content_type = "unknown"
+                if "冷笑话" in title:
+                    content_type = "dad_joke"
+                elif "一言" in title:
+                    content_type = "hitokoto"
+                elif "段子" in title:
+                    content_type = "duanzi"
+                elif "摸鱼" in title:
+                    content_type = "moyu_quote"
             fun_content = {"type": content_type, "title": title, "text": fun_content_raw.get("content", "")}
 
         # Build KFC content
@@ -580,11 +567,8 @@ async def _update_data_file(
         existing_images: dict[str, str] = {}
         if data_file.exists():
             try:
-                with data_file.open("r", encoding="utf-8") as f:
-                    existing_data = json.load(f)
-                if isinstance(existing_data, dict) and isinstance(existing_data.get("images"), dict):
-                    existing_images.update(existing_data["images"])
-            except (OSError, json.JSONDecodeError):
+                existing_images.update(DailyDataFile.load(data_file).images)
+            except StorageError:
                 pass
 
         # Update images mapping
@@ -620,24 +604,6 @@ async def _update_data_file(
             "daily_english": raw_data.get("daily_english"),
         }
 
-        # Atomic write
-        tmp_path = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                dir=dir_path,
-                prefix=".data_",
-                suffix=".tmp",
-                delete=False,
-            ) as tmp_file:
-                json.dump(data, tmp_file, ensure_ascii=False, indent=2)
-                tmp_path = tmp_file.name
-            os.replace(tmp_path, data_file)
-        except Exception as e:
-            if tmp_path and Path(tmp_path).exists():
-                Path(tmp_path).unlink(missing_ok=True)
-            raise StorageError(
-                message=f"Failed to update data file {data_file}: {e}",
-            ) from e
+        DailyDataFile.model_validate(data).save_atomic(data_file)
 
     await asyncio.to_thread(_write_data)

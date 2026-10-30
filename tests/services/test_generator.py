@@ -80,6 +80,7 @@ class TestReadLatestFilename:
             "images": {"moyuren": "moyuren_20260204.jpg"},
             "date": "2026-02-04",
         }
+        data = {"date": "2026-02-04", "updated": "2026/02/04 10:00:00", "updated_at": 1, **data}
         data_file.write_text(json.dumps(data))
 
         result = _read_latest_filename(data_file)
@@ -95,6 +96,7 @@ class TestReadLatestFilename:
             },
             "date": "2026-02-04",
         }
+        data = {"date": "2026-02-04", "updated": "2026/02/04 10:00:00", "updated_at": 1, **data}
         data_file.write_text(json.dumps(data))
 
         result = _read_latest_filename(data_file)
@@ -110,6 +112,7 @@ class TestReadLatestFilename:
                 "custom": "custom_20260204.jpg",
             },
         }
+        data = {"date": "2026-02-04", "updated": "2026/02/04 10:00:00", "updated_at": 1, **data}
         data_file.write_text(json.dumps(data))
 
         result = _read_latest_filename(data_file, template_name="custom")
@@ -150,6 +153,7 @@ class TestReadLatestFilename:
                 "moyuren": "moyuren_20260204.jpg",
             },
         }
+        data = {"date": "2026-02-04", "updated": "2026/02/04 10:00:00", "updated_at": 1, **data}
         data_file.write_text(json.dumps(data))
 
         result = _read_latest_filename(data_file, template_name="nonexistent")
@@ -162,6 +166,7 @@ class TestReadLatestFilename:
         data = {
             "date": "2026-02-04",
         }
+        data = {"date": "2026-02-04", "updated": "2026/02/04 10:00:00", "updated_at": 1, **data}
         data_file.write_text(json.dumps(data))
 
         result = _read_latest_filename(data_file)
@@ -663,9 +668,13 @@ class TestReadDataFile:
         from app.services.generator import _read_data_file
 
         data_file = tmp_path / "state.json"
-        data_file.write_text(json.dumps({"key": "value"}), encoding="utf-8")
+        data = {
+            "date": "2026-02-04", "updated": "2026/02/04 10:00:00",
+            "updated_at": 1, "images": {"moyuren": "image.jpg"}, "key": "value",
+        }
+        data_file.write_text(json.dumps(data), encoding="utf-8")
         result = _read_data_file(data_file)
-        assert result == {"key": "value"}
+        assert result == data
 
     def test_returns_none_for_non_dict_json(self, tmp_path: Path) -> None:
         from app.services.generator import _read_data_file
@@ -861,13 +870,16 @@ class TestUpdateDataFile:
         data_dir.mkdir(parents=True, exist_ok=True)
         business_date = date(2026, 2, 5)
         data_file = data_dir / f"{business_date.isoformat()}.json"
-        data_file.write_text(json.dumps({"images": {"legacy": "legacy.jpg"}}), encoding="utf-8")
+        data_file.write_text(json.dumps({
+            "date": business_date.isoformat(), "updated": "2026/02/05 09:00:00",
+            "updated_at": 1, "images": {"legacy": "legacy.jpg"},
+        }), encoding="utf-8")
 
         template_data = {
             "date": {"week_cn": "星期四", "lunar_date": "正月初八"},
-            "weekend": False,
+            "weekend": {"days_left": 2, "is_weekend": False},
             "solar_term": {"name": "立春"},
-            "guide": "今日指南",
+            "guide": {"yi": ["摸鱼"], "ji": ["加班"]},
             "holidays": [{"name": "春节", "days_left": 10, "color": "#FF0000"}, "invalid"],
             "news_list": [{"text": "新闻1"}, {}, 123],
             "news_meta": {"total": 2},
@@ -910,7 +922,7 @@ class TestUpdateDataFile:
         with (
             patch("app.services.generator.now_business", return_value=fixed_now),
             patch("app.services.generator.get_display_timezone", return_value=timezone.utc),
-            patch("app.services.generator.os.replace", side_effect=OSError("disk full")),
+            patch("app.models.schemas.os.replace", side_effect=OSError("disk full")),
         ):
             with pytest.raises(StorageError):
                 await _update_data_file(

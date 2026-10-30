@@ -54,7 +54,12 @@ def _fake_config(tmp_path: Path) -> SimpleNamespace:
     today = date(2026, 2, 4)
     (data_dir / f"{today.isoformat()}.json").write_text(
         json.dumps(
-            {"date": today.isoformat(), "updated_at": 1, "images": {"moyuren": "x.jpg"}}
+            {
+                "date": today.isoformat(),
+                "updated": "2026/02/04 00:00:00",
+                "updated_at": 1,
+                "images": {"moyuren": "x.jpg"},
+            }
         ),
         encoding="utf-8",
     )

@@ -3,13 +3,13 @@
 
 import argparse
 import asyncio
-import json
 import os
 import shutil
 import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -26,6 +26,7 @@ from app.core.config import (
 )
 from app.core.logging import setup_logging
 from app.core.network import safe_exception_for_log
+from app.models.schemas import DailyDataFile
 from app.services.browser import browser_manager
 from app.services.calendar import get_display_timezone, init_timezones, now_business
 from app.services.compute import DataComputer
@@ -483,21 +484,22 @@ async def main():
         kfc_content_raw = template_data.get("kfc_content")
 
         # Build fun_content
-        fun_content = None
+        stored_fun_content: dict[str, str] | None = None
         if fun_content_raw:
-            # Determine type from title
             title = fun_content_raw.get("title", "")
-            content_type = "unknown"
-            if "冷笑话" in title:
-                content_type = "dad_joke"
-            elif "一言" in title:
-                content_type = "hitokoto"
-            elif "段子" in title:
-                content_type = "duanzi"
-            elif "摸鱼" in title:
-                content_type = "moyu_quote"
+            content_type = fun_content_raw.get("type")
+            if not isinstance(content_type, str) or not content_type:
+                content_type = "unknown"
+                if "冷笑话" in title:
+                    content_type = "dad_joke"
+                elif "一言" in title:
+                    content_type = "hitokoto"
+                elif "段子" in title:
+                    content_type = "duanzi"
+                elif "摸鱼" in title:
+                    content_type = "moyu_quote"
 
-            fun_content = {
+            stored_fun_content = {
                 "type": content_type,
                 "title": title,
                 "text": fun_content_raw.get("content", ""),
@@ -508,13 +510,13 @@ async def main():
         if kfc_content_raw and isinstance(kfc_content_raw, dict):
             kfc_content = kfc_content_raw.get("content")
 
-        data = {
+        data_payload: dict[str, Any] = {
             **timestamp_fields,
             "images": {"moyuren": "moyuren.jpg"},
             # New content fields
             "weekday": date_info.get("week_cn", ""),
             "lunar_date": date_info.get("lunar_date", ""),
-            "fun_content": fun_content,
+            "fun_content": stored_fun_content,
             "kfc_content": kfc_content,
             # Full rendering data fields
             "date_info": template_data.get("date"),
@@ -535,6 +537,8 @@ async def main():
             "kfc_content_full": template_data.get("kfc_content"),
             "stock_indices": raw_data.get("stock_indices"),
         }
+        data_file = DailyDataFile.model_validate(data_payload)
+        data = data_file.model_dump(mode="json")
 
         # 5. Generate artifacts to output directory
         try:
@@ -542,7 +546,7 @@ async def main():
             date_dir.mkdir(parents=True, exist_ok=True)
 
             # JSON artifacts
-            json_content = json.dumps(data, ensure_ascii=False, indent=2)
+            json_content = data_file.dump_json()
             write_atomic(json_content, date_dir / "data.json")
             write_atomic(json_content, output_dir / "latest.json")
             logger.info(

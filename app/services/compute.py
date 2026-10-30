@@ -482,14 +482,18 @@ class DomainDataAggregator:
             raw_data: Raw data dictionary containing 'fun_content' key.
 
         Returns:
-            Dictionary with 'title' and 'content' keys.
+            Dictionary with 'title' and 'content' keys, plus 'type' when supplied.
         """
         fun_content = raw_data.get("fun_content")
         if fun_content and isinstance(fun_content, dict):
-            return {
+            history = {
                 "title": fun_content.get("title") or "🐟 摸鱼小贴士",
                 "content": fun_content.get("content") or self._DEFAULT_HISTORY,
             }
+            content_type = fun_content.get("type")
+            if isinstance(content_type, str) and content_type:
+                history["type"] = content_type
+            return history
         return {"title": "🐟 摸鱼小贴士", "content": self._DEFAULT_HISTORY}
 
     def _compute_news_list(self, raw_data: dict[str, Any]) -> list[dict[str, Any]]:
