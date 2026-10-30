@@ -1,6 +1,8 @@
 """KFC Crazy Thursday service module."""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -23,22 +25,37 @@ class KfcService:
         config: CrazyThursdaySource,
         proxy_url: str | None = None,
         instances: InstancesConfig | None = None,
-    ):
+        http_client: httpx.AsyncClient | None = None,
+    ) -> None:
         """Initialize the service with configuration.
 
         Args:
             config: Crazy Thursday configuration.
             proxy_url: Optional outbound proxy URL.
             instances: Global 60s public instance configuration.
+            http_client: Optional external HTTP client managed by the caller.
         """
         self.config = config
+        self._http_client = http_client
         self._proxy_url = proxy_url
         self._router = InstanceRouter.from_config(
             instances,
             logger,
+            http_client=http_client,
             proxy_url=proxy_url,
             timeout_sec=float(config.timeout_sec),
         )
+
+    @asynccontextmanager
+    async def _get_client(self) -> AsyncIterator[httpx.AsyncClient]:
+        """Yield the injected client or a temporary service-owned client."""
+        if self._http_client is not None:
+            yield self._http_client
+        else:
+            async with create_async_client(
+                timeout=self.config.timeout_sec, proxy_url=self._proxy_url
+            ) as client:
+                yield client
 
     async def fetch_kfc_copy(self) -> str | None:
         """Fetch KFC crazy thursday copy.
@@ -52,9 +69,7 @@ class KfcService:
             return None
 
         try:
-            async with create_async_client(
-                timeout=self.config.timeout_sec, proxy_url=self._proxy_url
-            ) as client:
+            async with self._get_client() as client:
                 result = await self._router.fetch_json(
                     client,
                     self.config.url,
@@ -113,6 +128,7 @@ class CachedKfcService(DailyCache[str]):
         cache_dir: Path,
         proxy_url: str | None = None,
         instances: InstancesConfig | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """初始化带缓存的 KFC 服务。
 
@@ -122,11 +138,17 @@ class CachedKfcService(DailyCache[str]):
             cache_dir: 缓存目录路径
             proxy_url: 可选全局代理 URL
             instances: 全局 60s 公共实例配置；主源不可用时按健康度切换
+            http_client: 可选外部 HTTP 客户端；由调用方管理生命周期
         """
         super().__init__("kfc", cache_dir, logger)
         self.config = config
         self._proxy_url = proxy_url
-        self._service = KfcService(config, proxy_url=proxy_url, instances=instances)
+        self._service = KfcService(
+            config,
+            http_client=http_client,
+            proxy_url=proxy_url,
+            instances=instances,
+        )
 
     async def fetch_fresh(self) -> str | None:
         """从网络获取新鲜数据（仅周四获取）。

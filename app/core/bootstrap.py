@@ -39,7 +39,9 @@ from app.services.stock_index import StockIndexService
 
 
 def build_services(
-    config: AppConfig, logger: logging.Logger, http_client: httpx.AsyncClient
+    config: AppConfig,
+    logger: logging.Logger,
+    http_client: httpx.AsyncClient | None = None,
 ) -> AppServices:
     """Build the application service container from configuration."""
     cache_dir = Path(config.paths.cache_dir)
@@ -69,12 +71,14 @@ def build_services(
         ghproxy_urls=config.network.ghproxy_urls,
         timeout_sec=holiday_source.timeout_sec if holiday_source else 10,
         proxy_url=config.network.proxy_url,
+        http_client=http_client,
     )
 
     fun_content_source = config.get_source(FunContentSource)
     fun_content_service = (
         CachedFunContentService(
             config=fun_content_source,
+            http_client=http_client,
             logger=logger,
             cache_dir=daily_cache_dir,
             proxy_url=config.network.proxy_url,
@@ -88,6 +92,7 @@ def build_services(
     kfc_service = (
         CachedKfcService(
             config=crazy_thursday_source,
+            http_client=http_client,
             logger=logger,
             cache_dir=daily_cache_dir,
             proxy_url=config.network.proxy_url,
@@ -99,7 +104,11 @@ def build_services(
 
     stock_index_source = config.get_source(StockIndexSource)
     stock_index_service = (
-        StockIndexService(stock_index_source, proxy_url=config.network.proxy_url)
+        StockIndexService(
+            stock_index_source,
+            proxy_url=config.network.proxy_url,
+            http_client=http_client,
+        )
         if stock_index_source
         else None
     )
@@ -130,6 +139,7 @@ def build_services(
         )
         daily_english_service = CachedDailyEnglishService(
             config=daily_english_source,
+            http_client=http_client,
             backend=dict_backend,
             logger=logger,
             cache_dir=daily_cache_dir,

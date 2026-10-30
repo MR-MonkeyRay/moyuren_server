@@ -10,6 +10,8 @@ import shutil
 import tempfile
 import time
 import zipfile
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol, TypedDict
 from urllib.parse import quote, urlparse
@@ -789,6 +791,7 @@ class DailyEnglishService:
         backend: DictBackend,
         logger: logging.Logger,
         proxy_url: str | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """初始化每日英语服务。
 
@@ -797,11 +800,27 @@ class DailyEnglishService:
             backend: 单词释义查询后端。
             logger: 日志记录器。
             proxy_url: 可选全局代理 URL。
+            http_client: 可选外部 HTTP 客户端；提供时由调用方负责生命周期。
         """
         self._config = config
         self._backend = backend
         self._logger = logger
         self._proxy_url = proxy_url
+        self._http_client = http_client
+
+    @asynccontextmanager
+    async def _get_client(self) -> AsyncIterator[httpx.AsyncClient]:
+        """复用注入的 HTTP 客户端，或创建临时客户端。"""
+        if self._http_client is not None:
+            yield self._http_client
+        else:
+            timeout = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
+            async with create_async_client(
+                timeout=timeout,
+                follow_redirects=True,
+                proxy_url=self._proxy_url,
+            ) as client:
+                yield client
 
     async def ensure_ready(self) -> None:
         """Ensure the dictionary backend is ready (e.g., download DB if needed)."""
@@ -838,6 +857,10 @@ class DailyEnglishService:
             resp = await client.get(
                 self._config.word_api_url,
                 params={"number": 1, "diff": difficulty},
+                timeout=httpx.Timeout(
+                    connect=5.0, read=10.0, write=10.0, pool=5.0
+                ),
+                follow_redirects=True,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -863,13 +886,10 @@ class DailyEnglishService:
         Side Effects:
             会访问外部随机单词 API，并可能调用后端本地随机选择逻辑。
         """
-        timeout = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
         api_failures = 0
         min_d, max_d = self._difficulty_range_tuple()
 
-        async with create_async_client(
-            timeout=timeout, follow_redirects=True, proxy_url=self._proxy_url
-        ) as client:
+        async with self._get_client() as client:
             for attempt in range(self._config.max_retries):
                 difficulty = random.randint(min_d, max_d)
                 word = await self._fetch_word_from_api(client, difficulty)
@@ -915,6 +935,7 @@ class CachedDailyEnglishService(DailyCache[dict]):
         logger: logging.Logger,
         cache_dir: Path,
         proxy_url: str | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """初始化带缓存的每日英语服务。
 
@@ -924,11 +945,16 @@ class CachedDailyEnglishService(DailyCache[dict]):
             logger: 日志记录器。
             cache_dir: 缓存目录。
             proxy_url: 可选全局代理 URL。
+            http_client: 可选外部 HTTP 客户端；提供时由调用方负责生命周期。
         """
         super().__init__("daily_english", cache_dir, logger)
         self._proxy_url = proxy_url
         self._service = DailyEnglishService(
-            config=config, backend=backend, logger=logger, proxy_url=proxy_url
+            config=config,
+            backend=backend,
+            logger=logger,
+            proxy_url=proxy_url,
+            http_client=http_client,
         )
         self._backend = backend
 

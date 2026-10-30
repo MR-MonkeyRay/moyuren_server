@@ -1,6 +1,7 @@
 """Gold price service module."""
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -42,12 +43,13 @@ class GoldPriceService:
             self._logger,
             proxy_url=proxy_url,
             timeout_sec=float(config.timeout_sec),
+            http_client=http_client,
         )
 
     @asynccontextmanager
-    async def _get_client(self):
+    async def _get_client(self) -> AsyncIterator[httpx.AsyncClient]:
         """Yield an HTTP client, reusing injected one or creating temporary."""
-        if self._http_client:
+        if self._http_client is not None:
             yield self._http_client
         else:
             async with create_async_client(

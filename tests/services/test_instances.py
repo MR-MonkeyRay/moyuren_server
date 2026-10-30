@@ -1,7 +1,7 @@
 """Tests for app/services/instances.py - public instance discovery and routing."""
 
 import logging
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -72,6 +72,27 @@ class TestPublicInstanceProvider:
             logger=logger, list_url=self.LIST_URL, timeout_sec=5
         )
 
+    @pytest.mark.asyncio
+    async def test_injected_client_preserves_timeout_and_stays_open(
+        self, logger: logging.Logger
+    ) -> None:
+        """Discovery borrows the app client without using its default timeout."""
+        client = MagicMock(spec=httpx.AsyncClient)
+        client.get = AsyncMock(return_value=Response(
+            200, text=SAMPLE_MARKDOWN, request=httpx.Request("GET", self.LIST_URL)
+        ))
+        provider = PublicInstanceProvider(
+            logger, self.LIST_URL, timeout_sec=7, http_client=client
+        )
+
+        with patch("app.services.instances.create_async_client") as create_client:
+            assert await provider.get_instances()
+
+        client.get.assert_awaited_once_with(self.LIST_URL, timeout=httpx.Timeout(7))
+        create_client.assert_not_called()
+        client.aclose.assert_not_called()
+        client.__aexit__.assert_not_called()
+
     @respx.mock
     @pytest.mark.asyncio
     async def test_discovers_and_caches_instances(
@@ -138,6 +159,30 @@ class TestInstanceRouterCandidates:
     """Tests for InstanceRouter candidate construction."""
 
     LIST_URL = "https://docs.example.com/instances.md"
+
+    @pytest.mark.asyncio
+    async def test_from_config_threads_injected_client_to_discovery(
+        self, logger: logging.Logger
+    ) -> None:
+        """The router forwards the app client to its document provider."""
+        client = MagicMock(spec=httpx.AsyncClient)
+        client.get = AsyncMock(return_value=Response(
+            200, text=SAMPLE_MARKDOWN, request=httpx.Request("GET", self.LIST_URL)
+        ))
+        router = InstanceRouter.from_config(
+            InstancesConfig(list_url=self.LIST_URL),
+            logger,
+            timeout_sec=6,
+            http_client=client,
+        )
+
+        with patch("app.services.instances.create_async_client") as create_client:
+            assert await router.candidates("https://api.example.com/v2/60s")
+
+        client.get.assert_awaited_once_with(self.LIST_URL, timeout=httpx.Timeout(6))
+        create_client.assert_not_called()
+        client.aclose.assert_not_called()
+        client.__aexit__.assert_not_called()
 
     @staticmethod
     def _markdown(*domains: str) -> str:

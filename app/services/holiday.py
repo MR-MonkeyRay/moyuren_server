@@ -5,7 +5,8 @@ import logging
 import os
 import tempfile
 import time
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,7 @@ class HolidayService:
         ghproxy_urls: list[str] | None = None,
         timeout_sec: int = 10,
         proxy_url: str | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """初始化节假日数据服务。
 
@@ -45,6 +47,7 @@ class HolidayService:
             ghproxy_urls: GitHub raw 镜像代理前缀列表，按顺序优先尝试。
             timeout_sec: 请求超时时间，单位秒。
             proxy_url: 可选全局代理 URL。
+            http_client: 可选外部 HTTP 客户端；由调用方管理生命周期。
 
         Side Effects:
             创建缓存目录（如果不存在）。
@@ -55,6 +58,18 @@ class HolidayService:
         self._ghproxy_urls = ghproxy_urls or []
         self._timeout_sec = timeout_sec
         self._proxy_url = proxy_url
+        self._http_client = http_client
+
+    @asynccontextmanager
+    async def _get_client(self) -> AsyncIterator[httpx.AsyncClient]:
+        """复用注入客户端，未注入时创建临时客户端。"""
+        if self._http_client is not None:
+            yield self._http_client
+        else:
+            async with create_async_client(
+                timeout=self._timeout_sec, proxy_url=self._proxy_url
+            ) as client:
+                yield client
 
     def _build_urls(self, year: int) -> list[str]:
         """构建 URL 列表：镜像源优先，GitHub 原始源兜底"""
@@ -138,9 +153,7 @@ class HolidayService:
             f"开始获取 {prev_year}、{current_year} 和 {next_year} 年节假日数据"
         )
 
-        async with create_async_client(
-            timeout=self._timeout_sec, proxy_url=self._proxy_url
-        ) as client:
+        async with self._get_client() as client:
             tasks = [
                 self._fetch_year_data(client, prev_year),
                 self._fetch_year_data(client, current_year),
@@ -179,7 +192,9 @@ class HolidayService:
 
         for url in urls:
             try:
-                response = await client.get(url)
+                response = await client.get(
+                    url, timeout=httpx.Timeout(self._timeout_sec)
+                )
                 response.raise_for_status()
                 data = response.json()
                 if not self._is_valid_year_data(data):
@@ -412,6 +427,7 @@ class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
         ghproxy_urls: list[str] | None = None,
         timeout_sec: int = 10,
         proxy_url: str | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """初始化带缓存的节假日服务。
 
@@ -422,6 +438,7 @@ class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
             ghproxy_urls: 代理源 URL 列表
             timeout_sec: 请求超时时间（秒）
             proxy_url: 可选全局代理 URL
+            http_client: 可选外部 HTTP 客户端；由调用方管理生命周期
         """
         super().__init__("holidays", cache_dir, logger)
         self._service = HolidayService(
@@ -430,6 +447,7 @@ class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
             ghproxy_urls=ghproxy_urls,
             timeout_sec=timeout_sec,
             proxy_url=proxy_url,
+            http_client=http_client,
         )
 
     async def fetch_fresh(self) -> list[dict[str, Any]] | None:

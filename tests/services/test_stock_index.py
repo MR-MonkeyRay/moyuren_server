@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -169,6 +169,49 @@ class TestStockIndexService:
 
         # Close client
         await service.close()
+        assert service._http_client is None
+
+    @pytest.mark.asyncio
+    async def test_injected_client_is_reused_with_timeout_and_not_closed(
+        self, sample_config: StockIndexSource, sample_quote_response: dict[str, Any]
+    ) -> None:
+        """An injected client is caller-owned and receives the service timeout."""
+        response = MagicMock()
+        response.json.return_value = sample_quote_response
+        client = MagicMock(spec=httpx.AsyncClient)
+        client.get = AsyncMock(return_value=response)
+        client.aclose = AsyncMock()
+
+        with patch("app.services.stock_index.xcals.get_calendar"):
+            service = StockIndexService(sample_config, http_client=client)
+
+        result = await service._fetch_quotes()
+        await service.close()
+
+        assert result == sample_quote_response["data"]["diff"]
+        client.get.assert_awaited_once_with(
+            "https://api.example.com/quote?fltt=2&fields=f2,f3,f4,f12,f14&secids=1.000001,0.399001",
+            timeout=httpx.Timeout(sample_config.timeout_sec),
+        )
+        client.aclose.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_close_closes_owned_client(
+        self, sample_config: StockIndexSource
+    ) -> None:
+        """A lazily created client remains owned and is closed by the service."""
+        client = MagicMock(spec=httpx.AsyncClient)
+        client.is_closed = False
+        client.aclose = AsyncMock()
+        with (
+            patch("app.services.stock_index.xcals.get_calendar"),
+            patch("app.services.stock_index.create_async_client", return_value=client),
+        ):
+            service = StockIndexService(sample_config)
+            assert await service._get_http_client() is client
+            await service.close()
+
+        client.aclose.assert_awaited_once_with()
         assert service._http_client is None
 
     @respx.mock

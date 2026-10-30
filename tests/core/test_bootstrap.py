@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import cast
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 import app.core.bootstrap as bootstrap_module
@@ -166,3 +167,47 @@ def test_build_services_leaves_disabled_daily_english_unconstructed(
     assert services.daily_english_service is None
     build_backend.assert_not_called()
     build_daily_service.assert_not_called()
+
+
+@pytest.mark.parametrize("inject_client", [True, False])
+def test_build_services_passes_http_client_to_all_network_services(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, inject_client: bool
+) -> None:
+    """Every network service receives the supplied client or the script default."""
+    source = SimpleNamespace(enabled=True, backend=SimpleNamespace(), timeout_sec=7)
+    config = SimpleNamespace(
+        paths=SimpleNamespace(cache_dir=str(tmp_path)),
+        network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),
+        instances=SimpleNamespace(),
+        templates=SimpleNamespace(config=SimpleNamespace()),
+        cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
+        get_source=lambda source_type: source,
+        get_templates_config=lambda: SimpleNamespace(items=[]),
+    )
+    constructors: dict[str, MagicMock] = {}
+    for name in (
+        "CachedDataFetcher",
+        "CachedHolidayService",
+        "CachedFunContentService",
+        "CachedKfcService",
+        "StockIndexService",
+        "CachedGoldPriceService",
+        "CachedDailyEnglishService",
+    ):
+        constructors[name] = MagicMock()
+        monkeypatch.setattr(bootstrap_module, name, constructors[name])
+    for name in ("ImageRenderer", "CacheCleaner", "ImageGenerator", "build_dict_backend"):
+        monkeypatch.setattr(bootstrap_module, name, MagicMock())
+
+    logger = logging.getLogger(__name__)
+    http_client = cast(httpx.AsyncClient, MagicMock(spec=httpx.AsyncClient))
+    if inject_client:
+        build_services(cast(AppConfig, config), logger, http_client)
+    else:
+        build_services(cast(AppConfig, config), logger)
+
+    for constructor in constructors.values():
+        constructor.assert_called_once()
+        assert constructor.call_args.kwargs["http_client"] is (
+            http_client if inject_client else None
+        )

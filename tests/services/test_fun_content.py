@@ -4,6 +4,7 @@ import json
 import logging
 from datetime import date
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -59,6 +60,29 @@ class TestFunContentService:
         assert "content" in result
         assert result["type"] in {"hitokoto", "joke"}
         assert result["content"] != ""
+
+    @pytest.mark.asyncio
+    async def test_fetch_content_reuses_injected_client_with_service_timeout(
+        self, sample_config: FunContentSource
+    ) -> None:
+        """Injected clients remain open and each request keeps the service timeout."""
+        response = MagicMock()
+        response.json.return_value = {"data": {"hitokoto": "共享连接"}}
+        response.raise_for_status.return_value = None
+        client = MagicMock(spec=httpx.AsyncClient)
+        client.get = AsyncMock(return_value=response)
+        client.aclose = AsyncMock()
+        service = FunContentService(sample_config, http_client=client)
+
+        result = await service.fetch_content(date(2026, 2, 4))
+
+        assert result["content"] in {"共享连接"}
+        assert client.get.await_count >= 1
+        assert all(
+            call.kwargs["timeout"] == httpx.Timeout(5)
+            for call in client.get.await_args_list
+        )
+        client.aclose.assert_not_awaited()
 
     @respx.mock
     @pytest.mark.asyncio
@@ -311,6 +335,18 @@ class TestCachedFunContentService:
         service.save_cache(expected)
 
         assert service.load_cache() == expected
+
+    def test_forwards_injected_client(
+        self, config: FunContentSource, tmp_path: Path
+    ) -> None:
+        """Cached wrapper forwards the shared client to its network service."""
+        client = MagicMock(spec=httpx.AsyncClient)
+
+        service = CachedFunContentService(
+            config, logging.getLogger(__name__), tmp_path, http_client=client
+        )
+
+        assert service._service._http_client is client
 
     def test_legacy_cache_without_type_still_loads(
         self, config: FunContentSource, tmp_path: Path

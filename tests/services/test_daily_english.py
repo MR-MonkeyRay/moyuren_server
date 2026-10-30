@@ -5,7 +5,6 @@ import logging
 import sqlite3
 import zipfile
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -18,7 +17,6 @@ from app.services.daily_english import (
     CachedDailyEnglishService,
     DailyEnglishService,
     SQLiteBackend,
-    WordInfo,
     _extract_stardict_db_from_zip,
     _get_ensure_ready_lock,
     _parse_bool_oxford,
@@ -1121,6 +1119,49 @@ class TestDailyEnglishServiceFetchDailyWord:
         assert result["word"] == "hello"
         mock_backend.lookup.assert_called_once_with("hello")
 
+    async def test_injected_client_is_reused_with_timeout_and_not_closed(
+        self,
+        daily_english_config: DailyEnglishSource,
+        mock_backend: MagicMock,
+        logger: logging.Logger,
+    ) -> None:
+        """The random-word API reuses the caller-owned client with its timeout."""
+        response = MagicMock()
+        response.json.return_value = ["hello"]
+        client = MagicMock(spec=httpx.AsyncClient)
+        client.get = AsyncMock(return_value=response)
+        client.aclose = AsyncMock()
+        mock_backend.lookup.return_value = {
+            "word": "hello",
+            "phonetic": None,
+            "translation": "你好",
+            "definition": None,
+            "collins": None,
+            "oxford": False,
+            "tag": [],
+        }
+        service = DailyEnglishService(
+            daily_english_config,
+            mock_backend,
+            logger,
+            http_client=client,
+        )
+
+        with patch("app.services.daily_english.random.randint", return_value=3):
+            result = await service.fetch_daily_word()
+
+        assert result is not None
+        assert result["word"] == "hello"
+        client.get.assert_awaited_once_with(
+            daily_english_config.word_api_url,
+            params={"number": 1, "diff": 3},
+            timeout=httpx.Timeout(
+                connect=5.0, read=10.0, write=10.0, pool=5.0
+            ),
+            follow_redirects=True,
+        )
+        client.aclose.assert_not_awaited()
+
     @respx.mock
     async def test_api_fails_fallback_to_pick_random(self, daily_english_config: DailyEnglishSource, mock_backend: MagicMock, logger: logging.Logger) -> None:
         """Test fallback to pick_random when API fails threshold times."""
@@ -1301,3 +1342,23 @@ class TestCachedDailyEnglishService:
         await cached_service.close()
 
         mock_backend.close.assert_called_once()
+
+    def test_forwards_injected_http_client(
+        self,
+        daily_english_config: DailyEnglishSource,
+        mock_backend: MagicMock,
+        logger: logging.Logger,
+        tmp_cache_dir: Path,
+    ) -> None:
+        """The cached wrapper forwards the shared client to its network service."""
+        client = MagicMock(spec=httpx.AsyncClient)
+
+        service = CachedDailyEnglishService(
+            config=daily_english_config,
+            backend=mock_backend,
+            logger=logger,
+            cache_dir=tmp_cache_dir,
+            http_client=client,
+        )
+
+        assert service._service._http_client is client

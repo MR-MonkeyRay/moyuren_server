@@ -7,8 +7,9 @@ import time
 from datetime import date
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 import respx
 from httpx import AsyncClient, Response
@@ -164,6 +165,50 @@ class TestHolidayService:
             result = await service.fetch_holidays()
 
         assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_fetch_holidays_reuses_injected_client_with_service_timeout(
+        self,
+        cache_dir: Path,
+        logger: logging.Logger,
+        sample_holiday_data: dict[str, Any],
+    ) -> None:
+        """Injected clients remain open and each request keeps the service timeout."""
+        response = MagicMock()
+        response.json.return_value = sample_holiday_data
+        response.raise_for_status.return_value = None
+        client = MagicMock(spec=httpx.AsyncClient)
+        client.get = AsyncMock(return_value=response)
+        client.aclose = AsyncMock()
+        service = HolidayService(
+            logger=logger, cache_dir=cache_dir, timeout_sec=5, http_client=client
+        )
+
+        with patch.object(service, "_get_today", return_value=date(2026, 2, 4)):
+            result = await service.fetch_holidays()
+
+        assert isinstance(result, list)
+        assert client.get.await_count == 3
+        assert all(
+            call.kwargs["timeout"] == httpx.Timeout(5)
+            for call in client.get.await_args_list
+        )
+        client.aclose.assert_not_awaited()
+
+    def test_cached_service_forwards_injected_client(
+        self, tmp_path: Path, cache_dir: Path, logger: logging.Logger
+    ) -> None:
+        """Cached wrapper forwards the shared client to its network service."""
+        client = MagicMock(spec=httpx.AsyncClient)
+
+        service = CachedHolidayService(
+            logger=logger,
+            cache_dir=tmp_path / "daily",
+            raw_cache_dir=cache_dir,
+            http_client=client,
+        )
+
+        assert service._service._http_client is client
 
     @respx.mock
     @pytest.mark.asyncio

@@ -14,7 +14,8 @@
 import logging
 import re
 import time
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from typing import Any, TypeVar
 from urllib.parse import urlparse
 
@@ -83,6 +84,7 @@ class PublicInstanceProvider:
         ttl_sec: int = DEFAULT_TTL_SEC,
         timeout_sec: float = 10.0,
         proxy_url: str | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """初始化公共实例发现器。
 
@@ -92,14 +94,25 @@ class PublicInstanceProvider:
             ttl_sec: 缓存有效期（秒），超期后重新拉取。
             timeout_sec: 拉取文档的超时时间（秒）。
             proxy_url: 可选全局代理 URL。
+            http_client: 可选外部 HTTP 客户端，由调用方负责生命周期。
         """
         self.logger = logger
         self._list_url = list_url
         self._ttl_sec = ttl_sec
         self._timeout_sec = timeout_sec
         self._proxy_url = proxy_url
+        self._http_client = http_client
         self._instances: list[str] | None = None
         self._fetched_at = 0.0
+
+    @asynccontextmanager
+    async def _get_client(self) -> AsyncIterator[httpx.AsyncClient]:
+        """复用注入的客户端，未注入时创建临时客户端。"""
+        if self._http_client is not None:
+            yield self._http_client
+        else:
+            async with create_async_client(proxy_url=self._proxy_url) as client:
+                yield client
 
     async def get_instances(self) -> list[str]:
         """获取公共实例列表（必要时刷新缓存）。
@@ -126,7 +139,7 @@ class PublicInstanceProvider:
             解析出的实例地址列表；请求失败或未解析到实例时返回 None。
         """
         try:
-            async with create_async_client(proxy_url=self._proxy_url) as client:
+            async with self._get_client() as client:
                 response = await client.get(
                     self._list_url, timeout=httpx.Timeout(self._timeout_sec)
                 )
@@ -167,6 +180,7 @@ class InstanceRouter:
         max_attempts: int = _MAX_ENDPOINT_ATTEMPTS,
         failure_threshold: int = _ENDPOINT_FAILURE_THRESHOLD,
         cooldown_sec: float = _ENDPOINT_COOLDOWN_SEC,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """初始化端点路由器。
 
@@ -178,6 +192,7 @@ class InstanceRouter:
             max_attempts: 单次请求最多尝试的端点数量。
             failure_threshold: 端点连续失败多少次后进入冷却。
             cooldown_sec: 端点冷却时长（秒）。
+            http_client: 可选外部 HTTP 客户端，用于实例列表发现。
         """
         self._logger = logger
         self._instance_urls = list((instances.urls if instances else None) or [])
@@ -191,6 +206,7 @@ class InstanceRouter:
                 list_url=list_url,
                 timeout_sec=timeout_sec,
                 proxy_url=proxy_url,
+                http_client=http_client,
             )
             if list_url
             else None
@@ -206,6 +222,7 @@ class InstanceRouter:
         logger: logging.Logger,
         proxy_url: str | None = None,
         timeout_sec: float = 10.0,
+        http_client: httpx.AsyncClient | None = None,
     ) -> "InstanceRouter":
         """按全局实例配置创建路由器。
 
@@ -214,6 +231,7 @@ class InstanceRouter:
             logger: 日志记录器。
             proxy_url: 可选全局代理 URL。
             timeout_sec: 拉取实例列表文档的超时时间（秒）。
+            http_client: 可选外部 HTTP 客户端，用于实例列表发现。
 
         Returns:
             使用全局实例配置初始化的路由器。
@@ -223,6 +241,7 @@ class InstanceRouter:
             instances,
             proxy_url=proxy_url,
             timeout_sec=timeout_sec,
+            http_client=http_client,
         )
 
     async def instance_bases(self) -> list[str]:

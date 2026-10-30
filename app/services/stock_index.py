@@ -41,18 +41,25 @@ DEFAULT_TIMEZONE = "Asia/Shanghai"
 class StockIndexService:
     """Service for fetching stock market index data."""
 
-    def __init__(self, config: StockIndexSource, proxy_url: str | None = None) -> None:
+    def __init__(
+        self,
+        config: StockIndexSource,
+        proxy_url: str | None = None,
+        http_client: httpx.AsyncClient | None = None,
+    ) -> None:
         """Initialize the service with configuration.
 
         Args:
             config: Stock index configuration.
             proxy_url: Optional outbound proxy URL.
+            http_client: Optional external HTTP client owned by the caller.
         """
         self.config = config
         self._cache: dict[str, Any] = {"data": None, "fetched_at": 0}
         self._calendars: dict[str, Any] = {}
         self._lock = asyncio.Lock()
-        self._http_client: httpx.AsyncClient | None = None
+        self._http_client: httpx.AsyncClient | None = http_client
+        self._owns_http_client = False
         self._proxy_url = proxy_url
         self._init_calendars()
 
@@ -68,17 +75,25 @@ class StockIndexService:
 
     async def _get_http_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client for connection reuse."""
-        if self._http_client is None or self._http_client.is_closed:
+        if self._http_client is None or (
+            self._owns_http_client and self._http_client.is_closed
+        ):
             self._http_client = create_async_client(
                 timeout=self.config.timeout_sec, proxy_url=self._proxy_url
             )
+            self._owns_http_client = True
         return self._http_client
 
     async def close(self) -> None:
-        """Close HTTP client."""
-        if self._http_client and not self._http_client.is_closed:
+        """Close an internally owned HTTP client."""
+        if (
+            self._owns_http_client
+            and self._http_client
+            and not self._http_client.is_closed
+        ):
             await self._http_client.aclose()
             self._http_client = None
+            self._owns_http_client = False
 
     def _get_timezone(self, market: str) -> ZoneInfo:
         """Get timezone for market with fallback protection."""
@@ -157,7 +172,7 @@ class StockIndexService:
         url = f"{self.config.quote_url}?fltt=2&fields=f2,f3,f4,f12,f14&secids={secids}"
 
         client = await self._get_http_client()
-        resp = await client.get(url)
+        resp = await client.get(url, timeout=httpx.Timeout(self.config.timeout_sec))
         resp.raise_for_status()
 
         try:

@@ -1,10 +1,12 @@
 """Tests for app/services/fetcher.py - data fetching service."""
 
+import asyncio
 import json
 import logging
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
@@ -216,6 +218,16 @@ class TestCachedDataFetcher:
             date_provider=lambda: date(2026, 2, 23),
         )
 
+    @pytest.fixture(autouse=True)
+    def run_to_thread_inline(self) -> Iterator[Mock]:
+        """Avoid sandbox thread hangs while preserving offload call semantics."""
+
+        async def inline(func: Any, /, *args: Any, **kwargs: Any) -> Any:
+            return func(*args, **kwargs)
+
+        with patch("app.services.fetcher.asyncio.to_thread", side_effect=inline) as mock_to_thread:
+            yield mock_to_thread
+
     # Tests for _extract_news_date
 
     def test_extract_news_date_iso_format(
@@ -405,6 +417,49 @@ class TestCachedDataFetcher:
         # Verify cache was updated
         cached_data = cached_fetcher.load_cache()
         assert cached_data == today_data
+
+    @pytest.mark.asyncio
+    async def test_get_concurrent_calls_fetch_once(
+        self,
+        cached_fetcher: CachedDataFetcher,
+    ) -> None:
+        """Concurrent misses share one fetch and the waiter reads the saved cache."""
+        fetch_started = asyncio.Event()
+        release_fetch = asyncio.Event()
+        today_data = self._make_news_data("2026-02-23")
+
+        async def fetch_once() -> dict[str, Any]:
+            fetch_started.set()
+            await release_fetch.wait()
+            return today_data
+
+        fetch_mock = AsyncMock(side_effect=fetch_once)
+        cached_fetcher._fetcher.fetch_all = fetch_mock
+        first = asyncio.create_task(cached_fetcher.get())
+        await fetch_started.wait()
+        second = asyncio.create_task(cached_fetcher.get())
+        await asyncio.sleep(0)
+        release_fetch.set()
+
+        assert await asyncio.gather(first, second) == [today_data, today_data]
+        fetch_mock.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_get_offloads_custom_cache_file_operations(
+        self,
+        cached_fetcher: CachedDataFetcher,
+        run_to_thread_inline: Mock,
+    ) -> None:
+        """The news-date-aware get dispatches cache loads and saves to a thread."""
+        today_data = self._make_news_data("2026-02-23")
+        cached_fetcher.fetch_fresh = AsyncMock(return_value=today_data)
+
+        await cached_fetcher.get()
+
+        assert run_to_thread_inline.call_args_list == [
+            ((cached_fetcher.load_cache,), {}),
+            ((cached_fetcher.save_cache, today_data), {}),
+        ]
 
 
 

@@ -3,7 +3,7 @@
 import logging
 from datetime import date
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -43,6 +43,23 @@ class TestKfcService:
         result = await service.fetch_kfc_copy()
 
         assert result == "V我50"
+
+    @pytest.mark.asyncio
+    async def test_fetch_kfc_copy_reuses_injected_client_with_service_timeout(
+        self, enabled_config: CrazyThursdaySource
+    ) -> None:
+        """Injected clients remain open and each request keeps the service timeout."""
+        response = MagicMock()
+        response.json.return_value = {"code": 200, "data": {"kfc": "V我50"}}
+        response.raise_for_status.return_value = None
+        client = MagicMock(spec=httpx.AsyncClient)
+        client.get = AsyncMock(return_value=response)
+        client.aclose = AsyncMock()
+        service = KfcService(enabled_config, http_client=client)
+
+        assert await service.fetch_kfc_copy() == "V我50"
+        assert client.get.await_args.kwargs["timeout"] == httpx.Timeout(5)
+        client.aclose.assert_not_awaited()
 
     @respx.mock
     @pytest.mark.asyncio
@@ -207,6 +224,21 @@ class TestCachedKfcService:
     ) -> CachedKfcService:
         """Create a CachedKfcService instance."""
         return CachedKfcService(config=config, logger=logger_instance, cache_dir=cache_dir)
+
+    def test_forwards_injected_client(
+        self,
+        config: CrazyThursdaySource,
+        logger_instance: logging.Logger,
+        cache_dir: Path,
+    ) -> None:
+        """Cached wrapper forwards the shared client to its network service."""
+        client = MagicMock(spec=httpx.AsyncClient)
+
+        service = CachedKfcService(
+            config, logger_instance, cache_dir, http_client=client
+        )
+
+        assert service._service._http_client is client
 
     @pytest.mark.asyncio
     async def test_get_returns_none_on_non_thursday(self, service: CachedKfcService) -> None:

@@ -2,6 +2,8 @@
 
 import logging
 import random
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -31,22 +33,37 @@ class FunContentService:
         config: FunContentSource,
         proxy_url: str | None = None,
         instances: InstancesConfig | None = None,
-    ):
+        http_client: httpx.AsyncClient | None = None,
+    ) -> None:
         """Initialize the service with configuration.
 
         Args:
             config: Fun content configuration.
             proxy_url: Optional outbound proxy URL.
             instances: Global 60s public instance configuration.
+            http_client: Optional external HTTP client managed by the caller.
         """
         self.config = config
+        self._http_client = http_client
         self._proxy_url = proxy_url
         self._router = InstanceRouter.from_config(
             instances,
             logger,
+            http_client=http_client,
             proxy_url=proxy_url,
             timeout_sec=float(config.timeout_sec),
         )
+
+    @asynccontextmanager
+    async def _get_client(self) -> AsyncIterator[httpx.AsyncClient]:
+        """Yield the injected client or a temporary service-owned client."""
+        if self._http_client is not None:
+            yield self._http_client
+        else:
+            async with create_async_client(
+                timeout=self.config.timeout_sec, proxy_url=self._proxy_url
+            ) as client:
+                yield client
 
     async def fetch_content(self, target_date: date) -> dict[str, str]:
         """Fetch fun content with date-based random selection.
@@ -62,9 +79,7 @@ class FunContentService:
         """
         endpoints = self._shuffle_by_date(target_date)
 
-        async with create_async_client(
-            timeout=self.config.timeout_sec, proxy_url=self._proxy_url
-        ) as client:
+        async with self._get_client() as client:
             for endpoint in endpoints:
                 result = await self._fetch_endpoint(client, endpoint)
                 if result:
@@ -170,6 +185,7 @@ class CachedFunContentService(DailyCache[dict[str, str]]):
         cache_dir: Path,
         proxy_url: str | None = None,
         instances: InstancesConfig | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """初始化带缓存的趣味内容服务。
 
@@ -179,11 +195,15 @@ class CachedFunContentService(DailyCache[dict[str, str]]):
             cache_dir: 缓存目录路径
             proxy_url: 可选全局代理 URL
             instances: 全局 60s 公共实例配置；主源不可用时按健康度切换
+            http_client: 可选外部 HTTP 客户端；由调用方管理生命周期
         """
         super().__init__("fun_content", cache_dir, logger)
         self._proxy_url = proxy_url
         self._service = FunContentService(
-            config, proxy_url=proxy_url, instances=instances
+            config,
+            http_client=http_client,
+            proxy_url=proxy_url,
+            instances=instances,
         )
 
     async def fetch_fresh(self) -> dict[str, str] | None:

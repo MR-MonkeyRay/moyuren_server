@@ -1,11 +1,12 @@
 """Tests for app/services/daily_cache.py - daily cache service."""
 
+import asyncio
 import json
 import logging
 from datetime import date
 from pathlib import Path
-from typing import Any
-from unittest.mock import AsyncMock, patch
+from typing import Any, Iterator
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -37,6 +38,16 @@ class TestDailyCache:
     def cache(self, cache_dir: Path, logger: logging.Logger) -> ConcreteDailyCache:
         """Create a ConcreteDailyCache instance."""
         return ConcreteDailyCache("test", cache_dir, logger)
+
+    @pytest.fixture(autouse=True)
+    def run_to_thread_inline(self) -> Iterator[Mock]:
+        """Avoid sandbox thread hangs while preserving offload call semantics."""
+
+        async def inline(func: Any, /, *args: Any, **kwargs: Any) -> Any:
+            return func(*args, **kwargs)
+
+        with patch("app.services.daily_cache.asyncio.to_thread", side_effect=inline) as mock_to_thread:
+            yield mock_to_thread
 
     def test_cache_file_path(self, cache: ConcreteDailyCache, cache_dir: Path) -> None:
         """Test cache file path is correct."""
@@ -232,6 +243,69 @@ class TestDailyCache:
         with cache_file.open("r", encoding="utf-8") as f:
             cache_data = json.load(f)
         assert cache_data["data"] == fresh_data
+
+    @pytest.mark.asyncio
+    async def test_get_concurrent_calls_fetch_once(self, cache: ConcreteDailyCache) -> None:
+        """Concurrent cache misses share one fetch and then use the saved value."""
+        fetch_started = asyncio.Event()
+        release_fetch = asyncio.Event()
+        fresh_data = {"fresh": "data"}
+
+        async def fetch_once() -> dict[str, str]:
+            fetch_started.set()
+            await release_fetch.wait()
+            return fresh_data
+
+        cache.fetch_fresh_mock.side_effect = fetch_once
+        first = asyncio.create_task(cache.get())
+        await fetch_started.wait()
+        second = asyncio.create_task(cache.get())
+        await asyncio.sleep(0)
+        release_fetch.set()
+
+        assert await asyncio.gather(first, second) == [fresh_data, fresh_data]
+        cache.fetch_fresh_mock.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_get_force_refresh_refetches_serially(self, cache: ConcreteDailyCache) -> None:
+        """Forced refreshes stay serialized and each bypasses the cache check."""
+        active_fetches = 0
+        max_active_fetches = 0
+
+        async def fetch_fresh() -> dict[str, int]:
+            nonlocal active_fetches, max_active_fetches
+            active_fetches += 1
+            max_active_fetches = max(max_active_fetches, active_fetches)
+            await asyncio.sleep(0)
+            active_fetches -= 1
+            return {"call": cache.fetch_fresh_mock.await_count}
+
+        cache.fetch_fresh_mock.side_effect = fetch_fresh
+
+        results = await asyncio.gather(cache.get(force_refresh=True), cache.get(force_refresh=True))
+
+        assert results == [{"call": 1}, {"call": 2}]
+        assert cache.fetch_fresh_mock.await_count == 2
+        assert max_active_fetches == 1
+
+    @pytest.mark.asyncio
+    async def test_get_offloads_cache_file_operations(
+        self,
+        cache: ConcreteDailyCache,
+        run_to_thread_inline: Mock,
+    ) -> None:
+        """Cache validation, saving and loading are dispatched through to_thread."""
+        cache.fetch_fresh_mock.return_value = {"fresh": "data"}
+
+        await cache.get()
+        await cache.get()
+
+        assert run_to_thread_inline.call_args_list == [
+            ((cache.is_cache_valid,), {}),
+            ((cache.save_cache, {"fresh": "data"}), {}),
+            ((cache.is_cache_valid,), {}),
+            ((cache.load_cache,), {}),
+        ]
 
     @patch("app.services.daily_cache.today_business")
     @pytest.mark.asyncio
