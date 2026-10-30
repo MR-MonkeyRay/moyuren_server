@@ -26,7 +26,7 @@ from app.core.config import (
     ViewportConfig,
 )
 from app.core.network import create_async_client, safe_exception_for_log
-from app.core.errors import RenderError
+from app.core.errors import RenderError, RenderResourceRedirectError
 from app.services.browser import browser_manager
 from app.services.calendar import now_business
 
@@ -536,6 +536,7 @@ class ImageRenderer:
     async def _install_resource_cache_routes(self, page: Any) -> _FontRequests:
         """Keep font requests abortable and optionally cache remote resources."""
         fonts = _FontRequests(logger=self.logger)
+        blocked_urls: set[str] = set()
         cache_enabled = self.render_config.remote_resource_cache_enabled
         ttl = self.render_config.remote_resource_cache_ttl_sec
         timeout = self.render_config.remote_resource_timeout_sec
@@ -560,20 +561,27 @@ class ImageRenderer:
             request = route.request
             url = request.url
             resource_type = getattr(request, "resource_type", "")
+            parsed = urlparse(url)
+            scheme = parsed.scheme.lower()
+            if scheme in {"data", "blob"}:
+                await route.continue_()
+                return
+            if not self._is_allowed_resource_url(url):
+                self._log_blocked_resource(url, blocked_urls)
+                await route.abort()
+                return
             is_font = resource_type == "font"
             if is_font and fonts.stopped:
                 await route.abort()
                 return
             cacheable = cache_enabled and self._should_cache_resource(url, resource_type)
-            if not cacheable and not is_font:
-                await route.continue_()
-                return
-
             async def fetch_resource() -> Any:
                 """Fetch through the cache or preserve the browser request settings."""
                 if not cacheable:
-                    return await route.fetch(
-                        timeout=self._timeout_ms(self.render_config.page_load_timeout_sec)
+                    return await self._fetch_route_with_redirects(
+                        route,
+                        url,
+                        blocked_urls,
                     )
                 request_headers = self._content_negotiation_headers(request)
                 try:
@@ -582,6 +590,7 @@ class ImageRenderer:
                         ttl=ttl,
                         timeout=timeout,
                         request_headers=request_headers,
+                        blocked_urls=blocked_urls,
                     )
                 except ValueError:
                     # Size limit exceeded - treat as unavailable
@@ -606,16 +615,31 @@ class ImageRenderer:
                         return
                 else:
                     cached = await fetch_resource()
+            except RenderResourceRedirectError:
+                await route.abort()
+                return
             except Exception as e:
-                if not is_font:
-                    raise
                 self.logger.warning(
-                    f"Font resource fetch failed: {safe_exception_for_log(e)}"
+                    f"{'Font' if is_font else 'Render'} resource fetch failed: "
+                    f"{safe_exception_for_log(e)}"
                 )
                 await route.abort()
                 return
+            if cached is None and not cacheable:
+                await route.abort()
+                return
             if not cacheable:
-                await route.fulfill(response=cached)
+                if isinstance(cached, _CachedResource):
+                    await route.fulfill(
+                        status=200,
+                        content_type=cached.content_type,
+                        headers=self._cached_resource_headers(
+                            0, resource_type, cached.content_type
+                        ),
+                        body=cached.body,
+                    )
+                else:
+                    await route.fulfill(response=cached)
                 return
             if cached is not None:
                 self.logger.info(
@@ -651,6 +675,76 @@ class ImageRenderer:
 
         await page.route("**/*", handle_route)
         return fonts
+
+    def _is_allowed_resource_url(self, url: str) -> bool:
+        """Return whether an HTTP(S) resource host is allowed during rendering."""
+        parsed = urlparse(url)
+        if parsed.scheme.lower() not in {"http", "https"}:
+            return False
+        hostname = (parsed.hostname or "").lower()
+        return any(
+            hostname == allowed_host or hostname.endswith(f".{allowed_host}")
+            for allowed_host in self.render_config.allowed_resource_hosts
+        )
+
+    def _log_blocked_resource(self, url: str, blocked_urls: set[str]) -> None:
+        """Log a blocked resource URL once for the current rendered page."""
+        if url in blocked_urls:
+            return
+        blocked_urls.add(url)
+        self.logger.warning(
+            f"Blocked render resource URL: {self._sanitize_url_for_log(url)}"
+        )
+
+    async def _fetch_route_with_redirects(
+        self,
+        route: Any,
+        url: str,
+        blocked_urls: set[str],
+    ) -> Any | None:
+        """Fetch a Playwright route while validating each redirect target."""
+        current_url = url
+        timeout_ms = self._timeout_ms(self.render_config.page_load_timeout_sec)
+        max_redirects = self.render_config.remote_resource_max_redirects
+        for redirect_count in range(max_redirects + 1):
+            response = await route.fetch(
+                url=current_url,
+                max_redirects=0,
+                timeout=timeout_ms,
+            )
+            status = int(getattr(response, "status", 0))
+            headers = getattr(response, "headers", {})
+            location = headers.get("location") if isinstance(headers, dict) else None
+            if status not in {301, 302, 303, 307, 308} or not location:
+                return response
+            if redirect_count >= max_redirects:
+                self.logger.warning(
+                    f"Render resource redirect limit exceeded: "
+                    f"{self._sanitize_url_for_log(current_url)}"
+                )
+                return None
+            next_url = urljoin(current_url, location)
+            if not self._is_allowed_resource_url(next_url):
+                self._log_blocked_resource(next_url, blocked_urls)
+                return None
+            if urlparse(next_url).scheme.lower() != urlparse(url).scheme.lower():
+                try:
+                    content_type, body = await self._fetch_remote_resource_async(
+                        next_url,
+                        self.render_config.page_load_timeout_sec,
+                        request_headers=self._content_negotiation_headers(route.request),
+                        blocked_urls=blocked_urls,
+                        max_redirects=max_redirects - redirect_count - 1,
+                    )
+                except RenderResourceRedirectError:
+                    return None
+                return _CachedResource(
+                    body=body,
+                    content_type=content_type,
+                    cache_state="direct fetch",
+                )
+            current_url = next_url
+        return None
 
     def _content_negotiation_headers(self, request: Any) -> dict[str, str] | None:
         """Select safe browser headers that affect the CDN response representation."""
@@ -693,6 +787,7 @@ class ImageRenderer:
         ttl: int,
         timeout: float,
         request_headers: dict[str, str] | None = None,
+        blocked_urls: set[str] | None = None,
     ) -> _CachedResource | None:
         """读取或刷新远程渲染资源缓存。
 
@@ -741,6 +836,7 @@ class ImageRenderer:
                 url,
                 timeout,
                 request_headers=request_headers,
+                blocked_urls=blocked_urls,
             )
         except ValueError as e:
             if cached_body is not None and cached_meta:
@@ -749,6 +845,16 @@ class ImageRenderer:
                     f"{self._sanitize_url_for_log(url)} "
                     f"({safe_exception_for_log(e, url, self._proxy_url)})"
                 )
+                return _CachedResource(
+                    body=self._rewrite_css_urls(
+                        cached_body, url, cached_meta["content_type"]
+                    ),
+                    content_type=cached_meta["content_type"],
+                    cache_state="stale cache",
+                )
+            raise
+        except RenderResourceRedirectError:
+            if cached_body is not None and cached_meta:
                 return _CachedResource(
                     body=self._rewrite_css_urls(
                         cached_body, url, cached_meta["content_type"]
@@ -786,6 +892,8 @@ class ImageRenderer:
         url: str,
         timeout: float,
         request_headers: dict[str, str] | None = None,
+        blocked_urls: set[str] | None = None,
+        max_redirects: int | None = None,
     ) -> tuple[str, bytes]:
         """按流式下载远程资源，并在下载过程中限制资源大小。
 
@@ -803,46 +911,82 @@ class ImageRenderer:
             OSError: 当底层网络读写失败时抛出。
         """
         max_size = self.render_config.remote_resource_max_size_kb * 1024
+        if not self._is_allowed_resource_url(url):
+            self._log_blocked_resource(
+                url, blocked_urls if blocked_urls is not None else set()
+            )
+            raise RenderResourceRedirectError(
+                "Render resource URL is not allowed"
+            )
         async with create_async_client(
             timeout=httpx.Timeout(timeout),
-            follow_redirects=True,
+            follow_redirects=False,
             proxy_url=self._proxy_url,
         ) as client:
-            # Check content-length header before downloading
-            stream_kwargs = (
-                {"headers": request_headers} if request_headers is not None else {}
+            current_url = url
+            redirect_limit = (
+                self.render_config.remote_resource_max_redirects
+                if max_redirects is None
+                else max_redirects
             )
-            async with client.stream("GET", url, **stream_kwargs) as response:
-                response.raise_for_status()
-                content_type = response.headers.get(
-                    "content-type"
-                ) or self._guess_content_type(url)
-
-                content_length = response.headers.get("content-length")
-                if content_length is not None:
-                    try:
-                        length = int(content_length)
-                    except ValueError:
-                        pass  # Non-numeric content-length, enforce during streaming
-                    else:
-                        if length > max_size:
-                            raise ValueError(
-                                f"Remote resource too large: content-length {content_length} exceeds limit {max_size} bytes"
+            for redirect_count in range(redirect_limit + 1):
+                async with client.stream(
+                    "GET", current_url, headers=request_headers
+                ) as response:
+                    location = response.headers.get("location")
+                    if response.is_redirect and location:
+                        if redirect_count >= redirect_limit:
+                            self.logger.warning(
+                                f"Render resource redirect limit exceeded: "
+                                f"{self._sanitize_url_for_log(current_url)}"
                             )
+                            raise RenderResourceRedirectError(
+                                "Render resource redirect limit exceeded"
+                            )
+                        next_url = urljoin(current_url, location)
+                        if not self._is_allowed_resource_url(next_url):
+                            self._log_blocked_resource(
+                                next_url,
+                                blocked_urls if blocked_urls is not None else set(),
+                            )
+                            raise RenderResourceRedirectError(
+                                "Render resource redirect target blocked"
+                            )
+                        current_url = next_url
+                        continue
 
-                # Stream body with progressive size enforcement
-                chunks: list[bytes] = []
-                total_size = 0
-                async for chunk in response.aiter_bytes():
-                    total_size += len(chunk)
-                    if total_size > max_size:
-                        raise ValueError(
-                            f"Remote resource too large: exceeds limit {max_size} bytes"
-                        )
-                    chunks.append(chunk)
-                body = b"".join(chunks)
+                    response.raise_for_status()
+                    content_type = response.headers.get(
+                        "content-type"
+                    ) or self._guess_content_type(current_url)
 
-            return content_type, body
+                    content_length = response.headers.get("content-length")
+                    if content_length is not None:
+                        try:
+                            length = int(content_length)
+                        except ValueError:
+                            pass  # Non-numeric content-length, enforce during streaming
+                        else:
+                            if length > max_size:
+                                raise ValueError(
+                                    f"Remote resource too large: content-length {content_length} exceeds limit {max_size} bytes"
+                                )
+
+                    chunks: list[bytes] = []
+                    total_size = 0
+                    async for chunk in response.aiter_bytes():
+                        total_size += len(chunk)
+                        if total_size > max_size:
+                            raise ValueError(
+                                f"Remote resource too large: exceeds limit {max_size} bytes"
+                            )
+                        chunks.append(chunk)
+                    body = b"".join(chunks)
+                    return content_type, body
+
+            raise RenderResourceRedirectError(
+                "Render resource redirect limit exceeded"
+            )
 
     def _cached_resource_headers(
         self, ttl: int, resource_type: str, content_type: str

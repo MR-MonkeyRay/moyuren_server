@@ -113,6 +113,10 @@ class RenderError(AppError):
         super().__init__(message, code)
 
 
+class RenderResourceRedirectError(RenderError):
+    """Render resource redirect was blocked or exceeded the configured limit."""
+
+
 class StorageError(AppError):
     """Storage related error."""
 

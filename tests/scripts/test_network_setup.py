@@ -8,6 +8,7 @@ from typing import Any, Callable
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from app.core.config import TextLimitsConfig
 
 
 class _FailingDataFetcher:
@@ -85,7 +86,7 @@ def _fake_config(
             ghproxy_urls=["https://mirror.example/"],
         ),
         instances=SimpleNamespace(list_url=None, urls=None),
-        templates=SimpleNamespace(config=SimpleNamespace()),
+        templates=SimpleNamespace(config=SimpleNamespace(text_limits=TextLimitsConfig())),
         get_source=get_source,
         get_templates_config=lambda: SimpleNamespace(
             items=[SimpleNamespace(name="moyuren")]
@@ -272,7 +273,7 @@ async def test_render_once_generates_with_empty_holidays_when_source_disabled(
     monkeypatch.setattr(
         module, "DataFetcher", lambda *args, **kwargs: _SuccessfulDataFetcher()
     )
-    monkeypatch.setattr(module, "DataComputer", lambda: data_computer)
+    monkeypatch.setattr(module, "DataComputer", lambda **kwargs: data_computer)
 
     await module.main()
 
@@ -301,7 +302,7 @@ async def test_publish_static_generates_with_empty_holidays_when_source_disabled
     monkeypatch.setattr(
         module, "DataFetcher", lambda *args, **kwargs: _SuccessfulDataFetcher()
     )
-    monkeypatch.setattr(module, "DataComputer", lambda: data_computer)
+    monkeypatch.setattr(module, "DataComputer", lambda **kwargs: data_computer)
     monkeypatch.setattr(module, "DailyDataFile", _PassthroughDailyDataFile)
 
     await module.main()

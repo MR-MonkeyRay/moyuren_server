@@ -154,6 +154,73 @@ class TestPublicInstanceProvider:
 
         assert await provider.get_instances() == []
 
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_allowlist_filters_exact_and_wildcard_hosts(
+        self, logger: logging.Logger, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Exact entries match one host; wildcards match proper subdomains only."""
+        markdown = TestInstanceRouterCandidates._markdown(
+            "exact.example.net",
+            "api.example.com",
+            "deep.api.example.com",
+            "example.com",
+            "badexample.com",
+            "evil.example.org",
+        )
+        provider = PublicInstanceProvider(
+            logger,
+            self.LIST_URL,
+            allowlist=["exact.example.net", "*.example.com"],
+        )
+        respx.get(self.LIST_URL).mock(return_value=Response(200, text=markdown))
+
+        with caplog.at_level(logging.WARNING, logger="test"):
+            instances = await provider.get_instances()
+
+        assert instances == [
+            "https://exact.example.net",
+            "https://api.example.com",
+            "https://deep.api.example.com",
+        ]
+        dropped_logs = [
+            record.message
+            for record in caplog.records
+            if "Dropped public 60s instance hosts" in record.message
+        ]
+        assert dropped_logs == [
+            "Dropped public 60s instance hosts not in allowlist: "
+            "badexample.com, evil.example.org, example.com"
+        ]
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_none_allowlist_preserves_all_discovered_instances(
+        self, logger: logging.Logger
+    ) -> None:
+        """None retains backward-compatible unfiltered discovery."""
+        provider = PublicInstanceProvider(logger, self.LIST_URL, allowlist=None)
+        respx.get(self.LIST_URL).mock(return_value=Response(200, text=SAMPLE_MARKDOWN))
+
+        assert await provider.get_instances() == [
+            "https://60s.crystelf.top",
+            "https://api.elysiayanyu.top",
+            "https://api.cczo.cc/60s",
+        ]
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_empty_allowlist_caches_successful_empty_result(
+        self, logger: logging.Logger
+    ) -> None:
+        """An empty allowlist denies every discovered host and caches that result."""
+        provider = PublicInstanceProvider(logger, self.LIST_URL, allowlist=[])
+        respx.get(self.LIST_URL).mock(return_value=Response(200, text=SAMPLE_MARKDOWN))
+
+        assert await provider.get_instances() == []
+        assert await provider.get_instances() == []
+        assert respx.calls.call_count == 1
+
 
 class TestInstanceRouterCandidates:
     """Tests for InstanceRouter candidate construction."""
@@ -273,6 +340,33 @@ class TestInstanceRouterCandidates:
             "https://api.example.com/v2/60s",
             "https://explicit.example.com/v2/60s",
             "https://60s.inst.example.com/v2/60s",
+        ]
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_explicit_urls_bypass_discovery_allowlist(
+        self, logger: logging.Logger
+    ) -> None:
+        """Only document-discovered instances are subject to the allowlist."""
+        router = InstanceRouter(
+            logger,
+            InstancesConfig(
+                urls=["https://explicit.example.org"],
+                list_url=self.LIST_URL,
+                allowlist=["*.example.com"],
+            ),
+        )
+        respx.get(self.LIST_URL).mock(
+            return_value=Response(
+                200,
+                text=self._markdown("allowed.example.com", "blocked.example.org"),
+            )
+        )
+
+        assert await router.candidates("https://api.example.com/v2/60s") == [
+            "https://api.example.com/v2/60s",
+            "https://explicit.example.org/v2/60s",
+            "https://allowed.example.com/v2/60s",
         ]
 
     @respx.mock

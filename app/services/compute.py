@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app import __github_url__, __version__
+from app.core.config import TextLimitsConfig
 from app.services.calendar import CalendarService, get_business_timezone, now_business
 
 logger = logging.getLogger(__name__)
@@ -163,6 +164,29 @@ class DomainDataAggregator:
         {"num": 5, "text": "工作中遇到困难时，深呼吸，放轻松。"},
     ]
 
+    def __init__(self, text_limits: TextLimitsConfig | None = None) -> None:
+        """Initialize the aggregator with external text limits."""
+        self._text_limits = text_limits or TextLimitsConfig()
+
+    @staticmethod
+    def _truncate(value: str, limit: int) -> str:
+        """Truncate text with an ellipsis included in the configured limit."""
+        if len(value) <= limit:
+            return value
+        if limit == 1:
+            return "…"
+        return f"{value[: limit - 1]}…"
+
+    def _default_news(self) -> list[dict[str, Any]]:
+        """Return default news shaped by the configured item and count limits."""
+        return [
+            {
+                "num": item["num"],
+                "text": self._truncate(str(item["text"]), self._text_limits.news_item),
+            }
+            for item in self._DEFAULT_NEWS[: self._text_limits.news_items]
+        ]
+
     def aggregate(
         self, raw_data: dict[str, Any], now: datetime | None = None
     ) -> dict[str, Any]:
@@ -189,7 +213,7 @@ class DomainDataAggregator:
 
         # 检测降级模式：当多个外部数据源都失败时
         is_fallback_mode = (
-            news_list == self._DEFAULT_NEWS  # 新闻使用默认值
+            news_list == self._default_news()  # 新闻使用默认值
             and (stock_indices is None or stock_indices.get("is_data_missing"))  # 股票数据缺失
             and history.get("content") == self._DEFAULT_HISTORY  # 趣味内容使用默认值
         )
@@ -207,7 +231,7 @@ class DomainDataAggregator:
             "kfc_content": self._compute_kfc(now, raw_data),
             "stock_indices": stock_indices,
             "gold_price": gold_price,
-            "daily_english": raw_data.get("daily_english"),
+            "daily_english": self._compute_daily_english(raw_data),
             # 降级模式标志
             "is_fallback_mode": is_fallback_mode,
             # 项目元信息
@@ -341,9 +365,28 @@ class DomainDataAggregator:
         if now.weekday() == 3:
             content = raw_data.get("kfc_copy")
             if content:
-                # 不截断文案，页面自适应内容高度
-                return {"title": "CRAZY THURSDAY", "sub_title": "V我50", "content": content}
+                text = self._truncate(str(content), self._text_limits.kfc_text)
+                return {"title": "CRAZY THURSDAY", "sub_title": "V我50", "content": text}
         return None
+
+    def _compute_daily_english(self, raw_data: dict[str, Any]) -> dict[str, Any] | None:
+        """Copy daily English data and cap its externally sourced text fields."""
+        daily_english = raw_data.get("daily_english")
+        if not isinstance(daily_english, dict):
+            return None
+
+        result = dict(daily_english)
+        definition = result.get("definition")
+        if isinstance(definition, str):
+            result["definition"] = self._truncate(
+                definition, self._text_limits.daily_english_definition
+            )
+        translation = result.get("translation")
+        if isinstance(translation, str):
+            result["translation"] = self._truncate(
+                translation, self._text_limits.daily_english_translation
+            )
+        return result
 
     def _compute_date(self, now: datetime) -> dict[str, Any]:
         """Compute date information including lunar calendar data.
@@ -373,11 +416,17 @@ class DomainDataAggregator:
             "zodiac": lunar_info["zodiac"],
             "constellation": CalendarService.get_constellation(today),
             "moon_phase": CalendarService.get_moon_phase(today),
-            "festival_solar": festivals["festival_solar"],
-            "festival_lunar": festivals["festival_lunar"],
-            "legal_holiday": festivals["legal_holiday"],
+            "festival_solar": self._truncate_holiday_name(festivals["festival_solar"]),
+            "festival_lunar": self._truncate_holiday_name(festivals["festival_lunar"]),
+            "legal_holiday": self._truncate_holiday_name(festivals["legal_holiday"]),
             "is_holiday": CalendarService.is_holiday(today),
         }
+
+    def _truncate_holiday_name(self, value: Any) -> Any:
+        """Cap a holiday or festival name while preserving null values."""
+        if isinstance(value, str):
+            return self._truncate(value, self._text_limits.holiday_name)
+        return value
 
     def _compute_weekend(self, now: datetime) -> dict[str, int | bool]:
         """Compute days until weekend.
@@ -486,9 +535,11 @@ class DomainDataAggregator:
         """
         fun_content = raw_data.get("fun_content")
         if fun_content and isinstance(fun_content, dict):
+            raw_title = fun_content.get("title") or "🐟 摸鱼小贴士"
+            raw_content = fun_content.get("content") or self._DEFAULT_HISTORY
             history = {
-                "title": fun_content.get("title") or "🐟 摸鱼小贴士",
-                "content": fun_content.get("content") or self._DEFAULT_HISTORY,
+                "title": self._truncate(str(raw_title), self._text_limits.fun_content),
+                "content": self._truncate(str(raw_content), self._text_limits.fun_content),
             }
             content_type = fun_content.get("type")
             if isinstance(content_type, str) and content_type:
@@ -512,17 +563,26 @@ class DomainDataAggregator:
             if isinstance(data, dict):
                 news_items = data.get("news")
                 if isinstance(news_items, list):
-                    return [{"num": i + 1, "text": str(item)} for i, item in enumerate(news_items)]
+                    return [
+                        {
+                            "num": i + 1,
+                            "text": self._truncate(str(item), self._text_limits.news_item),
+                        }
+                        for i, item in enumerate(news_items[: self._text_limits.news_items])
+                    ]
         # Handle legacy format: [{ text: "..." }, ...]
         if news_data and isinstance(news_data, list):
-            return [
-                {
-                    "num": i + 1,
-                    "text": item.get("text", "") if isinstance(item, dict) else str(item),
-                }
-                for i, item in enumerate(news_data)
-            ]
-        return self._DEFAULT_NEWS
+            result: list[dict[str, Any]] = []
+            for i, item in enumerate(news_data[: self._text_limits.news_items]):
+                text = item.get("text", "") if isinstance(item, dict) else item
+                result.append(
+                    {
+                        "num": i + 1,
+                        "text": self._truncate(str(text), self._text_limits.news_item),
+                    }
+                )
+            return result
+        return self._default_news()
 
     def _compute_news_meta(self, raw_data: dict[str, Any]) -> dict[str, Any]:
         """Extract news API metadata.
@@ -746,11 +806,19 @@ class DomainDataAggregator:
 
         # 按 days_left 排序并返回前10个
         result = sorted(name_map.values(), key=lambda x: x["days_left"])
+        for holiday in result:
+            holiday["name"] = self._truncate(
+                str(holiday["name"]), self._text_limits.holiday_name
+            )
         return result[:10]
 
 
 class TemplateAdapter:
     """Template adapter for filling defaults and shaping output."""
+
+    def __init__(self, text_limits: TextLimitsConfig | None = None) -> None:
+        """Initialize the adapter with the same limits as domain aggregation."""
+        self._text_limits = text_limits or TextLimitsConfig()
 
     def adapt(self, domain_data: dict[str, Any]) -> dict[str, Any]:
         """Adapt domain data for template rendering.
@@ -766,7 +834,7 @@ class TemplateAdapter:
         if not data.get("history"):
             data["history"] = {"title": "🐟 摸鱼小贴士", "content": DomainDataAggregator._DEFAULT_HISTORY}
         if not data.get("news_list"):
-            data["news_list"] = DomainDataAggregator._DEFAULT_NEWS
+            data["news_list"] = DomainDataAggregator(self._text_limits)._default_news()
         if data.get("news_meta") is None:
             data["news_meta"] = {}
         if data.get("holidays") is None:
@@ -813,15 +881,17 @@ class DataComputer:
         self,
         aggregator: DomainDataAggregator | None = None,
         adapter: TemplateAdapter | None = None,
+        text_limits: TextLimitsConfig | None = None,
     ) -> None:
         """Initialize DataComputer with optional aggregator and adapter.
 
         Args:
             aggregator: Domain data aggregator instance.
             adapter: Template adapter instance.
+            text_limits: Limits for externally sourced text.
         """
-        self._aggregator = aggregator or DomainDataAggregator()
-        self._adapter = adapter or TemplateAdapter()
+        self._aggregator = aggregator or DomainDataAggregator(text_limits=text_limits)
+        self._adapter = adapter or TemplateAdapter(text_limits=text_limits)
 
     def compute(
         self, raw_data: dict[str, Any], now: datetime | None = None

@@ -14,6 +14,7 @@ from fastapi import FastAPI
 
 import app.main as main_module
 import app.core.bootstrap as bootstrap_module
+from app.core.config import TextLimitsConfig
 
 
 class _CachedService:
@@ -81,7 +82,7 @@ def _fake_config(tmp_path: Path) -> SimpleNamespace:
             ghproxy_urls=["https://mirror.example/"],
         ),
         instances=SimpleNamespace(list_url=None, urls=None),
-        templates=SimpleNamespace(config=SimpleNamespace()),
+        templates=SimpleNamespace(config=SimpleNamespace(text_limits=TextLimitsConfig())),
         cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
         scheduler=SimpleNamespace(mode="hourly", minute_of_hour=0, daily_times=[]),
         get_source=get_source,

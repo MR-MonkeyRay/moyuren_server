@@ -35,6 +35,8 @@ instances:
   list_url: "https://docs.60s-api.viki.moe/7306811m0.md"
   # 额外/兜底的实例基地址（可选，优先于自动发现结果；端点路径沿用各数据源的 url）
   urls: []
+  # 仅过滤自动发现的实例；null 不过滤，[] 全部拒绝；*.example.com 仅匹配子域名
+  allowlist: null
 
 templates:
   default: "moyuren"
@@ -49,6 +51,22 @@ templates:
     page_load_timeout_sec: 10.0
     font_ready_timeout_sec: 2.0
     remote_resource_max_size_kb: 5120
+    remote_resource_max_redirects: 5  # 每次资源请求最多重定向 5 次，每跳检查白名单；0 禁止重定向
+    # 只允许这些主机及其子域名的 HTTP(S) 资源；[] 禁用远程资源，data:/blob: 仍可用
+    allowed_resource_hosts:
+      - "fonts.googleapis.com"
+      - "fonts.googleapis.cn"
+      - "fonts.gstatic.com"
+      - "fonts.gstatic.cn"
+    # 外部文本上限（正整数；字符数包含截断后的省略号），渲染与存储数据共用
+    text_limits:
+      news_item: 120
+      news_items: 15  # 新闻条数上限
+      fun_content: 300
+      kfc_text: 300
+      daily_english_definition: 200
+      daily_english_translation: 200
+      holiday_name: 20
 
 data_sources:
   - type: "news"

@@ -11,7 +11,7 @@ import pytest
 
 import app.core.bootstrap as bootstrap_module
 from app.core.bootstrap import build_services, register_scheduled_jobs, warmup_daily_cache
-from app.core.config import AppConfig, HolidaySource
+from app.core.config import AppConfig, HolidaySource, TextLimitsConfig
 from app.core.scheduler import TaskScheduler
 from app.core.services import AppServices
 
@@ -103,7 +103,7 @@ def test_build_services_leaves_missing_or_disabled_optional_sources_disabled(
         paths=SimpleNamespace(cache_dir=str(tmp_path)),
         network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),
         instances=SimpleNamespace(),
-        templates=SimpleNamespace(config=SimpleNamespace()),
+        templates=SimpleNamespace(config=SimpleNamespace(text_limits=TextLimitsConfig())),
         cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
         data_sources=data_sources,
         get_templates_config=lambda: SimpleNamespace(items=[]),
@@ -167,7 +167,7 @@ def test_build_services_leaves_disabled_daily_english_unconstructed(
         paths=SimpleNamespace(cache_dir=str(tmp_path)),
         network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),
         instances=SimpleNamespace(),
-        templates=SimpleNamespace(config=SimpleNamespace()),
+        templates=SimpleNamespace(config=SimpleNamespace(text_limits=TextLimitsConfig())),
         cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
         get_source=get_source,
         get_templates_config=lambda: SimpleNamespace(items=[]),
@@ -204,7 +204,7 @@ def test_build_services_passes_http_client_to_all_network_services(
         paths=SimpleNamespace(cache_dir=str(tmp_path)),
         network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),
         instances=SimpleNamespace(),
-        templates=SimpleNamespace(config=SimpleNamespace()),
+        templates=SimpleNamespace(config=SimpleNamespace(text_limits=TextLimitsConfig())),
         cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
         get_source=lambda source_type: source,
         get_templates_config=lambda: SimpleNamespace(items=[]),

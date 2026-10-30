@@ -29,6 +29,18 @@ _FUN_CONTENT_ENDPOINT_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _DAILY_TIME_PATTERN = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 _UTC_OFFSET_PATTERN = re.compile(r"^UTC([+-])(\d{1,2})(?::(\d{2}))?$", re.IGNORECASE)
 _STOCK_INDEX_SECID_PATTERN = re.compile(r"^\d+\.[A-Za-z0-9]+$")
+_HOST_LABEL_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def _normalize_hostname(value: str) -> str:
+    """归一化裸主机名，拒绝 URL、端口、通配符与空标签。"""
+    hostname = value.strip().lower()
+    if len(hostname) > 253 or not all(
+        _HOST_LABEL_PATTERN.fullmatch(label) for label in hostname.split(".")
+    ):
+        raise ValueError("must be a bare hostname without scheme, port or path")
+    return hostname
+
 
 _LEGACY_STOCK_INDEX_DEFAULTS: dict[str, tuple[str, str]] = {
     "000001": ("上证指数", "A"),
@@ -253,6 +265,22 @@ class InstancesConfig(BaseModel):
 
     list_url: str | None = None
     urls: list[str] | None = None
+    allowlist: list[str] | None = None
+
+    @field_validator("allowlist")
+    @classmethod
+    def validate_allowlist(cls, value: list[str] | None) -> list[str] | None:
+        """校验发现实例白名单；*.suffix 仅匹配子域名，不含 suffix 本身。"""
+        if value is None:
+            return None
+        normalized: list[str] = []
+        for entry in value:
+            pattern = entry.strip().lower()
+            if pattern.startswith("*."):
+                normalized.append("*." + _normalize_hostname(pattern[2:]))
+            else:
+                normalized.append(_normalize_hostname(pattern))
+        return normalized
 
     @field_validator("urls")
     @classmethod
@@ -811,6 +839,20 @@ class ViewportConfig(BaseModel):
         return value
 
 
+class TextLimitsConfig(BaseModel):
+    """External text limits applied before rendering and persisting data."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    news_item: int = Field(default=120, gt=0, strict=True)
+    news_items: int = Field(default=15, gt=0, strict=True)
+    fun_content: int = Field(default=300, gt=0, strict=True)
+    kfc_text: int = Field(default=300, gt=0, strict=True)
+    daily_english_definition: int = Field(default=200, gt=0, strict=True)
+    daily_english_translation: int = Field(default=200, gt=0, strict=True)
+    holiday_name: int = Field(default=20, gt=0, strict=True)
+
+
 class TemplateRenderConfig(BaseModel):
     """Global template render configuration."""
 
@@ -825,6 +867,20 @@ class TemplateRenderConfig(BaseModel):
     page_load_timeout_sec: float = 10.0
     font_ready_timeout_sec: float = 2.0
     remote_resource_max_size_kb: int = 5120
+    remote_resource_max_redirects: int = Field(default=5, ge=0, le=20, strict=True)
+    allowed_resource_hosts: list[str] = Field(default_factory=lambda: [
+        "fonts.googleapis.com",
+        "fonts.googleapis.cn",
+        "fonts.gstatic.com",
+        "fonts.gstatic.cn",
+    ])
+    text_limits: TextLimitsConfig = Field(default_factory=TextLimitsConfig)
+
+    @field_validator("allowed_resource_hosts")
+    @classmethod
+    def validate_allowed_resource_hosts(cls, value: list[str]) -> list[str]:
+        """校验渲染资源白名单，裸主机名同时允许其子域名。"""
+        return [_normalize_hostname(hostname) for hostname in value]
 
     @field_validator("device_scale_factor")
     @classmethod

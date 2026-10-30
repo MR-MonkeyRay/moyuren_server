@@ -603,7 +603,7 @@ async def _update_data_file(
             "kfc_content_full": template_data.get("kfc_content"),
             "stock_indices": raw_data.get("stock_indices"),
             "gold_price": raw_data.get("gold_price"),
-            "daily_english": raw_data.get("daily_english"),
+            "daily_english": template_data.get("daily_english"),
         }
 
         DailyDataFile.model_validate(data).save_atomic(data_file)

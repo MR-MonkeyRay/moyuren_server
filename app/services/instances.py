@@ -85,6 +85,7 @@ class PublicInstanceProvider:
         timeout_sec: float = 10.0,
         proxy_url: str | None = None,
         http_client: httpx.AsyncClient | None = None,
+        allowlist: list[str] | None = None,
     ) -> None:
         """初始化公共实例发现器。
 
@@ -95,9 +96,11 @@ class PublicInstanceProvider:
             timeout_sec: 拉取文档的超时时间（秒）。
             proxy_url: 可选全局代理 URL。
             http_client: 可选外部 HTTP 客户端，由调用方负责生命周期。
+            allowlist: 自动发现实例的主机名白名单；None 表示不过滤。
         """
         self.logger = logger
         self._list_url = list_url
+        self._allowlist = allowlist
         self._ttl_sec = ttl_sec
         self._timeout_sec = timeout_sec
         self._proxy_url = proxy_url
@@ -156,8 +159,40 @@ class PublicInstanceProvider:
             self.logger.warning("No public instances parsed from %s", self._list_url)
             return None
 
+        instances = self._filter_allowed_instances(instances)
+
         self.logger.info("Discovered %d public 60s instances", len(instances))
         return instances
+
+    def _filter_allowed_instances(self, instances: list[str]) -> list[str]:
+        """按配置的主机名白名单过滤自动发现实例。"""
+        if self._allowlist is None:
+            return instances
+
+        allowed: list[str] = []
+        dropped_hosts: set[str] = set()
+        for instance in instances:
+            host = (urlparse(instance).hostname or "").lower()
+            if any(self._host_matches_pattern(host, pattern) for pattern in self._allowlist):
+                allowed.append(instance)
+            else:
+                dropped_hosts.add(host or "<invalid>")
+
+        if dropped_hosts:
+            self.logger.warning(
+                "Dropped public 60s instance hosts not in allowlist: %s",
+                ", ".join(sorted(dropped_hosts)),
+            )
+        return allowed
+
+    @staticmethod
+    def _host_matches_pattern(host: str, pattern: str) -> bool:
+        """匹配精确主机名或仅匹配子域的 ``*.suffix`` 模式。"""
+        normalized = pattern.lower()
+        if normalized.startswith("*."):
+            suffix = normalized[2:]
+            return host.endswith(f".{suffix}")
+        return host == normalized
 
 
 class InstanceRouter:
@@ -204,6 +239,7 @@ class InstanceRouter:
             PublicInstanceProvider(
                 logger=logger,
                 list_url=list_url,
+                allowlist=instances.allowlist if instances else None,
                 timeout_sec=timeout_sec,
                 proxy_url=proxy_url,
                 http_client=http_client,

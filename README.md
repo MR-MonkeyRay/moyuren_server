@@ -338,6 +338,9 @@ sudo chown -R 1000:1000 cache logs
 | `templates.config.device_scale_factor` | - | 缩放因子（默认 3） |
 | `templates.config.jpeg_quality` | - | JPEG 质量（1-100，默认 100） |
 | `templates.config.use_china_cdn` | - | 字体 CDN 开关（true: 大陆 CDN, false: 国际 CDN） |
+| `templates.config.allowed_resource_hosts` | - | 渲染资源主机白名单，默认 `["fonts.googleapis.com", "fonts.googleapis.cn", "fonts.gstatic.com", "fonts.gstatic.cn"]`；仅允许这些主机及其子域名的 HTTP(S) 请求；`[]` 拒绝所有远程资源 |
+| `templates.config.remote_resource_max_redirects` | - | 资源请求的重定向次数上限，默认 5（整数 0–20；0 禁止重定向）；每跳检查白名单，允许白名单内跨主机及 HTTP→HTTPS 重定向 |
+| `templates.config.text_limits` | - | 外部文本及新闻条数上限，所有值必须为正整数；各字段与默认值见下表 |
 | `templates.config.page_load_timeout_sec` | - | 浏览器 DOM 加载和截图各自的超时（秒，默认 10） |
 | `templates.config.font_ready_timeout_sec` | - | 字体 readiness 等待上限（秒，默认 2）；超时后中止待加载及后续字体请求，使用回退字体，关闭远程资源缓存时同样生效 |
 | `templates.items[].viewport` | - | 各模板视口尺寸（width/height） |
@@ -357,10 +360,27 @@ sudo chown -R 1000:1000 cache logs
 | `data_sources[type=daily_english].backend.db_path` | - | ECDICT 数据库路径，默认 `ecdict/stardict.db`；相对路径基于 `paths.cache_dir`，兼容旧配置 `cache/ecdict/stardict.db`（去掉开头的 `cache/` 后解析），绝对路径保持不变 |
 | `instances.list_url` | `MOYUREN_INSTANCES_LIST_URL` | 60s 公共实例列表文档地址（Markdown），由 news/fun_content/crazy_thursday/gold_price 共享；`null` 关闭自动发现 |
 | `instances.urls` | `MOYUREN_INSTANCES_URLS` | 额外/兜底的实例基地址 JSON 数组（可选，优先于自动发现结果；端点路径沿用各数据源的 `url`） |
+| `instances.allowlist` | `MOYUREN_INSTANCES_ALLOWLIST` | 自动发现实例的主机白名单，默认 `null`（不筛选）；`[]` 拒绝所有发现实例；显式 `instances.urls` 始终受信任 |
 | `templates.default` | - | 默认模板名 |
 | `templates.dir` | - | 模板目录（默认 `templates`，自动扫描 HTML 文件） |
 
 环境变量按进程环境、当前工作目录的 `.env`、`config.yaml` 的顺序覆盖。进程环境和 `.env` 内均以 `MOYUREN_` 前缀名称为准；同一来源同时设置新旧名称时，新名称优先。已知配置项的旧无前缀名称仍可用，但已弃用，使用时会记录警告；无关或未知名称会被忽略。
+
+渲染资源白名单只接受裸主机名（不含协议、端口或路径），统一转为小写，并按完整域名边界匹配子域名。`data:`、`blob:` 内嵌资源继续可用；`file:` 和其他协议被拒绝。`page.set_content` 直接设置文档，不需要放行文档网络请求。预连接链接可以被阻止；自定义模板需要远程资源时须将主机加入白名单。
+
+`instances.allowlist` 接受裸主机名或 `*.suffix`，统一转为小写。裸主机名仅匹配该主机；`*.example.com` 匹配 `api.example.com` 和更深的子域名，**不匹配** `example.com` 或 `badexample.com`。白名单仅筛选社区文档自动发现的实例。
+
+`templates.config.text_limits` 在 compute 层截断文本，超长内容以 `…` 结尾，省略号计入字符上限；短文本保持原样。模板上下文与持久化数据使用相同的截断值，详情 API 字段保持不变。
+
+| 字段（`templates.config.text_limits.*`） | 默认值 | 内容 |
+| --- | --- | --- |
+| `news_item` | 120 | 每条新闻字符数 |
+| `news_items` | 15 | 新闻条数 |
+| `fun_content` | 300 | 趣味内容字符数 |
+| `kfc_text` | 300 | KFC 文案字符数 |
+| `daily_english_definition` | 200 | 每日英语释义字符数 |
+| `daily_english_translation` | 200 | 每日英语翻译字符数 |
+| `holiday_name` | 20 | 节假日及节日名称字符数 |
 
 ### 调度配置说明
 
@@ -437,6 +457,7 @@ scheduler:
 instances:
   list_url: "https://docs.60s-api.viki.moe/7306811m0.md"
   urls: []
+  allowlist: null  # 不筛选自动发现实例；如 ["api.example.com", "*.example.org"]
 
 data_sources:
   - type: "news"
@@ -496,6 +517,16 @@ templates:
     device_scale_factor: 3
     jpeg_quality: 100
     use_china_cdn: true
+    allowed_resource_hosts: ["fonts.googleapis.com", "fonts.googleapis.cn", "fonts.gstatic.com", "fonts.gstatic.cn"]
+    remote_resource_max_redirects: 5
+    text_limits:
+      news_item: 120
+      news_items: 15
+      fun_content: 300
+      kfc_text: 300
+      daily_english_definition: 200
+      daily_english_translation: 200
+      holiday_name: 20
 
 cache:
   retain_days: 30

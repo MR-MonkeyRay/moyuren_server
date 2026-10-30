@@ -25,6 +25,7 @@ from app.core.config import (
     TemplateItemConfig,
     TemplateRenderConfig,
     TemplatesConfig,
+    TextLimitsConfig,
     TimezoneConfig,
     ViewportConfig,
     load_config,
@@ -256,6 +257,30 @@ class TestInstancesConfig:
         config = InstancesConfig()
         assert config.list_url is None
         assert config.urls is None
+        assert config.allowlist is None
+
+    def test_normalizes_allowlist(self) -> None:
+        """Bare hostnames and subdomain wildcards are normalized to lowercase."""
+        config = InstancesConfig(allowlist=[" API.Example.COM ", "*.Example.COM"])
+        assert config.allowlist == ["api.example.com", "*.example.com"]
+        assert InstancesConfig(allowlist=[]).allowlist == []
+
+    def test_allowlist_environment_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The discovered-host allowlist can be supplied as a JSON environment list."""
+        monkeypatch.setenv("MOYUREN_INSTANCES_ALLOWLIST", '["API.Example.COM", "*.example.org"]')
+        config = AppConfig.from_yaml("config.yaml")
+        assert config.instances.allowlist == ["api.example.com", "*.example.org"]
+
+    @pytest.mark.parametrize("pattern", [
+        "", "https://example.com", "example.com/path", "example.com:443",
+        "user@example.com", "*example.com", "*.*.example.com", ".example.com",
+        "example..com", "-example.com", "example.com?x=1", "example.com#fragment",
+        "example.com.", "a" * 64 + ".com",
+    ])
+    def test_rejects_invalid_allowlist_pattern(self, pattern: str) -> None:
+        """An instance pattern cannot contain URL syntax or invalid labels."""
+        with pytest.raises(ValidationError):
+            InstancesConfig(allowlist=[pattern])
 
     def test_normalizes_urls(self) -> None:
         """Test trailing slashes and blank entries are removed."""
@@ -569,8 +594,72 @@ class TestStockIndexSource:
             )
 
 
+class TestTextLimitsConfig:
+    """Tests for caps on remote text and news count."""
+
+    def test_defaults(self) -> None:
+        """Every text limit has a bounded positive default."""
+        expected = {
+            "news_item": 120,
+            "news_items": 15,
+            "fun_content": 300,
+            "kfc_text": 300,
+            "daily_english_definition": 200,
+            "daily_english_translation": 200,
+            "holiday_name": 20,
+        }
+        assert TextLimitsConfig().model_dump() == expected
+        assert TemplateRenderConfig().text_limits.model_dump() == expected
+
+    @pytest.mark.parametrize("field", list(TextLimitsConfig.model_fields))
+    @pytest.mark.parametrize("value", [0, -1, 1.5, True, "12"])
+    def test_requires_positive_integers(self, field: str, value: object) -> None:
+        """Reject non-positive and non-integer caps for every field."""
+        with pytest.raises(ValidationError):
+            TextLimitsConfig.model_validate({field: value})
+
+    def test_nested_overrides_keep_other_defaults(self) -> None:
+        """A partial render configuration only overrides the requested cap."""
+        config = TemplateRenderConfig.model_validate({"text_limits": {"news_item": 10}})
+        assert config.text_limits.news_item == 10
+        assert config.text_limits.news_items == 15
+
+
 class TestTemplateRenderConfig:
     """Tests for TemplateRenderConfig model."""
+
+    def test_default_redirect_limit(self) -> None:
+        """Resource fetches follow at most five validated redirects by default."""
+        assert TemplateRenderConfig().remote_resource_max_redirects == 5
+        assert TemplateRenderConfig(remote_resource_max_redirects=0).remote_resource_max_redirects == 0
+
+    @pytest.mark.parametrize("limit", [-1, 21, 1.5, True, "5"])
+    def test_rejects_invalid_redirect_limit(self, limit: object) -> None:
+        """Redirect bounds require an integer from zero to twenty."""
+        with pytest.raises(ValidationError):
+            TemplateRenderConfig.model_validate({"remote_resource_max_redirects": limit})
+
+    def test_default_resource_hosts(self) -> None:
+        """Only the existing font CDN hosts are allowed by default."""
+        assert TemplateRenderConfig().allowed_resource_hosts == [
+            "fonts.googleapis.com", "fonts.googleapis.cn",
+            "fonts.gstatic.com", "fonts.gstatic.cn",
+        ]
+
+    def test_normalizes_resource_hosts(self) -> None:
+        """Resource hosts are bare lowercase hostnames; an empty list denies all."""
+        assert TemplateRenderConfig(allowed_resource_hosts=[" CDN.Example.COM "]).allowed_resource_hosts == ["cdn.example.com"]
+        assert TemplateRenderConfig(allowed_resource_hosts=[]).allowed_resource_hosts == []
+
+    @pytest.mark.parametrize("hostname", [
+        "", "https://example.com", "example.com/path", "example.com:443",
+        "*.example.com", "user@example.com", "example.com?x=1", "example.com#x",
+        "example..com", "-example.com", "example.com.", "a" * 64 + ".com",
+    ])
+    def test_rejects_invalid_resource_hosts(self, hostname: str) -> None:
+        """Resource allowlist entries cannot carry schemes, ports or paths."""
+        with pytest.raises(ValidationError):
+            TemplateRenderConfig(allowed_resource_hosts=[hostname])
 
     def test_valid_config(self) -> None:
         """Test valid template render configuration."""

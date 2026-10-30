@@ -26,7 +26,7 @@ from app.core.services import AppServices
 from app.models.schemas import DailyDataFile
 from app.services.cache import CacheCleaner
 from app.services.calendar import today_business
-from app.services.compute import DataComputer, DomainDataAggregator, TemplateAdapter
+from app.services.compute import DataComputer
 from app.services.daily_english import CachedDailyEnglishService, build_dict_backend
 from app.services.fetcher import CachedDataFetcher
 from app.services.fun_content import CachedFunContentService
@@ -62,7 +62,7 @@ def build_services(
         else None
     )
 
-    data_computer = DataComputer(DomainDataAggregator(), TemplateAdapter())
+    data_computer = DataComputer(text_limits=config.templates.config.text_limits)
     holiday_source = config.get_source(HolidaySource)
     holiday_service = (
         CachedHolidayService(

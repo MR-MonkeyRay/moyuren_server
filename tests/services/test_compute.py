@@ -8,7 +8,10 @@ from unittest.mock import patch
 import pytest
 from jinja2 import Environment, FileSystemLoader
 
+from app.core.config import TextLimitsConfig
+from app.services.calendar import CalendarService
 from app.services.compute import (
+    DataComputer,
     DomainDataAggregator,
     TemplateAdapter,
     normalize_datetime,
@@ -1025,6 +1028,19 @@ class TestDataComputer:
         assert isinstance(computer.aggregator, DomainDataAggregator)
         assert isinstance(computer.adapter, TemplateAdapter)
 
+    @pytest.mark.parametrize(
+        ("value", "limit", "expected"),
+        [
+            ("cat", 5, "cat"),
+            ("exact", 5, "exact"),
+            ("longer", 5, "long…"),
+            ("longer", 1, "…"),
+        ],
+    )
+    def test_truncate_boundary_cases(self, value: str, limit: int, expected: str) -> None:
+        """Truncation preserves short/exact text and includes the ellipsis in the cap."""
+        assert DomainDataAggregator._truncate(value, limit) == expected
+
     def test_custom_init(self) -> None:
         """Test custom initialization with provided instances."""
         from app.services.compute import DataComputer
@@ -1033,6 +1049,150 @@ class TestDataComputer:
         computer = DataComputer(aggregator=agg, adapter=adp)
         assert computer.aggregator is agg
         assert computer.adapter is adp
+
+    @patch("app.services.compute.CalendarService.get_upcoming_solar_festivals", return_value=[])
+    @patch("app.services.compute.CalendarService.get_upcoming_lunar_festivals", return_value=[])
+    def test_external_text_caps_cover_rendered_and_stored_fields(
+        self, mock_lunar: Any, mock_solar: Any
+    ) -> None:
+        """Configured caps apply to every external text field before persistence."""
+        limits = TextLimitsConfig(
+            news_item=5,
+            news_items=2,
+            fun_content=6,
+            kfc_text=7,
+            daily_english_definition=8,
+            daily_english_translation=9,
+            holiday_name=4,
+        )
+        raw_data = {
+            "news": {"data": {"news": ["abcdefgh", "short", "ignored"]}},
+            "fun_content": {"title": "long title", "content": "long content"},
+            "kfc_copy": "Thursday content",
+            "daily_english": {
+                "word": "hello",
+                "definition": "definition text",
+                "translation": "translation text",
+            },
+            "holidays": [
+                {"name": "Long Holiday", "start_date": "2026-02-05", "days_left": 0}
+            ],
+        }
+        snapshot = datetime(2026, 2, 5, 2, tzinfo=timezone(timedelta(hours=8)))
+
+        with patch.object(
+            CalendarService,
+            "get_festivals",
+            return_value={
+                "festival_solar": "Solar Festival",
+                "festival_lunar": "Lunar Festival",
+                "legal_holiday": "Legal Holiday",
+            },
+        ):
+            result = DataComputer(text_limits=limits).compute(raw_data, now=snapshot)
+
+        assert result["news_list"] == [
+            {"num": 1, "text": "abcd…"},
+            {"num": 2, "text": "short"},
+        ]
+        assert result["history"] == {"title": "long …", "content": "long …"}
+        assert result["kfc_content"]["content"] == "Thursd…"
+        assert result["daily_english"]["definition"] == "definit…"
+        assert result["daily_english"]["translation"] == "translat…"
+        assert result["daily_english"]["word"] == "hello"
+        assert result["holidays"][0]["name"] == "Lon…"
+        assert result["date"]["festival_solar"] == "Sol…"
+        assert result["date"]["festival_lunar"] == "Lun…"
+        assert result["date"]["legal_holiday"] == "Leg…"
+        assert raw_data["news"]["data"]["news"][0] == "abcdefgh"
+        assert raw_data["daily_english"]["definition"] == "definition text"
+        assert raw_data["holidays"][0]["name"] == "Long Holiday"
+
+    @patch("app.services.compute.CalendarService.get_upcoming_solar_festivals", return_value=[])
+    @patch("app.services.compute.CalendarService.get_upcoming_lunar_festivals", return_value=[])
+    def test_legacy_news_caps_and_short_text_is_untouched(
+        self, mock_lunar: Any, mock_solar: Any
+    ) -> None:
+        """Legacy news uses the same item/count caps without changing short strings."""
+        limits = TextLimitsConfig(news_item=5, news_items=2)
+        result = DataComputer(text_limits=limits).compute(
+            {"news": [{"text": "short"}, {"text": "toolong"}, {"text": "ignored"}]},
+            now=datetime(2026, 2, 4, 10, tzinfo=timezone(timedelta(hours=8))),
+        )
+
+        assert result["news_list"] == [
+            {"num": 1, "text": "short"},
+            {"num": 2, "text": "tool…"},
+        ]
+
+    @patch("app.services.compute.CalendarService.get_upcoming_solar_festivals", return_value=[])
+    @patch("app.services.compute.CalendarService.get_upcoming_lunar_festivals", return_value=[])
+    def test_default_text_limits_and_short_values_are_preserved(
+        self, mock_lunar: Any, mock_solar: Any
+    ) -> None:
+        """Every text category uses its default cap and leaves short values unchanged."""
+        limits = TextLimitsConfig()
+        raw_data = {
+            "news": {
+                "data": {
+                    "news": [
+                        "short news",
+                        "n" * limits.news_item,
+                        "n" * (limits.news_item + 1),
+                        *[f"item-{index}" for index in range(limits.news_items)],
+                    ]
+                }
+            },
+            "fun_content": {
+                "title": "short title",
+                "content": "f" * (limits.fun_content + 1),
+            },
+            "kfc_copy": "k" * (limits.kfc_text + 1),
+            "daily_english": {
+                "word": "hello",
+                "definition": "definition",
+                "translation": "t" * (limits.daily_english_translation + 1),
+            },
+            "holidays": [
+                {"name": "Holiday", "start_date": "2026-02-05", "days_left": 0},
+                {
+                    "name": "h" * (limits.holiday_name + 1),
+                    "start_date": "2026-02-06",
+                    "days_left": 1,
+                },
+            ],
+        }
+        snapshot = datetime(2026, 2, 5, 2, tzinfo=timezone(timedelta(hours=8)))
+
+        with patch.object(
+            CalendarService,
+            "get_festivals",
+            return_value={
+                "festival_solar": "Festival",
+                "festival_lunar": "l" * (limits.holiday_name + 1),
+                "legal_holiday": None,
+            },
+        ):
+            result = DataComputer().compute(raw_data, now=snapshot)
+
+        assert len(result["news_list"]) == limits.news_items
+        assert result["news_list"][0]["text"] == "short news"
+        assert result["news_list"][1]["text"] == "n" * limits.news_item
+        assert result["news_list"][2]["text"] == "n" * (limits.news_item - 1) + "…"
+        assert result["history"]["title"] == "short title"
+        assert result["history"]["content"] == "f" * (limits.fun_content - 1) + "…"
+        assert result["kfc_content"]["content"] == "k" * (limits.kfc_text - 1) + "…"
+        assert result["daily_english"]["definition"] == "definition"
+        assert result["daily_english"]["translation"] == (
+            "t" * (limits.daily_english_translation - 1) + "…"
+        )
+        assert result["holidays"][0]["name"] == "Holiday"
+        assert result["holidays"][1]["name"] == "h" * (limits.holiday_name - 1) + "…"
+        assert result["date"]["festival_solar"] == "Festival"
+        assert result["date"]["festival_lunar"] == (
+            "l" * (limits.holiday_name - 1) + "…"
+        )
+        assert result["date"]["legal_holiday"] is None
 
     def test_compute_delegates(self) -> None:
         """Test compute delegates to aggregator and adapter."""

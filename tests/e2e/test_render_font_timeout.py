@@ -121,6 +121,7 @@ async def test_render_aborts_stalled_font_after_readiness_timeout(
             remote_resource_cache_enabled=False,
             page_load_timeout_sec=3.0,
             font_ready_timeout_sec=1.0,
+            allowed_resource_hosts=["127.0.0.1"],
         )
         renderer = ImageRenderer(
             templates_config=templates_config,

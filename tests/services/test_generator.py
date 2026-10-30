@@ -894,6 +894,9 @@ class TestUpdateDataFile:
 
         from app.services.generator import _update_data_file
 
+        async def run_inline(func: Any) -> None:
+            func()
+
         data_dir = tmp_path / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
         business_date = date(2026, 2, 5)
@@ -913,13 +916,26 @@ class TestUpdateDataFile:
             "news_meta": {"total": 2},
             "history": {"title": "摸鱼语录", "content": "今天也要开心"},
             "kfc_content": {"content": "疯狂星期四文案", "source": "kfc"},
+            "daily_english": {
+                "word": "hello",
+                "translation": "capped translation",
+                "definition": "capped definition",
+            },
         }
-        raw_data = {"stock_indices": {"items": [{"name": "上证指数"}]}}
+        raw_data = {
+            "stock_indices": {"items": [{"name": "上证指数"}]},
+            "daily_english": {
+                "word": "hello",
+                "translation": "uncapped translation from source",
+                "definition": "uncapped definition from source",
+            },
+        }
         fixed_now = datetime(2026, 2, 5, 9, 30, 0, tzinfo=timezone.utc)
 
         with (
             patch("app.services.generator.now_business", return_value=fixed_now),
             patch("app.services.generator.get_display_timezone", return_value=timezone.utc),
+            patch("app.services.generator.asyncio.to_thread", side_effect=run_inline),
         ):
             await _update_data_file(
                 data_dir=str(data_dir),
@@ -936,6 +952,7 @@ class TestUpdateDataFile:
         assert saved_data["holidays"] == [{"name": "春节", "days_left": 10}]
         assert saved_data["fun_content"] == {"type": "moyu_quote", "title": "摸鱼语录", "text": "今天也要开心"}
         assert saved_data["kfc_content"] == "疯狂星期四文案"
+        assert saved_data["daily_english"] == template_data["daily_english"]
 
     @pytest.mark.asyncio
     async def test_raises_storage_error_on_replace_failure(self, tmp_path: Path) -> None:
