@@ -61,7 +61,7 @@ RUN playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 # 复制启动脚本
-COPY --chown=appuser:appuser docker-entrypoint.sh /app/
+COPY --chown=appuser:appuser docker/docker-entrypoint.sh /app/
 RUN chmod +x /app/docker-entrypoint.sh
 
 # 复制应用代码（使用 --chown 替代后续 chown -R）

@@ -86,12 +86,23 @@ uvicorn app.main:app --reload
 ### Docker 运行
 
 ```bash
-docker compose up -d
+# 在仓库根目录执行，使用发布镜像
+docker compose --project-directory . -f deploy/compose.yaml up -d
 ```
+
+构建文件集中在 `docker/`，部署文件集中在 `deploy/`。`--project-directory .` 保持 Compose 项目目录为仓库根目录，继续读取根目录 `.env`，并将 `./cache` 挂载到容器；项目名也保持不变。后续 `pull`、`logs`、`down` 等操作使用相同参数。
+
+本地构建镜像（构建上下文仍为仓库根目录，自动使用配套的 `Dockerfile.dockerignore`）：
+
+```bash
+docker build -f docker/Dockerfile -t moyuren-server:local .
+```
+
+Compose 默认使用发布镜像，不会自动使用上述本地镜像。
 
 容器配置覆盖使用 `MOYUREN_` 前缀，例如 `MOYUREN_SERVER_HOST=0.0.0.0`、`MOYUREN_SERVER_PORT=8000`、`MOYUREN_SERVER_BASE_DOMAIN=https://example.com`、`MOYUREN_OPS_API_KEY=...`；端口映射需与监听端口一致。无前缀名称不会参与配置覆盖。
 
-原子写入的图片、变体、数据 JSON 和缓存文件权限遵循进程启动时的 umask（`0666 & ~umask`；通常 umask 为 `0022`，文件权限为 `0644`）。`docker-entrypoint.sh` 不设置 umask，也不读取 `UMASK` 环境变量；它在 root 启动时初始化 `/app/cache` 的属主后通过 `gosu` 切换到 `appuser`，否则直接执行服务。需要更严格权限时，应在启动 Python 服务前设置进程 umask。
+原子写入的图片、变体、数据 JSON 和缓存文件权限遵循进程启动时的 umask（`0666 & ~umask`；通常 umask 为 `0022`，文件权限为 `0644`）。`docker/docker-entrypoint.sh` 不设置 umask，也不读取 `UMASK` 环境变量；它在 root 启动时初始化 `/app/cache` 的属主后通过 `gosu` 切换到 `appuser`，否则直接执行服务。需要更严格权限时，应在启动 Python 服务前设置进程 umask。
 
 如遇挂载目录权限问题（镜像默认 UID/GID 为 1000，可通过构建参数修改）：
 
@@ -105,6 +116,8 @@ sudo chown -R 1000:1000 cache logs
 `requirements.txt` 和 `requirements-dev.txt` 保留依赖最低版本，并限制在下一个主版本之前（Ruff 和 mypy 按次版本限制）。`.github/dependabot.yml` 配置 Dependabot 每周向 `develop` 提交 Python 依赖、GitHub Actions 和 Docker 基础镜像更新；Python 次版本/补丁更新合并为一个 PR，主版本升级单独评审。
 
 ## 开发与测试
+
+AI 编码代理的项目指引统一维护在 [AGENTS.md](AGENTS.md)，包含代码入口、修改约定、关键约束与验证命令。
 
 注释、docstring、OpenAPI 说明与命令行帮助使用中文，保留技术术语、配置键和 `Args:`、`Returns:`、`Raises:`、`Side Effects:` 等结构化标题。仅修订文档时，不翻译日志、异常消息、HTTP 响应、测试断言文本或样例数据。
 
@@ -711,6 +724,12 @@ moyuren_server/
 │   ├── render_once.py       # 单次渲染
 │   ├── render_test_scenarios.py # 场景渲染
 │   └── publish_static.py    # 静态产物
+├── docker/                  # 镜像构建
+│   ├── Dockerfile           # 多阶段镜像构建
+│   ├── Dockerfile.dockerignore # 构建上下文排除规则
+│   └── docker-entrypoint.sh # 容器启动与降权
+├── deploy/
+│   └── compose.yaml         # Docker Compose 部署
 ├── example/                 # moyuren_example.jpg 与五个 detail_*.json
 ├── cache/                   # 数据、图片、日级缓存、资源与词典
 ├── logs/                    # 文件日志（启用时）
@@ -718,8 +737,7 @@ moyuren_server/
 ├── config.yaml              # 运行配置
 ├── requirements.txt         # 运行依赖
 ├── requirements-dev.txt     # 开发依赖
-├── pyproject.toml           # Ruff、mypy、pytest 与覆盖率
-└── docker-compose.yaml      # Docker 编排
+└── pyproject.toml           # Ruff、mypy、pytest 与覆盖率
 ```
 
 ## 添加新模板
