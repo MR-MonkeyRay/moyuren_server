@@ -1,4 +1,4 @@
-"""Network helpers for outbound HTTP and browser proxy configuration."""
+"""出站 HTTP 与浏览器代理配置的网络工具。"""
 
 import re
 from typing import Any
@@ -12,7 +12,7 @@ _MAX_LOG_MESSAGE_LEN = 800
 
 
 def _format_host_port(hostname: str, port: int | None) -> str:
-    """Format hostname and optional port, preserving IPv6 bracket syntax."""
+    """拼接主机名与可选端口，保留 IPv6 方括号语法。"""
     host = (
         f"[{hostname}]"
         if ":" in hostname and not hostname.startswith("[")
@@ -22,11 +22,10 @@ def _format_host_port(hostname: str, port: int | None) -> str:
 
 
 def normalize_proxy_url(value: str | None) -> str | None:
-    """Normalize and validate an optional proxy URL.
+    """归一化并校验可选的代理 URL。
 
-    Supports HTTP and SOCKS5 proxy URLs. Userinfo is allowed for proxy
-    authentication, but path/query/fragment components are intentionally
-    rejected to keep the configuration contract narrow and auditable.
+    支持 HTTP 与 SOCKS5 代理，允许通过 userinfo 提供认证凭据；
+    不接受 path/query/fragment，限制配置范围，便于审计。
     """
     if value is None:
         return None
@@ -54,7 +53,7 @@ def normalize_proxy_url(value: str | None) -> str | None:
 
 
 def redact_url(value: str | None) -> str:
-    """Return a log-safe URL string with userinfo and query data removed."""
+    """返回可安全写入日志的 URL：移除 userinfo 与查询数据。"""
     if not value:
         return ""
     try:
@@ -69,12 +68,15 @@ def redact_url(value: str | None) -> str:
 
 
 def _sanitize_message(value: str) -> str:
-    """Remove URL credentials, query strings, and fragments from log text."""
+    """从日志文本中移除 URL 凭据、查询串与 fragment。"""
     return _URL_IN_TEXT_RE.sub(lambda match: redact_url(match.group(0)), value)
 
 
-def safe_exception_for_log(exc: BaseException, *known_urls: str | None) -> str:
-    """Return a diagnostic exception summary safe for logs."""
+def safe_exception_for_log(
+    exc: BaseException, *known_urls: str | None,
+    sensitive_values: tuple[str, ...] = (),
+) -> str:
+    """返回可安全写入日志的异常诊断摘要。"""
     exc_type = type(exc).__name__
     parts: list[str] = []
 
@@ -84,9 +86,15 @@ def safe_exception_for_log(exc: BaseException, *known_urls: str | None) -> str:
     request = getattr(exc, "request", None)
     request_url = getattr(request, "url", None)
     if request_url is not None:
-        parts.append(f"url={redact_url(str(request_url))}")
+        parts.append("url=<redacted-url>" if sensitive_values else f"url={redact_url(str(request_url))}")
 
-    message = _sanitize_message(str(exc).strip())
+    message = str(exc).strip()
+    # Webhook 路径可能含 bot token，先移除完整 URL，避免凭据泄露。
+    if sensitive_values:
+        message = _URL_IN_TEXT_RE.sub("<redacted-url>", message)
+        for value in sorted(filter(None, sensitive_values), key=len, reverse=True):
+            message = message.replace(value, "<redacted>")
+    message = _sanitize_message(message)
     for url in known_urls:
         if url:
             message = message.replace(url, redact_url(url))
@@ -106,7 +114,7 @@ def httpx_client_kwargs(
     proxy_url: str | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    """Build keyword arguments for an outbound HTTPX client."""
+    """构造出站 HTTPX 客户端的关键字参数。"""
     client_kwargs = dict(kwargs)
     normalized_proxy_url = normalize_proxy_url(proxy_url)
     if normalized_proxy_url:
@@ -118,17 +126,25 @@ def create_async_client(
     proxy_url: str | None = None,
     **kwargs: Any,
 ) -> httpx.AsyncClient:
-    """Create an HTTPX AsyncClient using the repository proxy policy."""
+    """按项目统一的代理策略创建 HTTPX AsyncClient。"""
     return httpx.AsyncClient(**httpx_client_kwargs(proxy_url=proxy_url, **kwargs))
 
 
 def playwright_proxy_config(proxy_url: str | None) -> dict[str, str] | None:
-    """Convert the configured proxy URL into Playwright's proxy dictionary."""
+    """把配置的代理 URL 转换为 Playwright 的 proxy 字典。"""
     normalized_proxy_url = normalize_proxy_url(proxy_url)
     if not normalized_proxy_url:
         return None
 
     parsed = urlsplit(normalized_proxy_url)
+    if parsed.scheme == "socks5" and (
+        parsed.username is not None or parsed.password is not None
+    ):
+        raise ValueError(
+            "Chromium cannot authenticate to SOCKS proxies. "
+            "Use an unauthenticated SOCKS proxy, an HTTP proxy with credentials, "
+            "or a local forwarder (e.g. gost/privoxy) that adds authentication."
+        )
     if not parsed.hostname:
         return None
 

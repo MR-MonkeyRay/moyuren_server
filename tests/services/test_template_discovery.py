@@ -1,4 +1,4 @@
-"""Tests for app/services/template_discovery.py - template discovery service."""
+"""app/services/template_discovery.py 模板发现服务测试。"""
 
 from pathlib import Path
 
@@ -34,16 +34,16 @@ def _create_template(dir_path: Path, name: str, meta_tags: str = "") -> Path:
 
 
 class TestTemplateDiscovery:
-    """Tests for TemplateDiscovery class."""
+    """TemplateDiscovery 类测试。"""
 
     @pytest.fixture
     def discovery(self) -> TemplateDiscovery:
-        """Create a TemplateDiscovery instance."""
+        """创建 TemplateDiscovery 实例。"""
         return TemplateDiscovery()
 
     @pytest.fixture
     def global_config(self) -> TemplateRenderConfig:
-        """Create a global render config."""
+        """创建全局渲染配置。"""
         return TemplateRenderConfig(
             device_scale_factor=3,
             jpeg_quality=100,
@@ -124,6 +124,68 @@ class TestTemplateDiscovery:
         assert items[0].jpeg_quality == 100  # global_config
         assert items[0].show_kfc is True  # 默认值
         assert items[0].show_stock is True  # 默认值
+
+    def test_discover_description_strips_truncates_and_defaults_to_none(
+        self,
+        discovery: TemplateDiscovery,
+        global_config: TemplateRenderConfig,
+        tmp_path: Path,
+    ) -> None:
+        """描述 meta 去除首尾空白、限制长度，缺失时为 None。"""
+        _create_template(
+            tmp_path,
+            "described",
+            f'<meta name="moyuren:description" content="  {"简" * 205}  ">',
+        )
+        _create_template(tmp_path, "plain")
+
+        items = {
+            item.name: item
+            for item in discovery.discover(str(tmp_path), global_config)
+        }
+
+        assert items["described"].description == "简" * 200
+        assert items["plain"].description is None
+
+    def test_production_templates_have_matching_feature_meta(
+        self, discovery: TemplateDiscovery, global_config: TemplateRenderConfig
+    ) -> None:
+        """两个正式模板声明同一组功能 meta，并如实标注每日英语。"""
+        templates_dir = Path(__file__).resolve().parents[2] / "templates"
+
+        items = {item.name: item for item in discovery.discover(str(templates_dir), global_config)}
+
+        assert items["moyuren"].show_kfc is True
+        assert items["moyuren"].show_stock is True
+        assert items["moyuren"].show_daily_english is False
+        assert items["moyuren_cute"].show_kfc is True
+        assert items["moyuren_cute"].show_stock is True
+        assert items["moyuren_cute"].show_daily_english is True
+        assert items["moyuren"].description == "杂志风格版摸鱼日历，清晰呈现日期、热点与生活信息。"
+        assert items["moyuren_cute"].description == "棉花糖波普版摸鱼日历，以明快可爱的卡片展示每日信息。"
+
+    def test_discover_skips_meta_without_attribute_values(
+        self, discovery: TemplateDiscovery, global_config: TemplateRenderConfig, tmp_path: Path
+    ) -> None:
+        """格式错误的 meta 标签被忽略，有效标签仍然生效。"""
+        _create_template(
+            tmp_path,
+            "partial",
+            '''
+            <meta name="moyuren:viewport-width">
+            <meta name>
+            <meta name content="1024">
+            <meta name="moyuren:viewport-height" content="768">
+            ''',
+        )
+
+        items = discovery.discover(str(tmp_path), global_config)
+
+        assert len(items) == 1
+        assert items[0].name == "partial"
+        assert items[0].viewport.width == 794
+        assert items[0].viewport.height == 768
+        assert items[0].device_scale_factor == global_config.device_scale_factor
 
     def test_discover_no_meta(
         self, discovery: TemplateDiscovery, global_config: TemplateRenderConfig, tmp_path: Path

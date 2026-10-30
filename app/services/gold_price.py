@@ -1,6 +1,7 @@
-"""Gold price service module."""
+"""金价服务模块。"""
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,7 @@ from app.services.instances import InstanceRouter
 
 
 class GoldPriceService:
-    """Service for fetching gold price data."""
+    """获取金价数据的服务。"""
 
     def __init__(
         self,
@@ -42,12 +43,13 @@ class GoldPriceService:
             self._logger,
             proxy_url=proxy_url,
             timeout_sec=float(config.timeout_sec),
+            http_client=http_client,
         )
 
     @asynccontextmanager
-    async def _get_client(self):
-        """Yield an HTTP client, reusing injected one or creating temporary."""
-        if self._http_client:
+    async def _get_client(self) -> AsyncIterator[httpx.AsyncClient]:
+        """优先复用注入的 HTTP 客户端，否则临时创建。"""
+        if self._http_client is not None:
             yield self._http_client
         else:
             async with create_async_client(
@@ -56,17 +58,22 @@ class GoldPriceService:
                 yield client
 
     def _parse_response(self, data: Any) -> dict[str, Any] | None:
-        """Parse gold price API response.
+        """解析金价 API 响应。
 
         Returns:
-            Dictionary with today_price, sell_price, unit if found, None otherwise.
+            解析成功返回含 today_price、sell_price、unit 的字典，否则 None。
         """
         if not isinstance(data, dict):
             self._logger.warning(
-                f"Gold price API returned non-dict response: {type(data).__name__}"
+                "Gold price API returned non-dict response: %s", type(data).__name__
             )
             return None
-        metals = data.get("data", {}).get("metals")
+        data_field = data.get("data")
+        if not isinstance(data_field, dict):
+            self._logger.warning("Unexpected gold price API response structure")
+            return None
+
+        metals = data_field.get("metals")
         if not isinstance(metals, list):
             self._logger.warning("Unexpected gold price API response structure")
             return None
@@ -83,12 +90,12 @@ class GoldPriceService:
         return None
 
     async def fetch_gold_price(self) -> dict[str, Any] | None:
-        """Fetch today's gold price from API.
+        """从 API 获取今日金价。
 
         主源不可用时按健康度切换到 60s 公共实例。
 
         Returns:
-            Dictionary with today_price, sell_price, unit if successful, None otherwise.
+            成功返回含 today_price、sell_price、unit 的字典，否则 None。
         """
         try:
             async with self._get_client() as client:
@@ -101,7 +108,8 @@ class GoldPriceService:
                 return result[1] if result is not None else None
         except Exception as e:
             self._logger.warning(
-                f"Failed to fetch gold price: {safe_exception_for_log(e, self.config.url, self._proxy_url)}"
+                "Failed to fetch gold price: %s",
+                safe_exception_for_log(e, self.config.url, self._proxy_url),
             )
         return None
 

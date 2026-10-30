@@ -18,12 +18,51 @@ scheduler:
 
 cache:
   retain_days: 30
+  max_images_per_template_per_day: 3  # 每个模板每天最多保留的图片数
 
 ops:
   api_key: ""
+  preview_wait_timeout_sec: 2.0
+
+# Prometheus 指标始终记录；仅在启用后注册 /metrics 端点
+# metrics:
+#   enabled: false  # 环境变量：MOYUREN_METRICS_ENABLED
+
+# RSS 2.0 订阅源；关闭后 /api/v1/feed.xml 返回 404
+# feed:
+#   enabled: true  # 环境变量：MOYUREN_FEED_ENABLED
+#   max_items: 7  # 1–60；环境变量：MOYUREN_FEED_MAX_ITEMS
+
+# 图片生成成功通知；Webhook URL/签名密钥建议通过环境变量提供
+# notify:
+#   enabled: false
+#   once_per_day: true
+#   triggers: ["scheduled"]  # 可选：scheduled、manual、startup
+#   timeout_sec: 10
+#   webhooks:
+#     - name: "wecom-team"
+#       type: "wecom"
+#       url_env: "MOYUREN_WECOM_WEBHOOK_URL"
+#       templates: null  # null 表示全部模板
+#     - name: "feishu-team"
+#       type: "feishu"
+#       url_env: "MOYUREN_FEISHU_WEBHOOK_URL"
+#       secret_env: "MOYUREN_FEISHU_WEBHOOK_SECRET"
+#     - name: "dingtalk-team"
+#       type: "dingtalk"
+#       url_env: "MOYUREN_DINGTALK_WEBHOOK_URL"
+#       secret_env: "MOYUREN_DINGTALK_WEBHOOK_SECRET"
+#     - name: "telegram-channel"
+#       type: "telegram"
+#       url_env: "MOYUREN_TELEGRAM_BOT_API_URL"  # https://api.telegram.org/bot<token>
+#       chat_id: "@example_channel"
+#     - name: "automation"
+#       type: "generic"
+#       url_env: "MOYUREN_GENERIC_WEBHOOK_URL"
+#       secret_env: "MOYUREN_GENERIC_WEBHOOK_SECRET"
 
 network:
-  proxy_url: null  # Optional: "http://proxy.example:8080" or "socks5://proxy.example:1080"
+  proxy_url: null  # 可选："http://proxy.example:8080" 或 "socks5://proxy.example:1080"
   ghproxy_urls:
     - "https://ghfast.top/"
 
@@ -34,20 +73,56 @@ instances:
   list_url: "https://docs.60s-api.viki.moe/7306811m0.md"
   # 额外/兜底的实例基地址（可选，优先于自动发现结果；端点路径沿用各数据源的 url）
   urls: []
+  # 仅过滤自动发现的实例；null 不过滤，[] 全部拒绝；*.example.com 仅匹配子域名
+  allowlist: null
 
 templates:
   default: "moyuren"
   dir: "templates"
+  hot_reload: true
+  hot_reload_interval_sec: 5.0
   config:
     device_scale_factor: 3
     jpeg_quality: 100
+    # output_formats: ["jpeg"]  # 必须包含 jpeg；可额外启用 webp
+    # output_widths: []  # 最终图片的绝对像素宽度；仅生成小于原图的宽度
+    # webp_quality: 85  # WebP 质量（1–100）
     use_china_cdn: true
+    local_fonts_dir: "templates/fonts"  # 本地 WOFF2 字体及 fonts.css 目录；相对路径基于进程工作目录（通常为项目根目录）
+    remote_font_fallback: true  # 本地子集缺字时加载 Google Fonts；离线部署可设为 false
+    work_end_time: "18:00"  # 业务时区下班时间，严格 HH:MM；图片显示生成时的倒计时快照
+    # 节假日优先于节气季节；配色定义在模板 CSS，未知主题名保持默认外观。
+    themes:
+      enabled: true
+      festival_themes:  # 名称须匹配 ^[a-z][a-z0-9_]*$；{} 关闭节日主题及春节期间扩展
+        除夕: spring_festival
+        春节: spring_festival
+        元宵节: spring_festival
+        中秋节: mid_autumn
+        国庆节: national_day
+      season_themes: true  # 立春/立夏/立秋/立冬当天起切换季节
     remote_resource_cache_enabled: true
     remote_resource_cache_ttl_sec: 604800
     remote_resource_timeout_sec: 5.0
     page_load_timeout_sec: 10.0
     font_ready_timeout_sec: 2.0
     remote_resource_max_size_kb: 5120
+    remote_resource_max_redirects: 5  # 每次资源请求最多重定向 5 次，每跳检查白名单；0 禁止重定向
+    # 只允许这些主机及其子域名的 HTTP(S) 资源；[] 禁用远程资源，data:/blob: 仍可用
+    allowed_resource_hosts:
+      - "fonts.googleapis.com"
+      - "fonts.googleapis.cn"
+      - "fonts.gstatic.com"
+      - "fonts.gstatic.cn"
+    # 外部文本上限（正整数；字符数包含截断后的省略号），渲染与存储数据共用
+    text_limits:
+      news_item: 120
+      news_items: 15  # 新闻条数上限
+      fun_content: 300
+      kfc_text: 300
+      daily_english_definition: 200
+      daily_english_translation: 200
+      holiday_name: 20
 
 data_sources:
   - type: "news"
@@ -90,11 +165,11 @@ data_sources:
     quote_url: "https://push2delay.eastmoney.com/api/qt/ulist.np/get"
     timeout_sec: 5
     secids:
-      - "1.000001"   # 上证指数
-      - "0.399001"   # 深证成指
-      - "0.399006"   # 创业板指
-      - "100.HSI"    # 恒生指数
-      - "100.DJIA"   # 道琼斯
+      - {secid: "1.000001", name: "上证指数", market: "A"}
+      - {secid: "0.399001", name: "深证成指", market: "A"}
+      - {secid: "0.399006", name: "创业板指", market: "A"}
+      - {secid: "100.HSI", name: "恒生指数", market: "HK"}
+      - {secid: "100.DJIA", name: "道琼斯", market: "US"}
     market_timezones:
       A: "Asia/Shanghai"
       HK: "Asia/Hong_Kong"
@@ -112,7 +187,7 @@ data_sources:
     difficulty_range: [3, 5]
     backend:
       type: "sqlite"
-      db_path: "cache/ecdict/stardict.db"
+      db_path: "ecdict/stardict.db"
       download_url: "https://github.com/skywind3000/ECDICT/releases/download/1.0.28/ecdict-sqlite-28.zip"
 
 logging:

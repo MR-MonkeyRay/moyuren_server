@@ -10,13 +10,16 @@ import shutil
 import tempfile
 import time
 import zipfile
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol, TypedDict
 from urllib.parse import quote, urlparse
 
 import httpx
 
-from app.core.config import DailyEnglishSource, DictBackendConfig, SQLiteBackendConfig
+from app.core.config import DailyEnglishSource, PathsConfig, SQLiteBackendConfig
+from app.core.fileutil import set_output_permissions
 from app.core.network import create_async_client, redact_url, safe_exception_for_log
 from app.core.filelock import async_file_lock
 from app.services.calendar import today_business
@@ -324,7 +327,7 @@ class SQLiteBackend:
 
     _COOLDOWN_SEC = 30 * 60
     _MAX_DB_SIZE_BYTES = 1024 * 1024 * 1024  # 1 GB
-    _MAX_DOWNLOAD_SIZE_BYTES = 1024 * 1024 * 1024  # 1GB archive limit
+    _MAX_DOWNLOAD_SIZE_BYTES = 1024 * 1024 * 1024  # 归档文件上限 1GB
 
     def __init__(
         self,
@@ -543,6 +546,7 @@ class SQLiteBackend:
                                 self._MAX_DB_SIZE_BYTES,
                             )
 
+                        set_output_permissions(tmp_db_path)
                         os.replace(tmp_db_path, self._db_path)
                     finally:
                         with contextlib.suppress(OSError):
@@ -741,10 +745,11 @@ class SQLiteBackend:
 
 
 def build_dict_backend(
-    cfg: DictBackendConfig,
+    cfg: SQLiteBackendConfig,
     ghproxy_urls: list[str],
     logger: logging.Logger,
     proxy_url: str | None = None,
+    cache_dir: str | Path | None = None,
 ) -> DictBackend:
     """根据配置创建词典后端。
 
@@ -753,23 +758,22 @@ def build_dict_backend(
         ghproxy_urls: 可选下载代理前缀列表。
         logger: 日志记录器。
         proxy_url: 可选全局代理 URL。
+        cache_dir: 缓存根目录，未指定时使用路径配置的默认值。
 
     Returns:
         符合 DictBackend 协议的后端实例。
-
-    Raises:
-        NotImplementedError: 配置类型尚未实现时抛出。
     """
-    if isinstance(cfg, SQLiteBackendConfig):
-        return SQLiteBackend(
-            db_path=cfg.db_path,
-            download_url=cfg.download_url,
-            checksum_sha256=cfg.checksum_sha256,
-            ghproxy_urls=ghproxy_urls,
-            logger=logger,
-            proxy_url=proxy_url,
-        )
-    raise NotImplementedError(f"{type(cfg).__name__} backend not implemented yet")
+    resolved_db_path = cfg.resolve_db_path(
+        cache_dir if cache_dir is not None else PathsConfig().cache_dir
+    )
+    return SQLiteBackend(
+        db_path=str(resolved_db_path),
+        download_url=cfg.download_url,
+        checksum_sha256=cfg.checksum_sha256,
+        ghproxy_urls=ghproxy_urls,
+        logger=logger,
+        proxy_url=proxy_url,
+    )
 
 
 class DailyEnglishService:
@@ -784,6 +788,7 @@ class DailyEnglishService:
         backend: DictBackend,
         logger: logging.Logger,
         proxy_url: str | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """初始化每日英语服务。
 
@@ -792,14 +797,30 @@ class DailyEnglishService:
             backend: 单词释义查询后端。
             logger: 日志记录器。
             proxy_url: 可选全局代理 URL。
+            http_client: 可选外部 HTTP 客户端；提供时由调用方负责生命周期。
         """
         self._config = config
         self._backend = backend
         self._logger = logger
         self._proxy_url = proxy_url
+        self._http_client = http_client
+
+    @asynccontextmanager
+    async def _get_client(self) -> AsyncIterator[httpx.AsyncClient]:
+        """复用注入的 HTTP 客户端，或创建临时客户端。"""
+        if self._http_client is not None:
+            yield self._http_client
+        else:
+            timeout = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
+            async with create_async_client(
+                timeout=timeout,
+                follow_redirects=True,
+                proxy_url=self._proxy_url,
+            ) as client:
+                yield client
 
     async def ensure_ready(self) -> None:
-        """Ensure the dictionary backend is ready (e.g., download DB if needed)."""
+        """确保词典后端就绪（必要时下载词典库）。"""
         await self._backend.ensure_ready()
 
     def _difficulty_range_tuple(self) -> tuple[int, int]:
@@ -833,6 +854,10 @@ class DailyEnglishService:
             resp = await client.get(
                 self._config.word_api_url,
                 params={"number": 1, "diff": difficulty},
+                timeout=httpx.Timeout(
+                    connect=5.0, read=10.0, write=10.0, pool=5.0
+                ),
+                follow_redirects=True,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -858,13 +883,10 @@ class DailyEnglishService:
         Side Effects:
             会访问外部随机单词 API，并可能调用后端本地随机选择逻辑。
         """
-        timeout = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
         api_failures = 0
         min_d, max_d = self._difficulty_range_tuple()
 
-        async with create_async_client(
-            timeout=timeout, follow_redirects=True, proxy_url=self._proxy_url
-        ) as client:
+        async with self._get_client() as client:
             for attempt in range(self._config.max_retries):
                 difficulty = random.randint(min_d, max_d)
                 word = await self._fetch_word_from_api(client, difficulty)
@@ -880,7 +902,7 @@ class DailyEnglishService:
 
                 return info
 
-        # Level 2: only when API failed threshold+ times, fall back to local pick
+        # 第 2 级：仅在本次获取中 API 累计失败达到阈值后，回退到本地词典选词
         if api_failures >= self._config.api_failure_threshold:
             pick_random = getattr(self._backend, "pick_random", None)
             if callable(pick_random):
@@ -893,7 +915,7 @@ class DailyEnglishService:
                     if info is not None:
                         return info
 
-        # Level 3/4: return None, let DailyCache handle degradation
+        # 第 3/4 级：返回 None，由 DailyCache 负责降级
         return None
 
 
@@ -910,6 +932,7 @@ class CachedDailyEnglishService(DailyCache[dict]):
         logger: logging.Logger,
         cache_dir: Path,
         proxy_url: str | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """初始化带缓存的每日英语服务。
 
@@ -919,11 +942,16 @@ class CachedDailyEnglishService(DailyCache[dict]):
             logger: 日志记录器。
             cache_dir: 缓存目录。
             proxy_url: 可选全局代理 URL。
+            http_client: 可选外部 HTTP 客户端；提供时由调用方负责生命周期。
         """
         super().__init__("daily_english", cache_dir, logger)
         self._proxy_url = proxy_url
         self._service = DailyEnglishService(
-            config=config, backend=backend, logger=logger, proxy_url=proxy_url
+            config=config,
+            backend=backend,
+            logger=logger,
+            proxy_url=proxy_url,
+            http_client=http_client,
         )
         self._backend = backend
 

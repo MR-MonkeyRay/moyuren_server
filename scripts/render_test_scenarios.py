@@ -8,7 +8,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# Add project root to path
+# 将项目根目录加入 sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.core.config import (
@@ -340,13 +340,17 @@ async def get_base_template_data(
     Returns:
         已经经过 ``DataComputer`` 计算的模板上下文字典。
     """
-    raw_data = await data_fetcher.fetch_all()
+    raw_data = {"news": await data_fetcher.fetch()}
+    raw_data["make_up_workdays"] = []
 
     try:
         holidays = await holiday_service.fetch_holidays()
-        raw_data["holidays"] = holidays
+        raw_data["holidays"] = holidays if holidays is not None else []
+        raw_data["make_up_workdays"] = holiday_service.make_up_workdays
+        if holidays is None:
+            logger.warning("获取节假日失败，使用默认空列表")
     except Exception as e:
-        logger.warning(f"获取节假日失败: {safe_exception_for_log(e, proxy_url)}")
+        logger.warning("获取节假日失败: %s", safe_exception_for_log(e, proxy_url))
         raw_data["holidays"] = []
 
     try:
@@ -355,7 +359,7 @@ async def get_base_template_data(
         fun_content = await fun_content_service.fetch_content(date.today())
         raw_data["fun_content"] = fun_content
     except Exception as e:
-        logger.warning(f"获取趣味内容失败: {safe_exception_for_log(e, proxy_url)}")
+        logger.warning("获取趣味内容失败: %s", safe_exception_for_log(e, proxy_url))
         raw_data["fun_content"] = None
 
     raw_data["kfc_copy"] = None
@@ -366,9 +370,9 @@ async def get_base_template_data(
         try:
             stock_indices = await stock_index_service.fetch_indices()
             raw_data["stock_indices"] = stock_indices
-            logger.info(f"获取到 {len(stock_indices.get('items', []))} 条股票指数数据")
+            logger.info("获取到 %s 条股票指数数据", len(stock_indices.get("items", [])))
         except Exception as e:
-            logger.warning(f"获取股票指数失败: {safe_exception_for_log(e, proxy_url)}")
+            logger.warning("获取股票指数失败: %s", safe_exception_for_log(e, proxy_url))
 
     # 获取金价数据
     raw_data["gold_price"] = None
@@ -377,9 +381,9 @@ async def get_base_template_data(
             gold_price = await gold_price_service.fetch_gold_price()
             raw_data["gold_price"] = gold_price
             if gold_price:
-                logger.info(f"获取到金价数据: {gold_price.get('today_price')}")
+                logger.info("获取到金价数据: %s", gold_price.get("today_price"))
         except Exception as e:
-            logger.warning(f"获取金价数据失败: {safe_exception_for_log(e, proxy_url)}")
+            logger.warning("获取金价数据失败: %s", safe_exception_for_log(e, proxy_url))
 
     # 获取每日英语数据
     raw_data["daily_english"] = None
@@ -389,11 +393,9 @@ async def get_base_template_data(
             daily_english = await daily_english_service.fetch_daily_word()
             raw_data["daily_english"] = dict(daily_english) if daily_english else None
             if daily_english:
-                logger.info(f"获取到每日英语数据: {daily_english.get('word')}")
+                logger.info("获取到每日英语数据: %s", daily_english.get("word"))
         except Exception as e:
-            logger.warning(
-                f"获取每日英语数据失败: {safe_exception_for_log(e, proxy_url)}"
-            )
+            logger.warning("获取每日英语数据失败: %s", safe_exception_for_log(e, proxy_url))
 
     return data_computer.compute(raw_data)
 
@@ -441,11 +443,11 @@ async def render_scenario(
     if source_path.exists():
         source_path.replace(target_path)
     else:
-        logger.warning(f"未找到渲染输出文件: {source_path}")
+        logger.warning("未找到渲染输出文件: %s", source_path)
         target_path = source_path
         output_name = filename
 
-    logger.info(f"测试图片已生成: {output_name}")
+    logger.info("测试图片已生成: %s", output_name)
     return target_path
 
 
@@ -456,24 +458,24 @@ async def main():
         print_scenario_list()
         return
 
-    # Load config
+    # 加载配置
     config = load_config()
     logger = setup_logging(config.logging, logger_name="render_test")
     proxy_url = config.network.proxy_url
     browser_manager.configure(logger, proxy_url=proxy_url)
     stock_index_service = None
     try:
-        # Initialize timezones
+        # 初始化时区
         init_timezones(
             business_tz=config.timezone.business, display_tz=config.timezone.display
         )
 
-        # Ensure directories exist
+        # 确保目录存在
         cache_dir = Path(config.paths.cache_dir)
         (cache_dir / "images").mkdir(parents=True, exist_ok=True)
         (cache_dir / "holidays").mkdir(parents=True, exist_ok=True)
 
-        # Initialize services
+        # 初始化各服务
         news_source = config.get_source(NewsSource)
         data_fetcher = DataFetcher(
             source=news_source,
@@ -495,9 +497,13 @@ async def main():
         fun_content_service = FunContentService(
             fun_content_source, proxy_url=proxy_url, instances=config.instances
         )
-        data_computer = DataComputer()
+        data_computer = DataComputer(
+            text_limits=config.templates.config.text_limits,
+            work_end_time=config.templates.config.work_end_time,
+            themes=config.templates.config.themes,
+        )
 
-        # Initialize stock index service
+        # 初始化股票指数服务
         stock_index_service = None
         stock_index_source = config.get_source(StockIndexSource)
         if stock_index_source:
@@ -505,7 +511,7 @@ async def main():
                 stock_index_source, proxy_url=proxy_url
             )
 
-        # Initialize gold price service
+        # 初始化金价服务
         gold_price_service = None
         gold_price_source = config.get_source(GoldPriceSource)
         if gold_price_source:
@@ -513,12 +519,13 @@ async def main():
                 gold_price_source, proxy_url=proxy_url, instances=config.instances
             )
 
-        # Initialize daily english service if config exists
+        # 若配置存在则初始化每日英语服务
         daily_english_service = None
         daily_english_source = config.get_source(DailyEnglishSource)
         if daily_english_source and daily_english_source.enabled:
             dict_backend = build_dict_backend(
                 cfg=daily_english_source.backend,
+                cache_dir=config.paths.cache_dir,
                 ghproxy_urls=config.network.ghproxy_urls,
                 logger=logger,
                 proxy_url=proxy_url,
@@ -530,7 +537,7 @@ async def main():
                 proxy_url=proxy_url,
             )
 
-        # Get templates configuration
+        # 获取模板配置
         templates_config = config.get_templates_config()
 
         image_renderer = ImageRenderer(
@@ -560,7 +567,7 @@ async def main():
 
         if args.all:
             for scenario_name, scenario_data in SCENARIOS.items():
-                logger.info(f"渲染场景: {scenario_name}")
+                logger.info("渲染场景: %s", scenario_name)
                 overrides = replace_today_placeholder(
                     scenario_data["overrides"], today_str
                 )

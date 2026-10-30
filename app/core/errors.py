@@ -1,18 +1,18 @@
-"""Custom exception classes and error handling."""
+"""自定义异常类与错误处理。"""
 
 from enum import StrEnum
 from typing import Any
 
 
 class ErrorCode(StrEnum):
-    """Error code enumeration."""
+    """错误码枚举。"""
 
-    # Config errors (1000-1099)
+    # 配置错误（1000-1099）
     CONFIG_LOAD_FAILED = "CONFIG_1001"
     CONFIG_VALIDATION_FAILED = "CONFIG_1002"
     CONFIG_MISSING_REQUIRED = "CONFIG_1003"
 
-    # Fetch errors (2000-2099)
+    # 数据获取错误（2000-2099）
     FETCH_REQUEST_FAILED = "FETCH_2001"
     FETCH_TIMEOUT = "FETCH_2002"
     FETCH_INVALID_RESPONSE = "FETCH_2003"
@@ -20,37 +20,37 @@ class ErrorCode(StrEnum):
     FETCH_STOCK_INDEX_FAILED = "FETCH_2005"
     FETCH_STOCK_CALENDAR_FAILED = "FETCH_2006"
 
-    # Render errors (3000-3099)
+    # 渲染错误（3000-3099）
     RENDER_PLAYWRIGHT_ERROR = "RENDER_3001"
     RENDER_TEMPLATE_ERROR = "RENDER_3002"
     RENDER_SAVE_FAILED = "RENDER_3003"
 
-    # Storage errors (4000-4099)
+    # 存储错误（4000-4099）
     STORAGE_WRITE_FAILED = "STORAGE_4001"
     STORAGE_READ_FAILED = "STORAGE_4002"
     STORAGE_NOT_FOUND = "STORAGE_4003"
     STORAGE_DELETE_FAILED = "STORAGE_4004"
 
-    # Generation errors (5000-5099)
+    # 生成错误（5000-5099）
     GENERATION_FAILED = "GENERATION_5001"
     GENERATION_BUSY = "GENERATION_5002"
 
-    # Auth errors (6000-6099)
+    # 鉴权错误（6000-6099）
     AUTH_UNAUTHORIZED = "AUTH_6001"
 
-    # API errors (7000-7099)
+    # API 错误（7000-7099）
     API_INVALID_DATE = "API_7001"
     API_INVALID_ENCODE = "API_7002"
     API_INVALID_PARAMETER = "API_7003"
     API_TEMPLATE_NOT_FOUND = "API_7004"
     API_DATA_NOT_FOUND = "API_7005"
 
-    # Ops errors (8000-8099)
+    # Ops 运维错误（8000-8099）
     OPS_CACHE_CLEAN_FAILED = "OPS_8001"
 
 
 class AppError(Exception):
-    """Base application error."""
+    """应用基础异常。"""
 
     def __init__(self, message: str, code: ErrorCode) -> None:
         """初始化应用基础异常.
@@ -65,7 +65,7 @@ class AppError(Exception):
 
 
 class ConfigError(AppError):
-    """Configuration related error."""
+    """配置相关错误。"""
 
     def __init__(
         self,
@@ -82,7 +82,7 @@ class ConfigError(AppError):
 
 
 class FetchError(AppError):
-    """Data fetching related error."""
+    """数据获取相关错误。"""
 
     def __init__(
         self, message: str = "Fetch error", code: ErrorCode = ErrorCode.FETCH_REQUEST_FAILED
@@ -96,8 +96,17 @@ class FetchError(AppError):
         super().__init__(message, code)
 
 
+class WebhookDeliveryError(FetchError):
+    """Webhook 推送在 HTTP 或服务商响应层面失败。"""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        """保留 HTTP 状态码，但不保留可能含密钥的请求对象。"""
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class RenderError(AppError):
-    """Rendering related error."""
+    """渲染相关错误。"""
 
     def __init__(
         self,
@@ -113,8 +122,12 @@ class RenderError(AppError):
         super().__init__(message, code)
 
 
+class RenderResourceRedirectError(RenderError):
+    """渲染资源重定向被拦截或超出配置上限。"""
+
+
 class StorageError(AppError):
-    """Storage related error."""
+    """存储相关错误。"""
 
     def __init__(
         self,
@@ -130,16 +143,20 @@ class StorageError(AppError):
         super().__init__(message, code)
 
 
+class GenerationBusyError(Exception):
+    """生成任务正在进行中"""
+
+
 def error_response(code: ErrorCode, message: str) -> dict[str, Any]:
     """
-    Create standardized error response.
+    构造标准化错误响应。
 
     Args:
-        code: Error code enum.
-        message: Human-readable error message.
+        code: 错误码枚举。
+        message: 人类可读的错误信息。
 
     Returns:
-        Dictionary with error information.
+        包含错误信息的字典。
     """
     return {"error": {"code": code.value, "message": message}}
 

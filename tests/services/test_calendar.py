@@ -1,4 +1,4 @@
-"""Tests for app/services/calendar.py - calendar service."""
+"""app/services/calendar.py 日历服务测试。"""
 
 from datetime import UTC, date, datetime, timedelta, timezone
 
@@ -17,105 +17,105 @@ from app.services.calendar import (
 
 
 class TestGetLocalTimezone:
-    """Tests for get_local_timezone function."""
+    """get_local_timezone 函数测试。"""
 
     def test_uses_tz_env_variable(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test uses TZ environment variable."""
+        """验证使用 TZ 环境变量。"""
         monkeypatch.setenv("TZ", "America/New_York")
         tz = get_local_timezone()
         assert str(tz) == "America/New_York"
 
     def test_invalid_tz_falls_back(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test invalid TZ falls back to local timezone."""
+        """验证无效 TZ 回退到本地时区。"""
         monkeypatch.setenv("TZ", "Invalid/Zone")
         tz = get_local_timezone()
-        # Should not raise, returns some valid timezone
+        # 不应抛出异常，应返回有效时区
         assert tz is not None
 
 
 class TestGetTimezoneLabel:
-    """Tests for get_timezone_label function."""
+    """get_timezone_label 函数测试。"""
 
     def test_positive_offset(self) -> None:
-        """Test positive UTC offset label."""
+        """验证 UTC 正偏移标签。"""
         dt = datetime(2026, 2, 4, 10, 0, 0, tzinfo=timezone(timedelta(hours=8)))
         label = get_timezone_label(dt)
         assert label == "UTC+08"
 
     def test_negative_offset(self) -> None:
-        """Test negative UTC offset label."""
+        """验证 UTC 负偏移标签。"""
         dt = datetime(2026, 2, 4, 10, 0, 0, tzinfo=timezone(timedelta(hours=-5)))
         label = get_timezone_label(dt)
         assert label == "UTC-05"
 
     def test_zero_offset(self) -> None:
-        """Test zero UTC offset label."""
+        """验证 UTC 零偏移标签。"""
         dt = datetime(2026, 2, 4, 10, 0, 0, tzinfo=UTC)
         label = get_timezone_label(dt)
         assert label == "UTC+00"
 
     def test_offset_with_minutes(self) -> None:
-        """Test offset with minutes."""
+        """验证包含分钟的偏移量。"""
         dt = datetime(2026, 2, 4, 10, 0, 0, tzinfo=timezone(timedelta(hours=5, minutes=30)))
         label = get_timezone_label(dt)
         assert label == "UTC+05:30"
 
 
 class TestInitTimezones:
-    """Tests for init_timezones function."""
+    """init_timezones 函数测试。"""
 
     def test_init_with_iana_timezones(self) -> None:
-        """Test initialization with IANA timezone names."""
+        """验证使用 IANA 时区名称初始化。"""
         init_timezones("Asia/Shanghai", "America/New_York")
         biz_tz = get_business_timezone()
         assert str(biz_tz) == "Asia/Shanghai"
 
     def test_init_with_local_display(self) -> None:
-        """Test initialization with 'local' display timezone."""
+        """验证将显示时区设为 'local' 的初始化。"""
         init_timezones("Asia/Shanghai", "local")
         display_tz = get_display_timezone()
-        # Should return some valid timezone
+        # 应返回有效时区
         assert display_tz is not None
 
     def test_init_with_utc_offset(self) -> None:
-        """Test initialization with UTC offset format."""
+        """验证使用 UTC 偏移格式初始化。"""
         init_timezones("UTC+8", "UTC-5")
         biz_tz = get_business_timezone()
-        # Should be equivalent to +08:00
+        # 应等同于 +08:00
         assert biz_tz is not None
 
 
 class TestGetBusinessTimezone:
-    """Tests for get_business_timezone function."""
+    """get_business_timezone 函数测试。"""
 
     def test_returns_initialized_timezone(self) -> None:
-        """Test returns initialized timezone."""
+        """验证返回已初始化的时区。"""
         init_timezones("Asia/Tokyo", "local")
         tz = get_business_timezone()
         assert str(tz) == "Asia/Tokyo"
 
 
 class TestNowFunctions:
-    """Tests for now_business and today_business functions."""
+    """now_business 和 today_business 函数测试。"""
 
     def test_now_business_returns_datetime(self) -> None:
-        """Test now_business returns datetime with timezone."""
+        """验证 now_business 返回带时区的 datetime。"""
         init_timezones("Asia/Shanghai", "local")
         now = now_business()
         assert now.tzinfo is not None
 
     def test_today_business_returns_date(self) -> None:
-        """Test today_business returns date."""
+        """验证 today_business 返回 date。"""
         init_timezones("Asia/Shanghai", "local")
         today = today_business()
         assert isinstance(today, date)
 
 
 class TestCalendarService:
-    """Tests for CalendarService class."""
+    """CalendarService 类测试。"""
 
     def test_get_lunar_info(self) -> None:
-        """Test get lunar calendar info."""
+        """验证获取农历信息。"""
         today = date(2026, 2, 4)
         info = CalendarService.get_lunar_info(today)
 
@@ -124,8 +124,8 @@ class TestCalendarService:
         assert "zodiac" in info
 
     def test_get_festivals(self) -> None:
-        """Test get festivals for a date."""
-        # Test a known festival date (New Year's Day)
+        """验证获取指定日期的节日。"""
+        # 使用已知节日日期（元旦）测试
         new_year = date(2026, 1, 1)
         festivals = CalendarService.get_festivals(new_year)
 
@@ -134,15 +134,15 @@ class TestCalendarService:
         assert "legal_holiday" in festivals
 
     def test_get_constellation(self) -> None:
-        """Test get constellation for a date."""
-        # February 4 is Aquarius
+        """验证获取指定日期的星座。"""
+        # 2 月 4 日属于水瓶座
         today = date(2026, 2, 4)
         constellation = CalendarService.get_constellation(today)
 
         assert constellation == "水瓶座"
 
     def test_get_moon_phase(self) -> None:
-        """Test get moon phase for a date."""
+        """验证获取指定日期的月相。"""
         today = date(2026, 2, 4)
         phase = CalendarService.get_moon_phase(today)
 
@@ -150,17 +150,60 @@ class TestCalendarService:
         assert isinstance(phase, str)
 
     def test_is_holiday(self) -> None:
-        """Test is_holiday check."""
-        # Test a known holiday (New Year's Day)
+        """验证 is_holiday 判断。"""
+        # 使用已知假日（元旦）测试
         new_year = date(2026, 1, 1)
         is_holiday = CalendarService.is_holiday(new_year)
 
-        # New Year's Day should be a holiday
+        # 元旦应为假日
         assert isinstance(is_holiday, bool)
 
+    @pytest.mark.parametrize(
+        ("dt", "expected"),
+        [(date(2026, 2, 14), False), (date(2026, 2, 17), True), (date(2026, 3, 12), False)],
+    )
+    def test_is_holiday_excludes_makeup_work_days(self, dt: date, expected: bool) -> None:
+        """验证法定假日不包含调休补班日和普通节日。"""
+        assert CalendarService.is_holiday(dt) is expected
+
+    @pytest.mark.parametrize(
+        ("dt", "name", "solar_date"),
+        [
+            (date(2026, 1, 1), "腊八节", "2026-01-26"),
+            (date(2026, 1, 1), "除夕", "2026-02-16"),
+            (date(2026, 1, 26), "腊八节", "2026-01-26"),
+            (date(2026, 6, 1), "端午节", "2026-06-19"),
+        ],
+    )
+    def test_upcoming_lunar_festivals(self, dt: date, name: str, solar_date: str) -> None:
+        """验证农历节日可跨农历年边界，且保持唯一、有序。"""
+        festivals = CalendarService.get_upcoming_lunar_festivals(dt)
+
+        assert {
+            "name": name,
+            "solar_date": solar_date,
+            "days_left": (date.fromisoformat(solar_date) - dt).days,
+        } in festivals
+        dates = [festival["solar_date"] for festival in festivals]
+        names = [festival["name"] for festival in festivals]
+        assert dates == sorted(dates)
+        assert all(festival_date >= dt.isoformat() for festival_date in dates)
+        assert len(names) == len(set(names))
+        assert CalendarService.get_upcoming_lunar_festivals(dt, count=3) == festivals[:3]
+
+    def test_upcoming_solar_festivals_cross_year_boundary(self) -> None:
+        """验证 12 月末包含次年 1 月的公历节日。"""
+        festivals = CalendarService.get_upcoming_solar_festivals(date(2026, 12, 31))
+
+        assert festivals[0] == {"name": "元旦", "solar_date": "2027-01-01", "days_left": 1}
+        dates = [festival["solar_date"] for festival in festivals]
+        names = [festival["name"] for festival in festivals]
+        assert dates == sorted(dates)
+        assert len(names) == len(set(names))
+
     def test_get_solar_term_info(self) -> None:
-        """Test get solar term info."""
-        # February 4 is typically around Lichun (Beginning of Spring)
+        """验证获取节气信息。"""
+        # 2 月 4 日通常在立春前后
         today = date(2026, 2, 4)
         info = CalendarService.get_solar_term_info(today)
 
@@ -171,11 +214,10 @@ class TestCalendarService:
         assert "is_today" in info
 
     def test_get_solar_term_info_is_today(self) -> None:
-        """Test solar term is_today flag."""
-        # Find a date that is a solar term
-        # Lichun 2026 is around Feb 4
+        """验证节气的 is_today 标志。"""
+        # 选取节气日期：2026 年立春在 2 月 4 日前后
         lichun_date = date(2026, 2, 4)
         info = CalendarService.get_solar_term_info(lichun_date)
 
-        # The is_today flag should be boolean
+        # is_today 标志应为布尔值
         assert isinstance(info["is_today"], bool)

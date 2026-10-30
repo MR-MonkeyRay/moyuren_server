@@ -6,19 +6,24 @@
     <meta name="moyuren:viewport-height" content="1123">
     <meta name="moyuren:show-kfc" content="true">
     <meta name="moyuren:show-stock" content="true">
+    <meta name="moyuren:show-daily-english" content="false">
+    <meta name="moyuren:description" content="杂志风格版摸鱼日历，清晰呈现日期、热点与生活信息。">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>摸鱼日历 {{ date.year_month }} - 杂志风格版</title>
-    <!-- Google Fonts: 思源黑体(正文) + 霞鹜文楷(标题) + Poppins(数字/英文) -->
+    <link rel="stylesheet" href="https://fonts.moyuren.invalid/fonts.css">
+    {% if remote_font_fallback %}
+    <!-- Google Fonts: 本地子集缺字时的远程回退 -->
     {% if use_china_cdn %}
     <!-- 大陆 CDN: fonts.googleapis.cn -->
     <link rel="preconnect" href="https://fonts.googleapis.cn" crossorigin>
     <link rel="preconnect" href="https://fonts.gstatic.cn" crossorigin>
-    <link href="https://fonts.googleapis.cn/css2?family=JetBrains+Mono:wght@500;600;700&family=LXGW+WenKai:wght@400;700&family=Noto+Sans+SC:wght@400;500;700;900&family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.cn/css2?family=JetBrains+Mono:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
     {% else %}
     <!-- 国际 CDN: fonts.googleapis.com -->
     <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700&family=LXGW+WenKai:wght@400;700&family=Noto+Sans+SC:wght@400;500;700;900&family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    {% endif %}
     {% endif %}
     <style>
         :root {
@@ -29,7 +34,7 @@
             /* --- 文字系统 (Slate 色系) --- */
             --text-dark: #1E293B;        /* Slate 800 - 重要标题 */
             --text-grey: #475569;        /* Slate 600 - 正文内容 */
-            --text-light: #64748B;       /* Slate 500 - 辅助信息，满足无障碍标准 */
+            --text-light: #5B687A;       /* 辅助信息，满足 WCAG AA */
 
             /* --- 功能色板 --- */
             /* 蓝色 - 信息/序号 */
@@ -37,15 +42,15 @@
             --blue-bg: #EFF6FF;          /* 极淡蓝背景 */
 
             /* 绿色 - 成功/下跌(A股) */
-            --green-main: #059669;       /* Emerald 600 - WCAG AA compliant */
+            --green-main: #047857;       /* Emerald 700 - WCAG AA compliant */
             --green-bg: #ECFDF5;
 
             /* 红色 - 紧急/KFC/上涨(A股) */
-            --red-main: #DC2626;         /* Red 600 - WCAG AA compliant */
+            --red-main: #B91C1C;         /* Red 700 - WCAG AA compliant */
             --red-bg: #FEF2F2;
 
             /* 橙色 - 警告/倒计时 */
-            --orange-main: #EA580C;      /* Orange 600 - WCAG AA compliant */
+            --orange-main: #B83A08;      /* 深橙色，满足 WCAG AA */
             --orange-bg: #FFF7ED;
 
             /* --- 语义化映射（兼容旧变量名） --- */
@@ -70,10 +75,131 @@
             --spacing: 16px;
             --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.4);
 
-            /* 字体系统 - 增加系统字体作为后备，确保 CDN 失败时仍能正常显示 */
-            --font-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', 'WenQuanYi Micro Hei', 'Helvetica Neue', Arial, sans-serif;
-            --font-title: 'LXGW WenKai', 'STKaiti', 'KaiTi', 'SimKai', 'FangSong', serif;
-            --font-number: 'Poppins', 'JetBrains Mono', 'SF Mono', 'Consolas', 'Helvetica Neue', Arial, sans-serif;
+            /* 字体系统 - 本地子集优先，远程与系统字体补齐缺失字形 */
+            --font-body: 'Moyuren Noto Sans SC', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', 'WenQuanYi Micro Hei', 'Helvetica Neue', Arial, sans-serif;
+            --font-title: 'Moyuren LXGW WenKai', 'Moyuren Noto Sans SC', 'LXGW WenKai', 'Noto Sans SC', 'STKaiti', 'KaiTi', 'SimKai', 'FangSong', serif;
+            --font-number: 'Moyuren Poppins', 'Poppins', 'Moyuren JetBrains Mono', 'JetBrains Mono', 'Moyuren Noto Sans SC', 'Noto Sans SC', 'SF Mono', 'Consolas', 'Helvetica Neue', Arial, sans-serif;
+        }
+
+        /* 节日主题更鲜明；正文/纸张 #3B1717/#FFF7ED，满足 WCAG AA */
+        body.theme-spring_festival {
+            --bg-body: #F7DED8;
+            --bg-paper: #FFF7ED;
+            --text-dark: #3B1717;
+            --text-grey: #684037;
+            --text-light: #76554D;
+            --blue-main: #9F1239;
+            --blue-bg: #FFF1F2;
+            --red-main: #B91C1C;
+            --red-bg: #FEF2F2;
+            --green-main: #047857;
+            --orange-main: #9A3412;
+            --orange-bg: #FFFBEB;
+        }
+
+        /* 中秋暖金配靛蓝；正文/纸张 #25213D/#FFF8E7，满足 WCAG AA */
+        body.theme-mid_autumn {
+            --bg-body: #E8E3F0;
+            --bg-paper: #FFF8E7;
+            --text-dark: #25213D;
+            --text-grey: #514B66;
+            --text-light: #686078;
+            --blue-main: #4338CA;
+            --blue-bg: #EEF2FF;
+            --red-main: #B91C1C;
+            --red-bg: #FFF1F2;
+            --green-main: #047857;
+            --orange-main: #9A4D08;
+            --orange-bg: #FFFBEB;
+        }
+
+        /* 国庆红色强调；正文/纸张 #351515/#FFF8F5，满足 WCAG AA */
+        body.theme-national_day {
+            --bg-body: #F3D8D5;
+            --bg-paper: #FFF8F5;
+            --text-dark: #351515;
+            --text-grey: #68413D;
+            --text-light: #785B56;
+            --blue-main: #A11212;
+            --blue-bg: #FFF1F2;
+            --red-main: #B91C1C;
+            --red-bg: #FEF2F2;
+            --green-main: #047857;
+            --orange-main: #9A3412;
+            --orange-bg: #FFF7ED;
+        }
+
+        /* 春季嫩绿微调；正文/纸张 #1E382C/#F4FBF5，满足 WCAG AA */
+        body.theme-spring {
+            --bg-body: #DCE9DF;
+            --bg-paper: #F4FBF5;
+            --text-dark: #1E382C;
+            --text-grey: #476052;
+            --text-light: #53685A;
+            --blue-main: #25633E;
+            --blue-bg: #ECFDF3;
+            --red-main: #B91C1C;
+            --green-main: #047857;
+            --orange-main: #A3480B;
+            --orange-bg: #FFF7ED;
+        }
+
+        /* 夏季湖蓝微调；正文/纸张 #153548/#F2FAFC，满足 WCAG AA */
+        body.theme-summer {
+            --bg-body: #D8E8EC;
+            --bg-paper: #F2FAFC;
+            --text-dark: #153548;
+            --text-grey: #3E5D6C;
+            --text-light: #4F6671;
+            --blue-main: #036887;
+            --blue-bg: #ECFEFF;
+            --red-main: #B91C1C;
+            --green-main: #047857;
+            --orange-main: #A5450A;
+            --orange-bg: #FFF7ED;
+        }
+
+        /* 秋季枫叶暖调；正文/纸张 #422716/#FFF9F0，满足 WCAG AA */
+        body.theme-autumn {
+            --bg-body: #EADFD2;
+            --bg-paper: #FFF9F0;
+            --text-dark: #422716;
+            --text-grey: #674D3A;
+            --text-light: #786251;
+            --blue-main: #9A4D08;
+            --blue-bg: #FFF7ED;
+            --red-main: #B91C1C;
+            --green-main: #047857;
+            --orange-main: #9A3412;
+            --orange-bg: #FFEDD5;
+        }
+
+        /* 冬季霜蓝微调；正文/纸张 #243246/#F4F8FC，满足 WCAG AA */
+        body.theme-winter {
+            --bg-body: #DDE4EC;
+            --bg-paper: #F4F8FC;
+            --text-dark: #243246;
+            --text-grey: #4B5B70;
+            --text-light: #586678;
+            --blue-main: #285A9F;
+            --blue-bg: #EFF6FF;
+            --red-main: #B91C1C;
+            --green-main: #047857;
+            --orange-main: #A3480B;
+            --orange-bg: #FFF7ED;
+        }
+
+        body[class*="theme-"] {
+            /* 在 body 上重新绑定，确保主题 Token 能传递到语义别名 */
+            --accent-blue: var(--blue-bg);
+            --accent-blue-text: var(--blue-main);
+            --accent-green: var(--green-bg);
+            --accent-green-text: var(--green-main);
+            --accent-pink: var(--red-bg);
+            --accent-pink-text: var(--red-main);
+            --color-up: var(--red-main);
+            --color-down: var(--green-main);
+            --color-flat: var(--text-light);
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -216,6 +342,7 @@
         
         .weekend-wrap { margin-top: 10px; font-size: 14px; color: var(--text-grey); display: flex; align-items: baseline; justify-content: flex-end; }
         .weekend-num { font-size: 20px; font-weight: 800; color: var(--orange-main); margin: 0 4px; }
+        .off-work-wrap { white-space: nowrap; margin-top: 5px; font-size: 12px; color: var(--text-grey); text-align: right; }
         /* 周末当天特殊样式 - 柔和橙色系，与节气框统一风格 */
         .weekend-wrap.is-weekend {
             background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);
@@ -292,7 +419,7 @@
         .days-label.today {
             font-weight: 600;
             color: var(--green-main);
-            background: linear-gradient(135deg, #ECFDF5 0%, #A7F3D0 100%);
+            background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
             padding: 6px 14px;
             border-radius: 20px;
             box-shadow:
@@ -351,29 +478,27 @@
 
         .history-card {
             flex: 0.6;
+            min-width: 0;
             display: flex;
             flex-direction: column;
+            align-self: flex-start;
         }
         .history-content {
-            flex: 1;
             font-size: 17px;
             line-height: 1.6;
             color: #555;
-            display: flex;
-            align-items: center;
             text-align: justify;
-            /* 高度限制，防止超长内容 */
-            max-height: 120px;
-            overflow: hidden;
+            /* 文本已在计算层限长，卡片随内容增高，避免放大字号后截断。 */
         }
-        .joke-tag { font-size: 14px; color: #aaa; margin-top: auto; text-align: right; font-style: italic; }
+        .history-content.short { font-size: 22px; line-height: 1.55; }
+        .history-content.medium { font-size: 19px; line-height: 1.55; }
+        .joke-tag { font-size: 14px; color: #6B7280; margin-top: 8px; text-align: right; font-style: italic; }
 
         /* --- 第三排：主要内容 (占据剩余所有空间) --- */
         .row-main {
             flex: 1; /* 关键：自动填充剩余高度 */
             display: flex;
             gap: var(--spacing);
-            /* min-height: 0;  Removed to allow growth */
         }
 
         .news-card {
@@ -385,7 +510,8 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            justify-content: space-between; /* 均匀分布 */
+            justify-content: flex-start;
+            gap: 0;
             list-style: none;
         }
         .news-item {
@@ -435,7 +561,7 @@
         }
         .news-empty .empty-text, .holiday-empty .empty-text {
             font-size: 14px;
-            color: #999;
+            color: var(--text-grey);
         }
 
         /* 降级模式横幅 */
@@ -459,12 +585,12 @@
         .fallback-title {
             font-size: 15px;
             font-weight: bold;
-            color: #e65100;
+            color: #9A3412;
             margin-bottom: 2px;
         }
         .fallback-desc {
             font-size: 12px;
-            color: #ff8f00;
+            color: #9A3412;
         }
 
         /* 右侧列容器 */
@@ -506,7 +632,7 @@
             color: #64748b;
             font-weight: 500;
             font-size: 14px;
-            font-family: 'Noto Sans SC', sans-serif;
+            font-family: 'Moyuren Noto Sans SC', 'Noto Sans SC', sans-serif;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -518,7 +644,7 @@
             gap: 12px;
         }
         .market-value {
-            font-family: 'JetBrains Mono', var(--font-number);
+            font-family: 'Moyuren JetBrains Mono', 'JetBrains Mono', var(--font-number);
             font-weight: 600;
             color: var(--text-dark);
             font-size: 15px;
@@ -549,7 +675,7 @@
         }
         /* 休市行样式 */
         .market-item.closed {
-            opacity: 0.6;
+            background: var(--color-flat-bg);
         }
         .market-item.closed .market-name {
             color: var(--text-light);
@@ -606,7 +732,6 @@
             font-family: var(--font-title);
             font-size: 14px;
             color: var(--text-grey);
-            opacity: 0.8;
         }
 
         .holiday-card {
@@ -645,13 +770,12 @@
         /* 非法定节假日 - 淡化 */
         .holiday-item.normal {
             background: #F8F9F9;
-            opacity: 0.8;
             box-shadow: 1px 1px 4px rgba(0,0,0,0.03);
         }
         .h-info { display: flex; flex-direction: column; justify-content: center; }
         .h-name { font-size: 16px; font-weight: 700; color: #333; }
         .holiday-item.normal .h-name { font-weight: 500; color: #555;}
-        .h-date { font-size: 11px; color: #999; margin-top: 2px; }
+        .h-date { font-size: 11px; color: var(--text-grey); margin-top: 2px; }
 
         .h-count-wrap { text-align: right; }
         .h-num {
@@ -696,7 +820,7 @@
             text-shadow: none;
         }
         .holiday-item.is-today .h-num.today {
-            color: #DC2626;
+            color: var(--red-main);
         }
         .holiday-item.is-today .h-unit {
             color: #B91C1C;
@@ -760,7 +884,7 @@
             flex-wrap: wrap;
             gap: 6px;
             font-size: 9px;
-            color: #888888;
+            color: #596579;
             letter-spacing: 0.03em;
         }
         .footer-secondary > span {
@@ -887,7 +1011,7 @@
         }
     </style>
 </head>
-<body>
+<body class="theme-{{ theme.name if theme is defined else 'default' }}">
 
     <div class="poster">
 
@@ -906,13 +1030,28 @@
                     <div class="week-pill">{{ date.week_cn }} · {{ date.week_en }}</div>
                     <div class="lunar-text">农历 {{ date.lunar_year }}</div>
                     <div class="lunar-text">{{ date.lunar_date }}</div>
-                    {% if weekend.is_weekend %}
+                    {% if next_rest_day is defined %}
+                    {% if next_rest_day.is_today_off %}
+                    <div class="weekend-wrap is-weekend" role="img" aria-label="今日休息，尽情摸鱼">
+                        🎉 {% if next_rest_day.today_name %}{{ next_rest_day.today_name }}快乐，{% else %}休息日愉快，{% endif %}摸鱼无罪！
+                    </div>
+                    {% else %}
+                    <div class="weekend-wrap">
+                        ⏳ 距休息日还有 <span class="weekend-num">{{ next_rest_day.days_left }}</span> 天
+                    </div>
+                    {% endif %}
+                    {% elif weekend.is_weekend %}
                     <div class="weekend-wrap is-weekend" role="img" aria-label="今日周末，尽情休息">
                         🎉 周末愉快，摸鱼无罪！
                     </div>
                     {% else %}
                     <div class="weekend-wrap">
                         ⏳ 距周末还有 <span class="weekend-num">{{ weekend.days_left }}</span> 天
+                    </div>
+                    {% endif %}
+                    {% if off_work is defined and off_work %}
+                    <div class="off-work-wrap">
+                        {% if off_work.done %}已下班{% elif off_work.hours > 0 %}距下班 {{ off_work.hours }} 小时{% if off_work.minutes > 0 %} {{ off_work.minutes }} 分{% endif %}{% elif off_work.minutes > 0 %}距下班 {{ off_work.minutes }} 分{% else %}即将下班{% endif %}
                     </div>
                     {% endif %}
                 </div>
@@ -939,7 +1078,8 @@
             </div>
             <div class="box history-card">
                 <h2>{{ history.title }}</h2>
-                <div class="history-content">{{ history.content }}</div>
+                {% set history_length = history.content | length %}
+                <div class="history-content{% if history_length <= 80 %} short{% elif history_length <= 160 %} medium{% endif %}">{{ history.content }}</div>
                 <div class="joke-tag">—— 摸鱼办宣</div>
             </div>
         </div>
@@ -969,9 +1109,14 @@
                     </li>
                     {% endfor %}
                 </ul>
-                {% if news_meta and news_meta.updated %}
+                {% if (news_meta and news_meta.updated) or (data_freshness is defined and data_freshness.is_stale) %}
                 <div class="news-footer">
+                    {% if news_meta and news_meta.updated %}
                     数据更新于 {{ news_meta.updated | format_datetime }}
+                    {% endif %}
+                    {% if data_freshness is defined and data_freshness.is_stale %}
+                    · {{ ('数据日期 ' ~ data_freshness.source_date ~ '（非当日）') if data_freshness.news_is_stale else '部分数据为缓存' }}
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>
@@ -982,7 +1127,7 @@
                 {% if show_stock %}
                 <div class="box market-card">
                     <h2><span role="img" aria-label="股票">📈</span> 大盘指数</h2>
-                    {% if stock_indices and stock_indices.indices %}
+                    {% if stock_indices and not stock_indices.is_data_missing and stock_indices.indices %}
                     <ul class="market-list" role="list" aria-label="大盘指数列表">
                         {% for index in stock_indices.indices %}
                         <li class="market-item{{ ' closed' if not index.is_trading_day else '' }}">
@@ -1022,10 +1167,10 @@
                     <h2>🏖️ 假期盼头</h2>
                     <div class="holiday-list">
                         {% for holiday in holidays %}
-                        <div class="holiday-item {{ 'workday' if holiday.is_off_day is false else ('legal' if holiday.is_legal_holiday else 'normal') }}{{ ' is-today' if holiday.days_left == 0 else '' }}">
+                        <div class="holiday-item {{ 'workday' if holiday.is_legal_holiday and holiday.is_off_day is false else ('legal' if holiday.is_legal_holiday else 'normal') }}{{ ' is-today' if holiday.days_left == 0 else '' }}">
                             <div class="h-info">
                                 <div class="h-name">
-                                    {% if holiday.is_off_day is false %}<span role="img" aria-label="补班">💼</span> {% elif holiday.is_legal_holiday %}<span role="img" aria-label="法定假日">🎉</span> {% endif %}{{ holiday.name }}
+                                    {% if holiday.is_legal_holiday and holiday.is_off_day is false %}<span role="img" aria-label="补班">💼</span> {% elif holiday.is_legal_holiday %}<span role="img" aria-label="法定假日">🎉</span> {% endif %}{{ holiday.name }}
                                 </div>
                                 <div class="h-date">
                                     {{ holiday.start_date }}
@@ -1036,12 +1181,15 @@
                             </div>
                             <div class="h-count-wrap">
                                 {% if holiday.days_left == 0 %}
-                                    {% if holiday.is_off_day is false %}
+                                    {% if holiday.is_legal_holiday and holiday.is_off_day is false %}
                                     <div class="h-num today" role="img" aria-label="今日补班">😭</div>
                                     <div class="h-unit">补班中</div>
-                                    {% else %}
+                                    {% elif holiday.is_off_day %}
                                     <div class="h-num today" role="img" aria-label="今日假期">🥳</div>
                                     <div class="h-unit">假期中</div>
+                                    {% else %}
+                                    <div class="h-num today" role="img" aria-label="今日节日">🎉</div>
+                                    <div class="h-unit">今日节日</div>
                                     {% endif %}
                                 {% else %}
                                 <div class="h-num {% if holiday.is_legal_holiday %}{% if holiday.days_left <= 7 %}urgent{% elif holiday.days_left <= 30 %}soon{% else %}later{% endif %}{% endif %}">{{ holiday.days_left }}</div>

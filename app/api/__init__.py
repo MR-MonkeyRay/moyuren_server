@@ -1,4 +1,4 @@
-"""API endpoints module."""
+"""API 端点模块。"""
 
 from app.api.v1 import router as v1_router
 

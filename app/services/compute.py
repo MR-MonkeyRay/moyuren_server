@@ -1,41 +1,83 @@
-"""Business computation service module."""
+"""业务计算服务模块。"""
 
 import logging
 import math
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from app import __github_url__, __version__
+from app.core.config import SOLAR_TERM_SEASONS, TemplateRenderConfig, TextLimitsConfig, ThemesConfig
 from app.services.calendar import CalendarService, get_business_timezone, now_business
 
 logger = logging.getLogger(__name__)
 
 
+def _extract_news_date(raw_data: dict[str, Any]) -> date | None:
+    """从原始新闻数据中提取日期并规范化。"""
+    news = raw_data.get("news")
+    if not isinstance(news, dict):
+        return None
+    data = news.get("data")
+    if not isinstance(data, dict):
+        return None
+    value = data.get("date")
+    if not isinstance(value, str):
+        return None
+
+    normalized = value.strip()
+    for pattern in ("%Y-%m-%d", "%Y/%m/%d", "%Y年%m月%d日"):
+        try:
+            return datetime.strptime(normalized, pattern).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _compute_data_freshness(
+    raw_data: dict[str, Any], business_date: date
+) -> dict[str, bool | str | None | list[str]]:
+    """计算模板数据的新鲜度标记。"""
+    news_date = _extract_news_date(raw_data)
+    raw_stale_sources = raw_data.get("stale_sources")
+    stale_sources = (
+        list(dict.fromkeys(item for item in raw_stale_sources if isinstance(item, str)))
+        if isinstance(raw_stale_sources, list)
+        else []
+    )
+    news_is_stale = news_date is not None and news_date != business_date
+    return {
+        "is_stale": bool(stale_sources) or news_is_stale,
+        "news_is_stale": news_is_stale,
+        "source_date": news_date.isoformat() if news_date is not None else None,
+        "stale_sources": stale_sources,
+    }
+
+
 # 时区缩写映射表（映射到 UTC 偏移）
 _TIMEZONE_ABBR_MAP: dict[str, timedelta] = {
     # 中国时区（本项目默认）
-    "CST": timedelta(hours=8),  # China Standard Time
-    "CCT": timedelta(hours=8),  # China Coast Time
-    "BJT": timedelta(hours=8),  # Beijing Time
+    "CST": timedelta(hours=8),  # 中国标准时间
+    "CCT": timedelta(hours=8),  # 中国沿海时间
+    "BJT": timedelta(hours=8),  # 北京时间
     # UTC 变体
     "UTC": timedelta(hours=0),
     "GMT": timedelta(hours=0),
     "Z": timedelta(hours=0),
     # 美国时区
-    "EST": timedelta(hours=-5),  # Eastern Standard Time
-    "EDT": timedelta(hours=-4),  # Eastern Daylight Time
-    "CDT": timedelta(hours=-5),  # Central Daylight Time
-    "MST": timedelta(hours=-7),  # Mountain Standard Time
-    "MDT": timedelta(hours=-6),  # Mountain Daylight Time
-    "PST": timedelta(hours=-8),  # Pacific Standard Time
-    "PDT": timedelta(hours=-7),  # Pacific Daylight Time
+    "EST": timedelta(hours=-5),  # 美国东部标准时间
+    "EDT": timedelta(hours=-4),  # 美国东部夏令时间
+    "CDT": timedelta(hours=-5),  # 美国中部夏令时间
+    "MST": timedelta(hours=-7),  # 美国山地标准时间
+    "MDT": timedelta(hours=-6),  # 美国山地夏令时间
+    "PST": timedelta(hours=-8),  # 美国太平洋标准时间
+    "PDT": timedelta(hours=-7),  # 美国太平洋夏令时间
     # 其他常见时区
-    "JST": timedelta(hours=9),  # Japan Standard Time
-    "KST": timedelta(hours=9),  # Korea Standard Time
-    "IST": timedelta(hours=5, minutes=30),  # India Standard Time
-    "AEST": timedelta(hours=10),  # Australian Eastern Standard Time
-    "AEDT": timedelta(hours=11),  # Australian Eastern Daylight Time
+    "JST": timedelta(hours=9),  # 日本标准时间
+    "KST": timedelta(hours=9),  # 韩国标准时间
+    "IST": timedelta(hours=5, minutes=30),  # 印度标准时间
+    "AEST": timedelta(hours=10),  # 澳大利亚东部标准时间
+    "AEDT": timedelta(hours=11),  # 澳大利亚东部夏令时间
 }
 
 
@@ -68,7 +110,7 @@ def normalize_datetime(value: str, default_tz: timezone | None = None) -> str | 
     if default_tz is None:
         biz_tz = get_business_timezone()
         offset = biz_tz.utcoffset(datetime.now(biz_tz))
-        default_tz = timezone(offset if offset else timedelta(hours=8))
+        default_tz = timezone(offset if offset is not None else timedelta(hours=8))
 
     # 尝试直接解析 ISO 格式（处理 Z 结尾）
     try:
@@ -140,18 +182,18 @@ def normalize_datetime(value: str, default_tz: timezone | None = None) -> str | 
             continue
 
     # 所有格式都无法解析
-    logger.warning(f"Failed to normalize datetime: {value}")
+    logger.warning("Failed to normalize datetime: %s", value)
     return None
 
 
 class DomainDataAggregator:
-    """Aggregate domain data from raw API responses."""
+    """从原始 API 响应中聚合领域数据。"""
 
-    # Week day mappings
+    # 星期名称映射
     _WEEK_CN = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
     _WEEK_EN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-    # Default placeholder data
+    # 默认占位数据
     _DEFAULT_GUIDE_YI = ["摸鱼", "喝茶", "休息", "学习"]
     _DEFAULT_GUIDE_JI = ["加班", "开会", "焦虑", "提需求"]
     _DEFAULT_HISTORY = "历史上的今天，世界依然在运转。在这个平凡的日子里，你也可以选择不把事情放在心上。"
@@ -163,18 +205,56 @@ class DomainDataAggregator:
         {"num": 5, "text": "工作中遇到困难时，深呼吸，放轻松。"},
     ]
 
-    def aggregate(self, raw_data: dict[str, Any]) -> dict[str, Any]:
-        """Aggregate raw API data into domain data.
+    def __init__(
+        self,
+        text_limits: TextLimitsConfig | None = None,
+        work_end_time: str | None = None,
+        themes: ThemesConfig | None = None,
+    ) -> None:
+        """使用外部文本长度限制初始化聚合器。"""
+        self._text_limits = text_limits or TextLimitsConfig()
+        self._themes = themes or ThemesConfig()
+        self._work_end_time = (
+            TemplateRenderConfig(work_end_time=work_end_time)
+            if work_end_time is not None
+            else TemplateRenderConfig()
+        ).work_end_time
+
+    @staticmethod
+    def _truncate(value: str, limit: int) -> str:
+        """截断文本，省略号也计入配置的长度限制。"""
+        if len(value) <= limit:
+            return value
+        if limit == 1:
+            return "…"
+        return f"{value[: limit - 1]}…"
+
+    def _default_news(self) -> list[dict[str, Any]]:
+        """返回符合单条长度和条数限制的默认新闻。"""
+        return [
+            {
+                "num": item["num"],
+                "text": self._truncate(str(item["text"]), self._text_limits.news_item),
+            }
+            for item in self._DEFAULT_NEWS[: self._text_limits.news_items]
+        ]
+
+    def aggregate(
+        self, raw_data: dict[str, Any], now: datetime | None = None
+    ) -> dict[str, Any]:
+        """将原始 API 数据聚合为领域数据。
 
         Args:
-            raw_data: Dictionary mapping endpoint names to their fetched data.
-                      Values can be dict, list, or None depending on endpoint.
+            raw_data: 端点名称到所获取数据的映射字典。
+                      值可为字典、列表或 None，具体取决于端点。
+            now: 本次生成可选的业务时间快照。
 
         Returns:
-            A complete template context dictionary with all required variables.
+            包含所有必需变量的完整模板上下文字典。
         """
         # 使用业务时区的当前时间（用于节假日/节气/周末判断）
-        now = now_business()
+        if now is None:
+            now = now_business()
 
         # 计算各模块数据
         news_list = self._compute_news_list(raw_data)
@@ -182,17 +262,22 @@ class DomainDataAggregator:
         holidays = self._compute_holidays(now, raw_data)
         history = self._compute_history(raw_data)
         gold_price = self._compute_gold_price(raw_data)
+        next_rest_day = self._compute_next_rest_day(now, raw_data)
+        festivals = CalendarService.get_festivals(now.date())
 
         # 检测降级模式：当多个外部数据源都失败时
         is_fallback_mode = (
-            news_list == self._DEFAULT_NEWS  # 新闻使用默认值
+            news_list == self._default_news()  # 新闻使用默认值
             and (stock_indices is None or stock_indices.get("is_data_missing"))  # 股票数据缺失
             and history.get("content") == self._DEFAULT_HISTORY  # 趣味内容使用默认值
         )
 
         return {
-            "date": self._compute_date(now),
+            "date": self._compute_date(now, festivals),
+            "theme": self._compute_theme(now, raw_data, festivals),
             "weekend": self._compute_weekend(now),
+            "next_rest_day": next_rest_day,
+            "off_work": self._compute_off_work(now, next_rest_day["is_today_off"]),
             **self._compute_progress(now),
             "solar_term": self._compute_solar_term(now),
             "guide": self._compute_guide(now),
@@ -203,7 +288,7 @@ class DomainDataAggregator:
             "kfc_content": self._compute_kfc(now, raw_data),
             "stock_indices": stock_indices,
             "gold_price": gold_price,
-            "daily_english": raw_data.get("daily_english"),
+            "daily_english": self._compute_daily_english(raw_data),
             # 降级模式标志
             "is_fallback_mode": is_fallback_mode,
             # 项目元信息
@@ -212,13 +297,13 @@ class DomainDataAggregator:
         }
 
     def _compute_stock_indices(self, raw_data: dict[str, Any]) -> dict[str, Any] | None:
-        """Compute stock indices data for template.
+        """计算模板所需的股票指数数据。
 
         Args:
-            raw_data: Raw data dictionary.
+            raw_data: 原始数据字典。
 
         Returns:
-            Dictionary with stock indices or None.
+            股票指数数据字典或 None。
         """
         data = raw_data.get("stock_indices")
         # 增加类型校验
@@ -246,7 +331,7 @@ class DomainDataAggregator:
             if not isinstance(item, dict):
                 continue
 
-            # Format price with proper decimal places and type safety
+            # 安全转换价格类型，并按指定小数位格式化
             price = item.get("price")
             if price is not None:
                 try:
@@ -256,7 +341,7 @@ class DomainDataAggregator:
             else:
                 price_str = "--"
 
-            # Format change percentage with type safety
+            # 安全转换涨跌幅类型并格式化为百分比
             change_pct = item.get("change_pct")
             if change_pct is not None:
                 try:
@@ -291,17 +376,17 @@ class DomainDataAggregator:
             "indices": items,
             "updated": data.get("updated"),
             "is_stale": data.get("is_stale", False),
-            "is_data_missing": False,  # 数据正常获取
+            "is_data_missing": bool(data.get("is_data_missing")) or not items,
         }
 
     def _compute_gold_price(self, raw_data: dict[str, Any]) -> dict[str, Any] | None:
-        """Compute gold price data for template.
+        """计算模板所需的金价数据。
 
         Args:
-            raw_data: Raw data dictionary.
+            raw_data: 原始数据字典。
 
         Returns:
-            Dictionary with gold price info or None.
+            金价信息字典或 None。
         """
         data = raw_data.get("gold_price")
         if not isinstance(data, dict):
@@ -320,72 +405,153 @@ class DomainDataAggregator:
                 "trend": trend,
             }
         except (KeyError, ValueError, TypeError) as e:
-            logging.getLogger(__name__).debug(f"Gold price compute failed: {e}")
+            logging.getLogger(__name__).debug("Gold price compute failed: %s", e)
             return None
 
     def _compute_kfc(self, now: datetime, raw_data: dict[str, Any]) -> dict[str, Any] | None:
-        """Compute KFC content if available and it's Thursday.
+        """仅在周四且有内容时生成 KFC 文案数据。
 
         Args:
-            now: Current datetime.
-            raw_data: Raw data dictionary.
+            now: 当前日期时间。
+            raw_data: 原始数据字典。
 
         Returns:
-            Dictionary with kfc content or None.
+            KFC 文案字典或 None。
         """
-        # 0=Mon, ... 3=Thu
+        # 0=周一，……，3=周四
         if now.weekday() == 3:
             content = raw_data.get("kfc_copy")
             if content:
-                # 不截断文案，页面自适应内容高度
-                return {"title": "CRAZY THURSDAY", "sub_title": "V我50", "content": content}
+                text = self._truncate(str(content), self._text_limits.kfc_text)
+                return {"title": "CRAZY THURSDAY", "sub_title": "V我50", "content": text}
         return None
 
-    def _compute_date(self, now: datetime) -> dict[str, Any]:
-        """Compute date information including lunar calendar data.
+    def _compute_daily_english(self, raw_data: dict[str, Any]) -> dict[str, Any] | None:
+        """复制每日英语数据，并限制外部文本字段的长度。"""
+        daily_english = raw_data.get("daily_english")
+        if not isinstance(daily_english, dict):
+            return None
+
+        result = dict(daily_english)
+        definition = result.get("definition")
+        if isinstance(definition, str):
+            result["definition"] = self._truncate(
+                definition, self._text_limits.daily_english_definition
+            )
+        translation = result.get("translation")
+        if isinstance(translation, str):
+            result["translation"] = self._truncate(
+                translation, self._text_limits.daily_english_translation
+            )
+        return result
+
+    def _compute_theme(
+        self,
+        now: datetime,
+        raw_data: dict[str, Any],
+        festivals: dict[str, str | None],
+    ) -> dict[str, str | None]:
+        """使用同一业务日期，依次选择法定休假、当日节日、春节期间和节气季节。"""
+        default: dict[str, str | None] = {"name": "default", "source": None, "kind": "default"}
+        if not self._themes.enabled:
+            return default
+
+        today = now.date()
+        mapping = self._themes.festival_themes
+        raw_holidays = raw_data.get("holidays")
+        if isinstance(raw_holidays, list):
+            for holiday in raw_holidays:
+                if not isinstance(holiday, dict):
+                    continue
+                name = holiday.get("name")
+                if not isinstance(name, str) or name not in mapping:
+                    continue
+                off_value = holiday.get("is_off_day", True)
+                is_off = (
+                    off_value.lower() not in ["false", "0", ""]
+                    if isinstance(off_value, str)
+                    else off_value is None or bool(off_value)
+                )
+                if not is_off:
+                    continue
+                try:
+                    start = date.fromisoformat(holiday["start_date"])
+                    end = date.fromisoformat(holiday.get("end_date") or holiday["start_date"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if start <= today <= end:
+                    return {"name": mapping[name], "source": name, "kind": "festival"}
+
+        # tyme 的节日字符串带日期前缀，使用末尾名称，不使用经过长度截断的展示字段。
+        for key in ("festival_lunar", "festival_solar"):
+            festival = festivals.get(key)
+            if isinstance(festival, str):
+                name = festival.rsplit(" ", 1)[-1]
+                if name in mapping:
+                    return {"name": mapping[name], "source": name, "kind": "festival"}
+
+        if "春节" in mapping and CalendarService.is_spring_festival_period(today):
+            return {"name": mapping["春节"], "source": "春节", "kind": "festival"}
+
+        if self._themes.season_themes:
+            term = CalendarService.get_current_solar_term(today)
+            season = SOLAR_TERM_SEASONS.get(term) if term is not None else None
+            if season is not None:
+                return {"name": season, "source": term, "kind": "season"}
+        return default
+
+    def _compute_date(
+        self, now: datetime, festivals: dict[str, str | None] | None = None
+    ) -> dict[str, Any]:
+        """计算日期信息，包括农历数据。
 
         Args:
-            now: Current datetime in Shanghai timezone.
+            now: 业务时区的当前日期时间。
 
         Returns:
-            Date information dictionary with both gregorian and lunar data.
+            同时包含公历和农历数据的日期信息字典。
         """
         weekday = now.weekday()
         today = now.date()
 
-        # Get lunar calendar info from CalendarService
+        # 从 CalendarService 获取农历信息
         lunar_info = CalendarService.get_lunar_info(today)
-        festivals = CalendarService.get_festivals(today)
+        if festivals is None:
+            festivals = CalendarService.get_festivals(today)
 
         return {
-            # Existing fields (backwards compatible)
             "year_month": now.strftime("%Y.%m"),
             "day": str(now.day),
             "week_cn": self._WEEK_CN[weekday],
             "week_en": self._WEEK_EN[weekday],
             "lunar_year": lunar_info["lunar_year"],
             "lunar_date": lunar_info["lunar_date"],
-            # New fields
             "zodiac": lunar_info["zodiac"],
             "constellation": CalendarService.get_constellation(today),
             "moon_phase": CalendarService.get_moon_phase(today),
-            "festival_solar": festivals["festival_solar"],
-            "festival_lunar": festivals["festival_lunar"],
-            "legal_holiday": festivals["legal_holiday"],
+            "festival_solar": self._truncate_holiday_name(festivals["festival_solar"]),
+            "festival_lunar": self._truncate_holiday_name(festivals["festival_lunar"]),
+            "legal_holiday": self._truncate_holiday_name(festivals["legal_holiday"]),
             "is_holiday": CalendarService.is_holiday(today),
         }
 
+    def _truncate_holiday_name(self, value: Any) -> Any:
+        """限制节假日名称长度，同时保留空值。"""
+        if isinstance(value, str):
+            return self._truncate(value, self._text_limits.holiday_name)
+        return value
+
     def _compute_weekend(self, now: datetime) -> dict[str, int | bool]:
-        """Compute days until weekend.
+        """计算距离周末的天数。
 
         Args:
-            now: Current datetime.
+            now: 当前日期时间。
 
         Returns:
-            Dictionary with days_left until weekend and is_weekend flag.
+            包含距周末天数 days_left 和周末标记 is_weekend 的字典。
         """
         weekday = now.weekday()
-        # Saturday = 5, Sunday = 6
+        # 周六 = 5，周日 = 6
         is_weekend = weekday >= 5
         if is_weekend:
             days_left = 0
@@ -393,14 +559,93 @@ class DomainDataAggregator:
             days_left = 5 - weekday
         return {"days_left": days_left, "is_weekend": is_weekend}
 
+    def _compute_next_rest_day(
+        self, now: datetime, raw_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """按法定假期与补班安排寻找今天之后的下一个休息日。"""
+        raw_holidays = raw_data.get("holidays")
+        raw_workdays = raw_data.get("make_up_workdays")
+        make_up_workdays = (
+            {value for value in raw_workdays if isinstance(value, str)}
+            if isinstance(raw_workdays, list)
+            else set()
+        )
+        ranges: list[tuple[date, date, bool, str | None]] = []
+        if isinstance(raw_holidays, list):
+            for holiday in raw_holidays:
+                if not isinstance(holiday, dict):
+                    continue
+                try:
+                    start = date.fromisoformat(holiday["start_date"])
+                    end = date.fromisoformat(holiday.get("end_date") or holiday["start_date"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                off_value = holiday.get("is_off_day", True)
+                is_off = (
+                    off_value.lower() not in ["false", "0", ""]
+                    if isinstance(off_value, str)
+                    else off_value is None or bool(off_value)
+                )
+                name = holiday.get("name")
+                ranges.append((start, end, is_off, name if isinstance(name, str) else None))
+
+        def day_status(target: date) -> tuple[bool, str | None]:
+            """依次采用 holiday-cn 休假、补班日期，再复用日历服务规则。"""
+            matching = [entry for entry in ranges if entry[0] <= target <= entry[1]]
+            for _, _, is_off, name in matching:
+                if is_off:
+                    return True, self._truncate_holiday_name(name)
+            if target.isoformat() in make_up_workdays:
+                return False, None
+            if isinstance(raw_holidays, list):
+                is_off, name = CalendarService.get_day_off_status(target)
+                return is_off, self._truncate_holiday_name(name)
+            # 无节假日数据时保持普通周末降级逻辑。
+            return target.weekday() >= 5, None
+
+        today = now.date()
+        is_today_off, today_name = day_status(today)
+        for days_left in range(1, 32):
+            candidate = today + timedelta(days=days_left)
+            is_off, name = day_status(candidate)
+            if is_off:
+                break
+        else:
+            # 限制检索范围；异常连续工作安排退回下一个普通周六。
+            days_left = (5 - today.weekday()) % 7 or 7
+            candidate = today + timedelta(days=days_left)
+            name = None
+        return {
+            "date": candidate.isoformat(),
+            "days_left": days_left,
+            "is_today_off": is_today_off,
+            "name": name,
+            "today_name": today_name,
+        }
+
+    def _compute_off_work(self, now: datetime, is_today_off: bool) -> dict[str, Any] | None:
+        """使用本次生成的业务时间快照计算下班倒计时。"""
+        if is_today_off:
+            return None
+        hour, minute = (int(part) for part in self._work_end_time.split(":"))
+        end = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if now >= end:
+            return {"done": True}
+        minutes_left = math.ceil((end - now).total_seconds() / 60)
+        return {
+            "hours": minutes_left // 60,
+            "minutes": minutes_left % 60,
+            "end_time": self._work_end_time,
+        }
+
     def _compute_progress(self, now: datetime) -> dict[str, float]:
-        """Compute week/month/year progress percentages.
+        """计算周、月、年的进度百分比。
 
         Args:
-            now: Current datetime in business timezone.
+            now: 业务时区的当前日期时间。
 
         Returns:
-            Dictionary with week_progress, month_progress, year_progress in [0.0, 100.0].
+            包含 week_progress、month_progress、year_progress 的字典，值均在 [0.0, 100.0] 内。
         """
         now_ts = now.timestamp()
 
@@ -444,92 +689,95 @@ class DomainDataAggregator:
         }
 
     def _compute_solar_term(self, now: datetime) -> dict[str, Any]:
-        """Compute next solar term using CalendarService.
+        """通过 CalendarService 获取当日或下一个节气的信息。
 
         Args:
-            now: Current datetime.
+            now: 当前日期时间。
 
         Returns:
-            Solar term information dictionary.
+            节气信息字典。
         """
         return CalendarService.get_solar_term_info(now.date())
 
     def _compute_guide(self, now: datetime) -> dict[str, list[str]]:
-        """Compute yi/ji guide using CalendarService.
+        """通过 CalendarService 计算宜忌指南。
 
         Args:
-            now: Current datetime.
+            now: 当前日期时间。
 
         Returns:
-            Dictionary with yi and ji lists.
+            包含宜（yi）和忌（ji）列表的字典。
         """
         yi_ji = CalendarService.get_yi_ji(now.date())
 
-        # Use CalendarService data if available, otherwise fall back to defaults
+        # 优先使用 CalendarService 数据，不可用时回退到默认值
         yi = yi_ji["yi"][:4] if yi_ji["yi"] else self._DEFAULT_GUIDE_YI[:2]
         ji = yi_ji["ji"][:4] if yi_ji["ji"] else self._DEFAULT_GUIDE_JI[:2]
 
         return {"yi": yi, "ji": ji}
 
     def _compute_history(self, raw_data: dict[str, Any]) -> dict[str, str]:
-        """Extract fun content for display.
+        """提取用于展示的趣味内容。
 
         Args:
-            raw_data: Raw data dictionary containing 'fun_content' key.
+            raw_data: 包含 fun_content 键的原始数据字典。
 
         Returns:
-            Dictionary with 'title' and 'content' keys.
+            包含 title 和 content 键的字典；源数据提供 type 时也一并返回。
         """
         fun_content = raw_data.get("fun_content")
         if fun_content and isinstance(fun_content, dict):
-            return {
-                "title": fun_content.get("title") or "🐟 摸鱼小贴士",
-                "content": fun_content.get("content") or self._DEFAULT_HISTORY,
+            raw_title = fun_content.get("title") or "🐟 摸鱼小贴士"
+            raw_content = fun_content.get("content") or self._DEFAULT_HISTORY
+            history = {
+                "title": self._truncate(str(raw_title), self._text_limits.fun_content),
+                "content": self._truncate(str(raw_content), self._text_limits.fun_content),
             }
+            content_type = fun_content.get("type")
+            if isinstance(content_type, str) and content_type:
+                history["type"] = content_type
+            return history
         return {"title": "🐟 摸鱼小贴士", "content": self._DEFAULT_HISTORY}
 
     def _compute_news_list(self, raw_data: dict[str, Any]) -> list[dict[str, Any]]:
-        """Extract or generate news list.
+        """提取或生成新闻列表。
 
         Args:
-            raw_data: Raw API data dictionary.
+            raw_data: 原始 API 数据字典。
 
         Returns:
-            List of news items.
+            新闻条目列表。
         """
         news_data = raw_data.get("news")
-        # Handle new API format: { code, data: { news: [...] } }
+        # 获取器已将主源、公共实例和镜像响应统一为此封装结构。
         if isinstance(news_data, dict):
             data = news_data.get("data")
             if isinstance(data, dict):
                 news_items = data.get("news")
                 if isinstance(news_items, list):
-                    return [{"num": i + 1, "text": str(item)} for i, item in enumerate(news_items)]
-        # Handle legacy format: [{ text: "..." }, ...]
-        if news_data and isinstance(news_data, list):
-            return [
-                {
-                    "num": i + 1,
-                    "text": item.get("text", "") if isinstance(item, dict) else str(item),
-                }
-                for i, item in enumerate(news_data)
-            ]
-        return self._DEFAULT_NEWS
+                    return [
+                        {
+                            "num": i + 1,
+                            "text": self._truncate(str(item), self._text_limits.news_item),
+                        }
+                        for i, item in enumerate(news_items[: self._text_limits.news_items])
+                    ]
+        return self._default_news()
 
     def _compute_news_meta(self, raw_data: dict[str, Any]) -> dict[str, Any]:
-        """Extract news API metadata.
+        """提取新闻 API 元数据。
 
         Args:
-            raw_data: Raw API data dictionary.
+            raw_data: 原始 API 数据字典。
 
         Returns:
-            News metadata dictionary.
+            新闻元数据字典。
         """
         news_data = raw_data.get("news")
         if isinstance(news_data, dict):
             data = news_data.get("data")
             if isinstance(data, dict):
-                # 兼容新旧字段名：优先使用 updated，回退到 api_updated
+                # 优先使用来源发布时间；API 刷新时间是上游的另一个字段。
                 updated_str = data.get("updated") or data.get("api_updated")
                 # 规范化为 RFC3339 格式
                 normalized_updated = normalize_datetime(updated_str) if updated_str else None
@@ -544,12 +792,12 @@ class DomainDataAggregator:
         """整合三种数据源的节日数据。
 
         Args:
-            now: Current datetime.
-            raw_data: Raw API data dictionary, expects "holidays" key from HolidayService.
+            now: 当前日期时间。
+            raw_data: 原始 API 数据字典，预期包含 HolidayService 提供的 holidays 键。
 
         Returns:
-            List of holiday dictionaries with name, start_date, end_date, duration,
-            days_left, is_legal_holiday, color.
+            节日字典列表，每项包含 name、start_date、end_date、duration、
+            days_left、is_legal_holiday、color。
         """
         today = now.date()
 
@@ -631,7 +879,7 @@ class DomainDataAggregator:
                     else:
                         is_off_day = bool(is_off_day_raw) if is_off_day_raw is not None else True
 
-                    name_map[name] = {
+                    candidate = {
                         "name": name,
                         "start_date": start_date,
                         "end_date": h.get("end_date") or start_date,
@@ -641,6 +889,9 @@ class DomainDataAggregator:
                         "color": "#E67E22",
                         "is_off_day": is_off_day,
                     }
+                    existing = name_map.get(name)
+                    if existing is None or days_left < existing["days_left"]:
+                        name_map[name] = candidate
 
         # 检查名称是否与已有法定假日重复（基于核心词匹配）
         # 白名单：这些名称不进行规范化处理
@@ -675,87 +926,130 @@ class DomainDataAggregator:
                     return True
             return False
 
+        def merge_contained_festival(name: str, solar_date: Any) -> bool:
+            """将假期区间内的不同名节日并入法定休假行，保留列表名额。"""
+            try:
+                festival_date = date.fromisoformat(solar_date)
+            except (TypeError, ValueError):
+                return False
+            for holiday in name_map.values():
+                if not holiday["is_legal_holiday"] or not holiday["is_off_day"]:
+                    continue
+                try:
+                    start = date.fromisoformat(holiday["start_date"])
+                    end = date.fromisoformat(holiday["end_date"])
+                except (TypeError, ValueError):
+                    continue
+                if start <= festival_date <= end:
+                    names = holiday["name"].split(" · ")
+                    if not any(normalize_name(item) == normalize_name(name) for item in names):
+                        holiday["name"] = f"{holiday['name']} · {name}"
+                    return True
+            return False
+
         # 加入农历节日（如果该名称没有法定假日）
         for f in lunar_festivals:
             if not isinstance(f, dict):
                 continue
-            name = f.get("name")
+            festival_name = f.get("name")
             solar_date = f.get("solar_date")
-            days_left = f.get("days_left")
+            festival_days_left = f.get("days_left")
             # 检查必需字段
-            if not name or not solar_date or days_left is None:
+            if (
+                not isinstance(festival_name, str)
+                or not festival_name
+                or not solar_date
+                or festival_days_left is None
+            ):
                 continue
 
             # 确保 days_left 为 int 类型
             try:
-                days_left = int(days_left)
+                days_left = int(festival_days_left)
             except (TypeError, ValueError):
                 continue
 
-            if name not in name_map and not is_duplicate_name(name):
-                name_map[name] = {
-                    "name": name,
+            if merge_contained_festival(festival_name, solar_date):
+                continue
+            if festival_name not in name_map and not is_duplicate_name(festival_name):
+                name_map[festival_name] = {
+                    "name": festival_name,
                     "start_date": solar_date,
                     "end_date": solar_date,
                     "duration": 1,
                     "days_left": days_left,
                     "is_legal_holiday": False,
                     "color": None,
-                    "is_off_day": True,
+                    "is_off_day": False,
                 }
 
         # 加入公历节日（如果该名称没有）
         for f in solar_festivals:
             if not isinstance(f, dict):
                 continue
-            name = f.get("name")
+            festival_name = f.get("name")
             solar_date = f.get("solar_date")
-            days_left = f.get("days_left")
+            festival_days_left = f.get("days_left")
             # 检查必需字段
-            if not name or not solar_date or days_left is None:
+            if (
+                not isinstance(festival_name, str)
+                or not festival_name
+                or not solar_date
+                or festival_days_left is None
+            ):
                 continue
 
             # 确保 days_left 为 int 类型
             try:
-                days_left = int(days_left)
+                days_left = int(festival_days_left)
             except (TypeError, ValueError):
                 continue
 
-            if name not in name_map and not is_duplicate_name(name):
-                name_map[name] = {
-                    "name": name,
+            if merge_contained_festival(festival_name, solar_date):
+                continue
+            if festival_name not in name_map and not is_duplicate_name(festival_name):
+                name_map[festival_name] = {
+                    "name": festival_name,
                     "start_date": solar_date,
                     "end_date": solar_date,
                     "duration": 1,
                     "days_left": days_left,
                     "is_legal_holiday": False,
                     "color": None,
-                    "is_off_day": True,
+                    "is_off_day": False,
                 }
 
         # 按 days_left 排序并返回前10个
         result = sorted(name_map.values(), key=lambda x: x["days_left"])
+        for holiday in result:
+            holiday["name"] = self._truncate(
+                str(holiday["name"]), self._text_limits.holiday_name
+            )
         return result[:10]
 
 
 class TemplateAdapter:
-    """Template adapter for filling defaults and shaping output."""
+    """补齐默认值并整理输出结构的模板适配器。"""
+
+    def __init__(self, text_limits: TextLimitsConfig | None = None) -> None:
+        """使用与领域数据聚合相同的限制初始化适配器。"""
+        self._text_limits = text_limits or TextLimitsConfig()
 
     def adapt(self, domain_data: dict[str, Any]) -> dict[str, Any]:
-        """Adapt domain data for template rendering.
+        """将领域数据适配为模板渲染数据。
 
         Args:
-            domain_data: Domain data from DomainDataAggregator.
+            domain_data: DomainDataAggregator 产出的领域数据。
 
         Returns:
-            Adapted data with defaults filled in.
+            已补齐默认值的适配数据。
         """
         data = dict(domain_data)
 
         if not data.get("history"):
             data["history"] = {"title": "🐟 摸鱼小贴士", "content": DomainDataAggregator._DEFAULT_HISTORY}
         if not data.get("news_list"):
-            data["news_list"] = DomainDataAggregator._DEFAULT_NEWS
+            data["news_list"] = DomainDataAggregator(self._text_limits)._default_news()
         if data.get("news_meta") is None:
             data["news_meta"] = {}
         if data.get("holidays") is None:
@@ -796,40 +1090,54 @@ class TemplateAdapter:
 
 
 class DataComputer:
-    """Backward compatible wrapper for data computation."""
+    """基于同一个业务时间快照计算模板上下文与数据新鲜度。"""
 
     def __init__(
         self,
         aggregator: DomainDataAggregator | None = None,
         adapter: TemplateAdapter | None = None,
+        text_limits: TextLimitsConfig | None = None,
+        work_end_time: str | None = None,
+        themes: ThemesConfig | None = None,
     ) -> None:
-        """Initialize DataComputer with optional aggregator and adapter.
+        """初始化 DataComputer，可选传入聚合器和适配器。
 
         Args:
-            aggregator: Domain data aggregator instance.
-            adapter: Template adapter instance.
+            aggregator: 领域数据聚合器实例。
+            adapter: 模板适配器实例。
+            text_limits: 外部文本的长度限制。
+            work_end_time: 配置的工作日下班时间，使用业务时区，格式为 HH:MM。
+            themes: 节日及节气季节的主题选择规则。
         """
-        self._aggregator = aggregator or DomainDataAggregator()
-        self._adapter = adapter or TemplateAdapter()
+        self._aggregator = aggregator or DomainDataAggregator(
+            text_limits=text_limits, work_end_time=work_end_time, themes=themes
+        )
+        self._adapter = adapter or TemplateAdapter(text_limits=text_limits)
 
-    def compute(self, raw_data: dict[str, Any]) -> dict[str, Any]:
-        """Compute template context from raw data.
+    def compute(
+        self, raw_data: dict[str, Any], now: datetime | None = None
+    ) -> dict[str, Any]:
+        """根据原始数据计算模板上下文。
 
         Args:
-            raw_data: Raw API data dictionary.
+            raw_data: 原始 API 数据字典。
+            now: 本次生成可选的业务时间快照。
 
         Returns:
-            Template context dictionary.
+            模板上下文字典。
         """
-        domain_data = self._aggregator.aggregate(raw_data)
-        return self._adapter.adapt(domain_data)
+        snapshot = now or now_business()
+        domain_data = self._aggregator.aggregate(raw_data, now=snapshot)
+        template_data = self._adapter.adapt(domain_data)
+        template_data["data_freshness"] = _compute_data_freshness(raw_data, snapshot.date())
+        return template_data
 
     @property
     def aggregator(self) -> DomainDataAggregator:
-        """Get the domain data aggregator."""
+        """获取领域数据聚合器。"""
         return self._aggregator
 
     @property
     def adapter(self) -> TemplateAdapter:
-        """Get the template adapter."""
+        """获取模板适配器。"""
         return self._adapter

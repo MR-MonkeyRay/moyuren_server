@@ -1,35 +1,55 @@
-"""Configuration management module."""
+"""配置管理模块。"""
 
-import re
 import logging
+import os
+import re
+import threading
+import time
 from pathlib import Path
-from typing import Annotated, Any, Literal, TypeVar
+from typing import Annotated, Any, Literal, TypeVar, cast
+from urllib.parse import urlsplit
 
 import yaml
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    PrivateAttr,
+    SecretStr,
     ValidationError,
     ValidationInfo,
     field_validator,
     model_validator,
 )
+from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
+    EnvSettingsSource,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
 
-# Pattern for valid template names: alphanumeric, underscore, hyphen only
+# 合法模板名仅允许字母、数字、下划线和连字符
 _TEMPLATE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 _FUN_CONTENT_ENDPOINT_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _DAILY_TIME_PATTERN = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 _UTC_OFFSET_PATTERN = re.compile(r"^UTC([+-])(\d{1,2})(?::(\d{2}))?$", re.IGNORECASE)
+_STOCK_INDEX_SECID_PATTERN = re.compile(r"^\d+\.[A-Za-z0-9]+$")
+_HOST_LABEL_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def _normalize_hostname(value: str) -> str:
+    """归一化裸主机名，拒绝 URL、端口、通配符与空标签。"""
+    hostname = value.strip().lower()
+    if len(hostname) > 253 or not all(
+        _HOST_LABEL_PATTERN.fullmatch(label) for label in hostname.split(".")
+    ):
+        raise ValueError("must be a bare hostname without scheme, port or path")
+    return hostname
 
 
 class ServerConfig(BaseModel):
-    """Server configuration."""
+    """服务器配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -39,7 +59,7 @@ class ServerConfig(BaseModel):
 
 
 class PathsConfig(BaseModel):
-    """Path configuration."""
+    """路径配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -47,7 +67,7 @@ class PathsConfig(BaseModel):
 
 
 class SchedulerConfig(BaseModel):
-    """Scheduler configuration."""
+    """调度器配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -113,11 +133,12 @@ class SchedulerConfig(BaseModel):
 
 
 class CacheConfig(BaseModel):
-    """Output cache configuration."""
+    """输出缓存配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
     retain_days: int = 30
+    max_images_per_template_per_day: int = 3
 
     @field_validator("retain_days")
     @classmethod
@@ -137,24 +158,43 @@ class CacheConfig(BaseModel):
             raise ValueError("retain_days must be positive")
         return value
 
+    @field_validator("max_images_per_template_per_day")
+    @classmethod
+    def validate_max_images_per_template_per_day(cls, value: int) -> int:
+        """校验每个模板每天保留的最大图片数.
+
+        Args:
+            value: 每个模板每天保留的最大图片数.
+
+        Returns:
+            通过校验的最大图片数.
+
+        Raises:
+            ValueError: 最大图片数小于 1 时抛出.
+        """
+        if value < 1:
+            raise ValueError("max_images_per_template_per_day must be at least 1")
+        return value
+
 
 class OpsConfig(BaseModel):
-    """Operations configuration."""
+    """运维配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
     api_key: str = ""
+    preview_wait_timeout_sec: float = Field(default=2.0, gt=0, allow_inf_nan=False)
 
 
 # ---------------------------------------------------------------------------
-# Data Sources — Discriminated Union
+# 数据源 — 可辨识联合类型
 # ---------------------------------------------------------------------------
 
 
 class NetworkConfig(BaseModel):
-    """Global network configuration."""
+    """全局网络配置。"""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
     ghproxy_urls: list[str] = Field(default_factory=list)
     proxy_url: str | None = None
@@ -179,12 +219,13 @@ class NetworkConfig(BaseModel):
         for url in value:
             if not url.startswith(("http://", "https://")):
                 logging.getLogger(__name__).warning(
-                    f"Invalid ghproxy_url '{redact_url(url)}': must start with http:// or https://, skipping"
+                    "Invalid ghproxy_url '%s': must start with http:// or https://, skipping",
+                    redact_url(url),
                 )
                 continue
             if "?" in url or "#" in url:
                 logging.getLogger(__name__).warning(
-                    f"Invalid ghproxy_url '{redact_url(url)}': query/fragment not allowed, skipping"
+                    "Invalid ghproxy_url '%s': query/fragment not allowed, skipping", redact_url(url)
                 )
                 continue
             valid_urls.append(url)
@@ -193,10 +234,12 @@ class NetworkConfig(BaseModel):
     @field_validator("proxy_url")
     @classmethod
     def validate_proxy_url(cls, value: str | None) -> str | None:
-        """Validate optional outbound proxy URL."""
-        from app.core.network import normalize_proxy_url
+        """校验可选的出站代理 URL。"""
+        from app.core.network import normalize_proxy_url, playwright_proxy_config
 
-        return normalize_proxy_url(value)
+        normalized_proxy_url = normalize_proxy_url(value)
+        playwright_proxy_config(normalized_proxy_url)
+        return normalized_proxy_url
 
 
 class InstancesConfig(BaseModel):
@@ -211,6 +254,22 @@ class InstancesConfig(BaseModel):
 
     list_url: str | None = None
     urls: list[str] | None = None
+    allowlist: list[str] | None = None
+
+    @field_validator("allowlist")
+    @classmethod
+    def validate_allowlist(cls, value: list[str] | None) -> list[str] | None:
+        """校验发现实例白名单；*.suffix 仅匹配子域名，不含 suffix 本身。"""
+        if value is None:
+            return None
+        normalized: list[str] = []
+        for entry in value:
+            pattern = entry.strip().lower()
+            if pattern.startswith("*."):
+                normalized.append("*." + _normalize_hostname(pattern[2:]))
+            else:
+                normalized.append(_normalize_hostname(pattern))
+        return normalized
 
     @field_validator("urls")
     @classmethod
@@ -230,7 +289,7 @@ class InstancesConfig(BaseModel):
 
 
 class DataSourceBase(BaseModel):
-    """Base model for all data sources."""
+    """所有数据源的基础模型。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -258,7 +317,7 @@ class DataSourceBase(BaseModel):
 
 
 class NewsSource(DataSourceBase):
-    """News data source configuration."""
+    """新闻数据源配置。"""
 
     type: Literal["news"] = "news"
     url: str
@@ -284,7 +343,7 @@ class NewsSource(DataSourceBase):
 
 
 class FunContentEndpoint(BaseModel):
-    """Fun content API endpoint configuration."""
+    """趣味内容 API 端点配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -331,7 +390,7 @@ class FunContentEndpoint(BaseModel):
 
 
 class FunContentSource(DataSourceBase):
-    """Fun content data source configuration."""
+    """趣味内容数据源配置。"""
 
     type: Literal["fun_content"] = "fun_content"
     endpoints: list[FunContentEndpoint]
@@ -358,7 +417,7 @@ class FunContentSource(DataSourceBase):
 
 
 class CrazyThursdaySource(DataSourceBase):
-    """KFC crazy Thursday data source configuration."""
+    """KFC 疯狂星期四数据源配置。"""
 
     type: Literal["crazy_thursday"] = "crazy_thursday"
     url: str
@@ -383,52 +442,38 @@ class CrazyThursdaySource(DataSourceBase):
 
 
 class HolidaySource(DataSourceBase):
-    """Holiday data source configuration."""
+    """节假日数据源配置。"""
 
     type: Literal["holiday"] = "holiday"
 
-    @model_validator(mode="before")
-    @classmethod
-    def migrate_mirror_urls(cls, data: Any) -> Any:
-        """兼容并移除已废弃的节假日镜像配置.
-
-        Args:
-            data: Pydantic 传入的原始配置数据.
-
-        Returns:
-            移除 mirror_urls 后的原始配置数据, 或非 dict 数据原样返回.
-
-        Side Effects:
-            检测到 mirror_urls 时写入弃用 warning 日志并从数据中移除该字段.
-        """
-        if isinstance(data, dict) and "mirror_urls" in data:
-            logging.getLogger(__name__).warning(
-                "HolidaySource.mirror_urls is deprecated. "
-                "Use top-level network.ghproxy_urls instead."
-            )
-            data.pop("mirror_urls")
-        return data
-
 
 class SQLiteBackendConfig(BaseModel):
-    """SQLite dictionary backend configuration."""
+    """SQLite 词典后端配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["sqlite"] = "sqlite"
-    db_path: str = "cache/ecdict/stardict.db"
+    db_path: str = "ecdict/stardict.db"
     download_url: str = "https://github.com/skywind3000/ECDICT/releases/download/1.0.28/ecdict-sqlite-28.zip"
     checksum_sha256: str = ""
 
+    def resolve_db_path(self, cache_dir: str | Path) -> Path:
+        """解析绝对数据库路径或相对于缓存根目录的路径.
 
-DictBackendConfig = Annotated[
-    SQLiteBackendConfig,  # Future: | CsvBackendConfig | PostgresBackendConfig
-    Field(discriminator="type"),
-]
+        Args:
+            cache_dir: 配置中的缓存根目录.
+
+        Returns:
+            绝对数据库路径，或基于缓存根目录的相对路径.
+        """
+        db_path = Path(self.db_path)
+        if db_path.is_absolute():
+            return db_path
+        return Path(cache_dir) / db_path
 
 
 class DailyEnglishSource(DataSourceBase):
-    """Daily English word data source configuration."""
+    """每日英语单词数据源配置。"""
 
     type: Literal["daily_english"] = "daily_english"
     enabled: bool = True
@@ -436,7 +481,7 @@ class DailyEnglishSource(DataSourceBase):
     difficulty_range: list[int] = Field(default_factory=lambda: [3, 5])
     max_retries: int = 10
     api_failure_threshold: int = 3
-    backend: DictBackendConfig = Field(default_factory=SQLiteBackendConfig)
+    backend: SQLiteBackendConfig = Field(default_factory=SQLiteBackendConfig)
 
     @field_validator("difficulty_range")
     @classmethod
@@ -513,12 +558,49 @@ class DailyEnglishSource(DataSourceBase):
         return value
 
 
+class StockIndexItem(BaseModel):
+    """规范化的股票指数配置项。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    secid: str
+    code: str = ""
+    name: str
+    market: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def derive_code(cls, data: Any) -> Any:
+        """校验 secid 格式并派生指数代码.
+
+        Args:
+            data: Pydantic 传入的原始配置数据.
+
+        Returns:
+            包含派生 code 字段的配置数据.
+
+        Raises:
+            ValueError: secid 格式不符合要求时抛出.
+        """
+        if not isinstance(data, dict):
+            return data
+        normalized = dict(data)
+        secid = normalized.get("secid")
+        if not isinstance(secid, str) or not _STOCK_INDEX_SECID_PATTERN.fullmatch(secid):
+            raise ValueError(
+                "secid must match '<market_prefix>.<code>' "
+                "using only letters and digits"
+            )
+        normalized["code"] = secid.split(".", 1)[1]
+        return normalized
+
+
 class StockIndexSource(DataSourceBase):
-    """Stock index data source configuration."""
+    """股票指数数据源配置。"""
 
     type: Literal["stock_index"] = "stock_index"
     quote_url: str
-    secids: list[str]
+    secids: list[StockIndexItem] = Field(min_length=1)
     market_timezones: dict[str, str]
     cache_ttl_sec: int = 60
 
@@ -540,24 +622,6 @@ class StockIndexSource(DataSourceBase):
             raise ValueError("quote_url cannot be empty")
         return value
 
-    @field_validator("secids")
-    @classmethod
-    def validate_secids(cls, value: list[str]) -> list[str]:
-        """校验股票指数 secid 列表非空.
-
-        Args:
-            value: 股票指数 secid 列表.
-
-        Returns:
-            原始 secid 列表.
-
-        Raises:
-            ValueError: 列表为空时抛出.
-        """
-        if not value:
-            raise ValueError("secids cannot be empty")
-        return value
-
     @field_validator("market_timezones")
     @classmethod
     def validate_market_timezones(cls, value: dict[str, str]) -> dict[str, str]:
@@ -575,6 +639,28 @@ class StockIndexSource(DataSourceBase):
         if not value:
             raise ValueError("market_timezones cannot be empty")
         return value
+
+    @model_validator(mode="after")
+    def validate_stock_indices(self) -> "StockIndexSource":
+        """校验指数代码唯一且市场已配置时区.
+
+        Returns:
+            通过校验的数据源配置.
+
+        Raises:
+            ValueError: 指数代码重复或市场缺少时区配置时抛出.
+        """
+        seen_codes: set[str] = set()
+        for item in self.secids:
+            if item.code in seen_codes:
+                raise ValueError(f"duplicate stock index code: {item.code}")
+            seen_codes.add(item.code)
+            if item.market not in self.market_timezones:
+                raise ValueError(
+                    f"stock index market '{item.market}' must be a key "
+                    "of market_timezones"
+                )
+        return self
 
     @field_validator("cache_ttl_sec")
     @classmethod
@@ -596,7 +682,7 @@ class StockIndexSource(DataSourceBase):
 
 
 class GoldPriceSource(DataSourceBase):
-    """Gold price data source configuration."""
+    """金价数据源配置。"""
 
     type: Literal["gold_price"] = "gold_price"
     url: str
@@ -635,12 +721,12 @@ DataSource = Annotated[
 
 
 # ---------------------------------------------------------------------------
-# Templates
+# 模板
 # ---------------------------------------------------------------------------
 
 
 class ViewportConfig(BaseModel):
-    """Viewport configuration for template rendering."""
+    """模板渲染视口配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -666,20 +752,114 @@ class ViewportConfig(BaseModel):
         return value
 
 
+class TextLimitsConfig(BaseModel):
+    """渲染和数据持久化前应用的外部文本长度限制。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    news_item: int = Field(default=120, gt=0, strict=True)
+    news_items: int = Field(default=15, gt=0, strict=True)
+    fun_content: int = Field(default=300, gt=0, strict=True)
+    kfc_text: int = Field(default=300, gt=0, strict=True)
+    daily_english_definition: int = Field(default=200, gt=0, strict=True)
+    daily_english_translation: int = Field(default=200, gt=0, strict=True)
+    holiday_name: int = Field(default=20, gt=0, strict=True)
+
+
+# 按当前节气划分季节；节气当天即进入新的季节。
+SOLAR_TERM_SEASONS: dict[str, str] = {
+    **dict.fromkeys(("立春", "雨水", "惊蛰", "春分", "清明", "谷雨"), "spring"),
+    **dict.fromkeys(("立夏", "小满", "芒种", "夏至", "小暑", "大暑"), "summer"),
+    **dict.fromkeys(("立秋", "处暑", "白露", "秋分", "寒露", "霜降"), "autumn"),
+    **dict.fromkeys(("立冬", "小雪", "大雪", "冬至", "小寒", "大寒"), "winter"),
+}
+
+
+class ThemesConfig(BaseModel):
+    """节假日与节气季节主题选择配置，配色保存在模板 CSS 中。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    festival_themes: dict[str, str] = Field(default_factory=lambda: {
+        "除夕": "spring_festival",
+        "春节": "spring_festival",
+        "元宵节": "spring_festival",
+        "中秋节": "mid_autumn",
+        "国庆节": "national_day",
+    })
+    season_themes: bool = True
+
+    @field_validator("festival_themes")
+    @classmethod
+    def validate_theme_names(cls, value: dict[str, str]) -> dict[str, str]:
+        """主题名直接用于 CSS 类名，仅允许小写字母、数字及下划线。"""
+        if any(re.fullmatch(r"[a-z][a-z0-9_]*", name) is None for name in value.values()):
+            raise ValueError("theme names must match ^[a-z][a-z0-9_]*$")
+        return value
+
+
 class TemplateRenderConfig(BaseModel):
-    """Global template render configuration."""
+    """全局模板渲染配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
     device_scale_factor: int = 3
     jpeg_quality: int = 100
+    output_formats: list[Literal["jpeg", "webp"]] = ["jpeg"]
+    output_widths: list[int] = Field(default_factory=list)
+    webp_quality: int = Field(default=85, ge=1, le=100, strict=True)
     use_china_cdn: bool = True
+    local_fonts_dir: str = "templates/fonts"
+    remote_font_fallback: bool = True
+    work_end_time: str = "18:00"
     remote_resource_cache_enabled: bool = True
     remote_resource_cache_ttl_sec: int = 7 * 24 * 60 * 60
     remote_resource_timeout_sec: float = 5.0
     page_load_timeout_sec: float = 10.0
     font_ready_timeout_sec: float = 2.0
     remote_resource_max_size_kb: int = 5120
+    remote_resource_max_redirects: int = Field(default=5, ge=0, le=20, strict=True)
+    allowed_resource_hosts: list[str] = Field(default_factory=lambda: [
+        "fonts.googleapis.com",
+        "fonts.googleapis.cn",
+        "fonts.gstatic.com",
+        "fonts.gstatic.cn",
+    ])
+    text_limits: TextLimitsConfig = Field(default_factory=TextLimitsConfig)
+    themes: ThemesConfig = Field(default_factory=ThemesConfig)
+
+    @field_validator("output_formats")
+    @classmethod
+    def validate_output_formats(cls, value: list[Literal["jpeg", "webp"]]) -> list[Literal["jpeg", "webp"]]:
+        """保留渲染原图 JPEG，禁止重复格式。"""
+        if "jpeg" not in value or len(value) != len(set(value)):
+            raise ValueError("output_formats must include jpeg and contain no duplicates")
+        return value
+
+    @field_validator("output_widths", mode="before")
+    @classmethod
+    def validate_output_widths(cls, value: object) -> object:
+        """额外宽度使用最终图片的绝对像素，禁止重复和非正整数。"""
+        if not isinstance(value, list) or any(type(width) is not int or width <= 0 for width in value):
+            raise ValueError("output_widths must contain positive integers")
+        if len(value) != len(set(value)):
+            raise ValueError("output_widths must contain no duplicates")
+        return value
+
+    @field_validator("work_end_time")
+    @classmethod
+    def validate_work_end_time(cls, value: str) -> str:
+        """校验下班时间，使用严格的 HH:MM 格式。"""
+        if not re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", value):
+            raise ValueError("work_end_time must use HH:MM format")
+        return value
+
+    @field_validator("allowed_resource_hosts")
+    @classmethod
+    def validate_allowed_resource_hosts(cls, value: list[str]) -> list[str]:
+        """校验渲染资源白名单，裸主机名同时允许其子域名。"""
+        return [_normalize_hostname(hostname) for hostname in value]
 
     @field_validator("device_scale_factor")
     @classmethod
@@ -792,12 +972,13 @@ class TemplateRenderConfig(BaseModel):
 
 
 class TemplateItemConfig(BaseModel):
-    """Single template configuration."""
+    """单个模板配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
     name: str
     path: str
+    description: str | None = None
     viewport: ViewportConfig
     device_scale_factor: int | None = None
     jpeg_quality: int | None = None
@@ -867,12 +1048,14 @@ class TemplateItemConfig(BaseModel):
 
 
 class TemplatesConfig(BaseModel):
-    """Multi-template configuration."""
+    """多模板配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
     default: str | None = None
     dir: str = "templates"
+    hot_reload: bool = True
+    hot_reload_interval_sec: float = Field(default=5.0, gt=0, allow_inf_nan=False)
     config: TemplateRenderConfig = Field(default_factory=TemplateRenderConfig)
     items: list[TemplateItemConfig] = Field(default_factory=list, exclude=True)
 
@@ -919,12 +1102,12 @@ class TemplatesConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Logging / Timezone
+# 日志 / 时区
 # ---------------------------------------------------------------------------
 
 
 class LoggingConfig(BaseModel):
-    """Logging configuration."""
+    """日志配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -952,7 +1135,7 @@ class LoggingConfig(BaseModel):
 
 
 class TimezoneConfig(BaseModel):
-    """Timezone configuration."""
+    """时区配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -986,7 +1169,7 @@ class TimezoneConfig(BaseModel):
         try:
             ZoneInfo(value)
             return value
-        except Exception:  # nosec B110 - intentional fallback to UTC offset parsing
+        except Exception:  # nosec B110 - 有意回退到 UTC 偏移量解析
             pass
 
         match = _UTC_OFFSET_PATTERN.match(value)
@@ -1003,17 +1186,179 @@ class TimezoneConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Top-level AppConfig
+# 顶层 AppConfig
 # ---------------------------------------------------------------------------
 
 T = TypeVar("T", bound=DataSourceBase)
+NotifyTrigger = Literal["scheduled", "manual", "startup"]
+
+
+def _default_notify_triggers() -> list[NotifyTrigger]:
+    """返回默认通知触发来源。"""
+    return ["scheduled"]
+
+
+class _FilteredEnvSettingsSource(PydanticBaseSettingsSource):
+    """仅保留带前缀且对应已知配置段或其直接字段的环境变量名。"""
+
+    def __init__(self, source: EnvSettingsSource) -> None:
+        super().__init__(source.settings_cls)
+        self.source = source
+
+    def get_field_value(
+        self, field: FieldInfo, field_name: str
+    ) -> tuple[Any, str, bool]:
+        return self.source.get_field_value(field, field_name)
+
+    def __call__(self) -> dict[str, Any]:
+        source = self.source
+        prefix = source.env_prefix
+        canonical_names: set[str] = set()
+        for section, field in self.settings_cls.model_fields.items():
+            canonical_names.add(f"{prefix}{section}")
+            model = field.annotation
+            if isinstance(model, type) and issubclass(model, BaseModel):
+                for key in model.model_fields:
+                    canonical_names.add(f"{prefix}{section}_{key}")
+
+        if not source.case_sensitive:
+            canonical_names = {name.lower() for name in canonical_names}
+
+        filtered = {
+            name: value
+            for name, value in source.env_vars.items()
+            if name in canonical_names
+        }
+        source.env_vars = filtered
+        return source()
+
+
+class MetricsConfig(BaseModel):
+    """Prometheus 指标端点配置。"""
+
+    enabled: bool = False
+
+
+class FeedConfig(BaseModel):
+    """RSS 订阅源配置。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    max_items: int = Field(default=7, ge=1, le=60)
+
+
+class WebhookConfig(BaseModel):
+    """单个通知 Webhook 配置。"""
+
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    name: str
+    type: Literal["wecom", "feishu", "dingtalk", "telegram", "generic"]
+    url: SecretStr | None = None
+    url_env: str | None = None
+    secret: SecretStr | None = None
+    secret_env: str | None = None
+    chat_id: str | None = None
+    templates: list[str] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_environment_values(cls, value: Any) -> Any:
+        """校验直接值与环境变量名互斥，并解析环境变量。"""
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        url = data.get("url")
+        url_env = data.get("url_env")
+        if (url is None) == (url_env is None):
+            raise ValueError("exactly one of url or url_env is required")
+        secret = data.get("secret")
+        secret_env = data.get("secret_env")
+        if secret is not None and secret_env is not None:
+            raise ValueError("secret and secret_env are mutually exclusive")
+        if url_env is not None:
+            resolved_url = os.getenv(str(url_env))
+            if resolved_url is None:
+                raise ValueError(f"environment variable {url_env} is not set")
+            data["url"] = SecretStr(resolved_url)
+        if secret_env is not None:
+            resolved_secret = os.getenv(str(secret_env))
+            if resolved_secret is None:
+                raise ValueError(f"environment variable {secret_env} is not set")
+            data["secret"] = SecretStr(resolved_secret)
+        return data
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        """校验 Webhook 名称非空。"""
+        name = value.strip()
+        if not name:
+            raise ValueError("name cannot be empty")
+        return name
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: SecretStr | None) -> SecretStr | None:
+        """只接受 HTTP(S) Webhook URL。"""
+        if value is None:
+            return value
+        url = value.get_secret_value()
+        try:
+            parsed = urlsplit(url)
+            hostname = parsed.hostname
+            parsed.port
+        except ValueError as err:
+            raise ValueError("url must be a valid http(s) URL") from err
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or not hostname:
+            raise ValueError("url must be a valid http(s) URL")
+        return value
+
+    @field_validator("chat_id")
+    @classmethod
+    def normalize_chat_id(cls, value: str | None) -> str | None:
+        """去除 Telegram 会话 ID 首尾空白。"""
+        if value is None:
+            return value
+        return value.strip() or None
+
+    @model_validator(mode="after")
+    def validate_provider_fields(self) -> "WebhookConfig":
+        """校验提供商特有字段。"""
+        if self.type == "telegram" and not self.chat_id:
+            raise ValueError("chat_id is required for telegram webhooks")
+        return self
+
+
+class NotifyConfig(BaseModel):
+    """图片生成成功后的 Webhook 通知配置。"""
+
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    enabled: bool = False
+    once_per_day: bool = True
+    triggers: list[NotifyTrigger] = Field(default_factory=_default_notify_triggers)
+    timeout_sec: float = Field(default=10.0, gt=0)
+    webhooks: list[WebhookConfig] = Field(default_factory=list)
+
+    @field_validator("webhooks")
+    @classmethod
+    def validate_unique_names(cls, value: list[WebhookConfig]) -> list[WebhookConfig]:
+        """校验 Webhook 名称唯一。"""
+        names = [webhook.name for webhook in value]
+        if len(names) != len(set(names)):
+            raise ValueError("webhook names must be unique")
+        return value
 
 
 class AppConfig(BaseSettings):
-    """Main application configuration."""
+    """应用主配置。"""
 
     model_config = SettingsConfigDict(
         extra="forbid",
+        hide_input_in_errors=True,
+        env_prefix="MOYUREN_",
         env_nested_delimiter="_",
         env_nested_max_split=1,
         env_file=".env",
@@ -1025,12 +1370,21 @@ class AppConfig(BaseSettings):
     scheduler: SchedulerConfig
     cache: CacheConfig
     ops: OpsConfig = Field(default_factory=OpsConfig)
+    metrics: MetricsConfig = Field(default_factory=MetricsConfig)
+    feed: FeedConfig = Field(default_factory=FeedConfig)
+    notify: NotifyConfig = Field(default_factory=NotifyConfig)
     templates: TemplatesConfig
     data_sources: list[DataSource]
     logging: LoggingConfig
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     instances: InstancesConfig = Field(default_factory=InstancesConfig)
     timezone: TimezoneConfig = Field(default_factory=TimezoneConfig)
+
+    _templates_fingerprint: tuple[tuple[str, int, int], ...] | None = PrivateAttr(
+        default=None
+    )
+    _templates_last_check: float = PrivateAttr(default=float("-inf"))
+    _templates_reload_lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
 
     @model_validator(mode="after")
     def validate_unique_source_types(self) -> "AppConfig":
@@ -1045,6 +1399,9 @@ class AppConfig(BaseSettings):
         source_types = [source.type for source in self.data_sources]
         if len(set(source_types)) != len(source_types):
             raise ValueError("data_sources types must be unique")
+        # 节假日默认启用：未配置时补默认项，仅显式 enabled: false 才禁用
+        if "holiday" not in source_types:
+            self.data_sources.append(HolidaySource())
         return self
 
     @classmethod
@@ -1068,7 +1425,12 @@ class AppConfig(BaseSettings):
         Returns:
             按优先级排列的配置源元组.
         """
-        return env_settings, dotenv_settings, init_settings, file_secret_settings
+        return (
+            _FilteredEnvSettingsSource(cast(EnvSettingsSource, env_settings)),
+            _FilteredEnvSettingsSource(cast(EnvSettingsSource, dotenv_settings)),
+            init_settings,
+            file_secret_settings,
+        )
 
     def get_source(self, source_type: type[T]) -> T | None:
         """按配置类型获取已启用的数据源.
@@ -1096,12 +1458,44 @@ class AppConfig(BaseSettings):
         Side Effects:
             当 templates.items 为空时执行模板发现并写回 self.templates.items.
         """
-        if not self.templates.items:
-            from app.services.template_discovery import TemplateDiscovery
+        from app.services.template_discovery import TemplateDiscovery
 
-            discovery = TemplateDiscovery()
-            items = discovery.discover(self.templates.dir, self.templates.config)
-            self.templates.items = items
+        discovery = TemplateDiscovery()
+        with self._templates_reload_lock:
+            if not self.templates.items:
+                items = discovery.discover(self.templates.dir, self.templates.config)
+                self.templates.items = items
+                self._templates_fingerprint = discovery.fingerprint(self.templates.dir)
+                self._templates_last_check = time.monotonic()
+            elif self.templates.hot_reload:
+                now = time.monotonic()
+                if now - self._templates_last_check >= self.templates.hot_reload_interval_sec:
+                    # 目录指纹只包含一次 glob/stat，并按配置节流，避免频繁扫描模板目录。
+                    self._templates_last_check = now
+                    try:
+                        fingerprint = discovery.fingerprint(self.templates.dir)
+                        if fingerprint != self._templates_fingerprint:
+                            items = discovery.discover(
+                                self.templates.dir,
+                                self.templates.config,
+                                strict=True,
+                            )
+                            if self.templates.default and not any(
+                                item.name == self.templates.default for item in items
+                            ):
+                                logging.getLogger(__name__).warning(
+                                    "Default template '%s' was removed; using '%s'",
+                                    self.templates.default,
+                                    items[0].name,
+                                )
+                                self.templates.default = items[0].name
+                            self.templates.items = items
+                            self._templates_fingerprint = fingerprint
+                    except Exception as exc:
+                        logging.getLogger(__name__).warning(
+                            "Template hot reload failed; keeping previous templates: %s",
+                            exc,
+                        )
         # 验证 default（无条件执行）
         if self.templates.default:
             names = [item.name for item in self.templates.items]
@@ -1144,5 +1538,5 @@ class AppConfig(BaseSettings):
 
 
 def load_config(path: str = "config.yaml") -> AppConfig:
-    """Load and validate application configuration."""
+    """加载并校验应用配置。"""
     return AppConfig.from_yaml(path)

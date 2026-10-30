@@ -3,6 +3,18 @@
   "updated": "2026/02/05 07:00:00",
   "updated_at": 1770246000000,
   "image": "https://api.monkeyray.net/static/moyuren_20260205_070000.jpg",
+  "variants": [
+    {
+      "image": "https://api.monkeyray.net/static/moyuren_20260205_070000.jpg",
+      "format": "jpeg",
+      "width": 2382
+    },
+    {
+      "image": "https://api.monkeyray.net/static/moyuren_20260205_070000.webp",
+      "format": "webp",
+      "width": 2382
+    }
+  ],
   "weekday": "星期四",
   "lunar_date": "腊月十八",
   "fun_content": {
@@ -95,5 +107,12 @@
     "updated_at": 1770258600000,
     "trading_day": { "A": true, "HK": true, "US": true },
     "is_stale": false
-  }
+  },
+  "gold_price": {
+    "today_price": "786.50",
+    "sell_price": "780.20",
+    "unit": "元/克"
+  },
+  "is_stale": false,
+  "source_date": "2026-02-05"
 }

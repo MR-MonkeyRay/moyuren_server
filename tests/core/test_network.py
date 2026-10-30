@@ -1,4 +1,4 @@
-"""Tests for app/core/network.py."""
+"""测试 app/core/network.py。"""
 
 import httpx
 import pytest
@@ -13,10 +13,10 @@ from app.core.network import (
 
 
 class TestProxyUrl:
-    """Tests for proxy URL normalization and redaction."""
+    """测试代理 URL 规范化与脱敏。"""
 
     def test_normalize_empty_proxy(self) -> None:
-        """Test empty proxy config disables proxy."""
+        """测试空代理配置会禁用代理。"""
         assert normalize_proxy_url(None) is None
         assert normalize_proxy_url("") is None
         assert normalize_proxy_url("   ") is None
@@ -25,11 +25,12 @@ class TestProxyUrl:
         "value",
         [
             "http://proxy.example:8080",
-            "socks5://user:pass@proxy.example:1080",
+            "http://user:pass@proxy.example:8080",
+            "socks5://proxy.example:1080",
         ],
     )
     def test_normalize_supported_proxy(self, value: str) -> None:
-        """Test supported proxy URLs pass through normalized."""
+        """测试支持的代理 URL 规范化后原样返回。"""
         assert normalize_proxy_url(value) == value
 
     @pytest.mark.parametrize(
@@ -44,19 +45,19 @@ class TestProxyUrl:
         ],
     )
     def test_normalize_rejects_invalid_proxy(self, value: str) -> None:
-        """Test unsupported proxy URLs fail closed."""
+        """测试不支持的代理 URL 会被拒绝。"""
         with pytest.raises(ValueError):
             normalize_proxy_url(value)
 
     def test_redact_url_removes_userinfo_and_query(self) -> None:
-        """Test redaction strips credentials and query fragments."""
+        """测试 URL 脱敏会移除凭据、查询参数和片段。"""
         assert (
             redact_url("http://user:secret@proxy.example:8080/path?q=1#frag")
             == "http://proxy.example:8080/path"
         )
 
     def test_httpx_client_kwargs_sets_proxy_without_declaring_trust_env(self) -> None:
-        """Test proxy kwargs do not override HTTPX environment defaults."""
+        """测试代理参数不会覆盖 HTTPX 默认的环境变量行为。"""
         kwargs = httpx_client_kwargs(proxy_url="http://proxy.example:8080", timeout=5)
         assert kwargs["proxy"] == "http://proxy.example:8080"
         assert kwargs["timeout"] == 5
@@ -65,7 +66,7 @@ class TestProxyUrl:
     def test_safe_exception_for_log_preserves_status_and_redacts_url_secrets(
         self,
     ) -> None:
-        """Test HTTP errors keep useful diagnostics without leaking URL secrets."""
+        """测试 HTTP 错误保留有用的诊断信息且不泄露 URL 敏感信息。"""
         request = httpx.Request(
             "GET", "https://user:secret@example.com/path?token=abc#frag"
         )
@@ -86,7 +87,7 @@ class TestProxyUrl:
         assert "frag" not in message
 
     def test_safe_exception_for_log_redacts_urls_embedded_in_message(self) -> None:
-        """Test arbitrary exception messages have embedded URL secrets removed."""
+        """测试任意异常消息中嵌入的 URL 都会移除敏感信息。"""
         exc = RuntimeError(
             "failed https://user:pass@example.com/path?token=secret#frag after retry"
         )
@@ -102,10 +103,41 @@ class TestProxyUrl:
         assert "frag" not in message
 
     def test_playwright_proxy_config_splits_credentials(self) -> None:
-        """Test Playwright proxy config receives server and credentials separately."""
-        proxy = playwright_proxy_config("socks5://user:pass@proxy.example:1080")
+        """测试 Playwright 代理配置分别接收服务器地址和凭据。"""
+        proxy = playwright_proxy_config("http://user:pass@proxy.example:8080")
         assert proxy == {
-            "server": "socks5://proxy.example:1080",
+            "server": "http://proxy.example:8080",
             "username": "user",
             "password": "pass",
         }
+
+    def test_playwright_proxy_config_supports_unauthenticated_socks(self) -> None:
+        """测试不含用户信息的 SOCKS 代理仍可用于 Chromium。"""
+        assert playwright_proxy_config("socks5://proxy.example:1080") == {
+            "server": "socks5://proxy.example:1080"
+        }
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "socks5://u:p@h:1",
+            "socks5://user:proxy-secret@proxy.example:1080",
+            "socks5://user@proxy.example:1080",
+            "socks5://:proxy-secret@proxy.example:1080",
+            "socks5://@proxy.example:1080",
+            "  SOCKS5://user:proxy-secret@[::1]:1080/  ",
+        ],
+    )
+    def test_playwright_proxy_config_rejects_socks_credentials(self, value: str) -> None:
+        """测试直接调用 Playwright 配置函数会安全地拒绝 SOCKS 认证。"""
+        with pytest.raises(ValueError) as exc_info:
+            playwright_proxy_config(value)
+
+        message = str(exc_info.value)
+        assert "Chromium cannot authenticate to SOCKS" in message
+        assert "unauthenticated SOCKS" in message
+        assert "HTTP proxy with credentials" in message
+        assert "gost/privoxy" in message
+        assert "u:p" not in message
+        assert "proxy-secret" not in message
+        assert value.strip() not in message

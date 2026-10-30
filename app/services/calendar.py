@@ -264,6 +264,29 @@ class CalendarService:
     """Wrapper for tyme4py library to provide calendar data."""
 
     @staticmethod
+    def get_current_solar_term(dt: date) -> str | None:
+        """返回当天所在节气区间的名称，与展示用的下个节气倒计时区分。"""
+        try:
+            return str(SolarDay.from_ymd(dt.year, dt.month, dt.day).get_term().get_name())
+        except Exception as e:
+            logger.warning("Failed to get current solar term for %s: %s", dt, e)
+            return None
+
+    @staticmethod
+    def is_spring_festival_period(dt: date) -> bool:
+        """判断是否在除夕至正月十五（含首尾），排除闰正月。"""
+        try:
+            solar = SolarDay.from_ymd(dt.year, dt.month, dt.day)
+            lunar = solar.get_lunar_day()
+            if lunar.get_month() == 1 and lunar.get_day() <= 15:
+                return True
+            tomorrow = solar.next(1).get_lunar_day()
+            return bool(tomorrow.get_month() == 1 and tomorrow.get_day() == 1)
+        except Exception as e:
+            logger.warning("Failed to check spring festival period for %s: %s", dt, e)
+            return False
+
+    @staticmethod
     def get_lunar_info(dt: date) -> dict[str, str]:
         """Get lunar calendar information.
 
@@ -465,6 +488,19 @@ class CalendarService:
             }
 
     @staticmethod
+    def get_day_off_status(dt: date) -> tuple[bool, str | None]:
+        """返回休息状态和法定假日名称，补班优先于普通周末。"""
+        try:
+            solar = SolarDay.from_ymd(dt.year, dt.month, dt.day)
+            legal_holiday = solar.get_legal_holiday()
+            if legal_holiday is not None:
+                is_off = not legal_holiday.is_work()
+                return is_off, legal_holiday.get_name() if is_off else None
+        except Exception as e:
+            logger.warning("Failed to check day-off status for %s: %s", dt, e)
+        return dt.weekday() >= 5, None
+
+    @staticmethod
     def is_holiday(dt: date) -> bool:
         """Check if the given date is a holiday.
 
@@ -472,12 +508,12 @@ class CalendarService:
             dt: The date to check.
 
         Returns:
-            True if it's a legal holiday, False otherwise.
+            True if it's a legal day off, False otherwise.
         """
         try:
             solar = SolarDay.from_ymd(dt.year, dt.month, dt.day)
             legal_holiday = solar.get_legal_holiday()
-            return legal_holiday is not None
+            return legal_holiday is not None and not legal_holiday.is_work()
         except Exception as e:
             logger.warning("Failed to check holiday for %s: %s", dt, e)
             return False
@@ -549,7 +585,8 @@ class CalendarService:
         """
         result = []
         try:
-            for year in (dt.year, dt.year + 1):
+            lunar_year = SolarDay.from_ymd(dt.year, dt.month, dt.day).get_lunar_day().get_year()
+            for year in range(lunar_year - 1, lunar_year + 2):
                 for idx in range(20):  # 每年最多20个节日
                     try:
                         festival = LunarFestival.from_index(year, idx)

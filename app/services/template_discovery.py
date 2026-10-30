@@ -1,4 +1,4 @@
-"""Template auto-discovery service module."""
+"""模板自动发现服务模块。"""
 
 import logging
 import re
@@ -18,7 +18,7 @@ _READ_LIMIT = 16384  # 读取文件前 16KB
 class _MetaParser(HTMLParser):
     """解析 HTML <head> 段中的 moyuren:* meta 标签。"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """初始化 meta 标签解析器。
 
         Side Effects:
@@ -42,9 +42,11 @@ class _MetaParser(HTMLParser):
             self.in_head = True
         elif tag.lower() == "meta" and self.in_head:
             attrs_dict = dict(attrs)
-            name = attrs_dict.get("name", "")
+            name = attrs_dict.get("name")
             content = attrs_dict.get("content")
-            if name.lower().startswith("moyuren:") and content is not None:
+            if name is None or content is None:
+                return
+            if name.lower().startswith("moyuren:"):
                 key = name[8:].lower()  # 去掉 "moyuren:" 前缀
                 self.meta_data[key] = content
 
@@ -64,7 +66,24 @@ class _MetaParser(HTMLParser):
 class TemplateDiscovery:
     """扫描 templates 目录，解析 HTML meta 标签，返回 TemplateItemConfig 列表。"""
 
-    def discover(self, templates_dir: str, global_config: TemplateRenderConfig) -> list[TemplateItemConfig]:
+    def fingerprint(self, templates_dir: str) -> tuple[tuple[str, int, int], ...]:
+        """返回 HTML 模板文件名、纳秒 mtime 和大小组成的稳定目录指纹。"""
+        dir_path = Path(templates_dir).resolve()
+        if not dir_path.is_dir():
+            raise ValueError(f"Templates directory not found: {templates_dir}")
+        entries: list[tuple[str, int, int]] = []
+        for html_file in sorted(dir_path.glob("*.html")):
+            stat = html_file.stat()
+            entries.append((html_file.name, stat.st_mtime_ns, stat.st_size))
+        return tuple(entries)
+
+    def discover(
+        self,
+        templates_dir: str,
+        global_config: TemplateRenderConfig,
+        *,
+        strict: bool = False,
+    ) -> list[TemplateItemConfig]:
         """扫描目录，返回按文件名排序的模板配置列表。
 
         Args:
@@ -89,25 +108,33 @@ class TemplateDiscovery:
 
             # 跳过不合法文件名
             if not _TEMPLATE_FILENAME_PATTERN.match(filename):
-                logger.warning(f"Skipping template with invalid filename: {filename}")
+                logger.warning("Skipping template with invalid filename: %s", filename)
                 continue
 
             try:
                 meta = self._parse_meta(html_file)
                 item = self._build_item(html_file, meta, global_config)
                 items.append(item)
-                logger.info(f"Discovered template: {item.name} ({html_file})")
+                logger.info("Discovered template: %s (%s)", item.name, html_file)
             except UnicodeDecodeError as e:
-                logger.warning(f"Skipping template {filename}: encoding error - {e}")
+                if strict:
+                    raise ValueError(f"Invalid template {filename}: encoding error") from e
+                logger.warning("Skipping template %s: encoding error - %s", filename, e)
                 continue
             except ValueError as e:
-                logger.warning(f"Skipping template {filename}: configuration error - {e}")
+                if strict:
+                    raise ValueError(f"Invalid template {filename}: {e}") from e
+                logger.warning("Skipping template %s: configuration error - %s", filename, e)
                 continue
             except OSError as e:
-                logger.warning(f"Skipping template {filename}: file read error - {e}")
+                if strict:
+                    raise
+                logger.warning("Skipping template %s: file read error - %s", filename, e)
                 continue
             except Exception:
-                logger.exception(f"Skipping template {filename}: unexpected error")
+                if strict:
+                    raise
+                logger.exception("Skipping template %s: unexpected error", filename)
                 continue
 
         if not items:
@@ -158,11 +185,11 @@ class TemplateDiscovery:
         viewport_width = int(meta.get("viewport-width", str(default_viewport.width)))
         viewport_height = int(meta.get("viewport-height", str(default_viewport.height)))
 
-        # device_scale_factor: meta > global_config
+        # device_scale_factor：meta 优先于 global_config
         dsf_str = meta.get("device-scale-factor")
         device_scale_factor = int(dsf_str) if dsf_str is not None else global_config.device_scale_factor
 
-        # jpeg_quality: meta > global_config
+        # jpeg_quality：meta 优先于 global_config
         jq_str = meta.get("jpeg-quality")
         jpeg_quality = int(jq_str) if jq_str is not None else global_config.jpeg_quality
 
@@ -174,6 +201,7 @@ class TemplateDiscovery:
         return TemplateItemConfig(
             name=name,
             path=str(html_path),
+            description=meta.get("description", "").strip()[:200] or None,
             viewport=ViewportConfig(width=viewport_width, height=viewport_height),
             device_scale_factor=device_scale_factor,
             jpeg_quality=jpeg_quality,

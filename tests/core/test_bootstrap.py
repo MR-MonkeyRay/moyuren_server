@@ -1,0 +1,330 @@
+"""应用启动辅助函数测试。"""
+
+import logging
+from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
+from unittest.mock import AsyncMock, MagicMock
+
+import httpx
+import pytest
+
+import app.core.bootstrap as bootstrap_module
+from app.core.bootstrap import build_services, register_scheduled_jobs, warmup_daily_cache
+from app.core.config import AppConfig, HolidaySource, TextLimitsConfig, ThemesConfig
+from app.core.scheduler import TaskScheduler
+from app.core.services import AppServices
+
+
+def test_register_scheduled_jobs_registers_each_daily_time() -> None:
+    """每日调度为每个配置时间注册固定的任务 ID。"""
+    scheduler = SimpleNamespace(add_daily_job=MagicMock(), add_hourly_job=MagicMock())
+    config = SimpleNamespace(
+        scheduler=SimpleNamespace(
+            mode="daily", daily_times=["06:15", "18:45"], minute_of_hour=0
+        )
+    )
+
+    async def job() -> None:
+        return None
+
+    register_scheduled_jobs(
+        cast(TaskScheduler, scheduler),
+        cast(AppConfig, config),
+        job,
+        logging.getLogger(__name__),
+    )
+
+    assert scheduler.add_daily_job.call_count == 2
+    scheduler.add_daily_job.assert_any_call(
+        job_id="generate_moyuren_image_0", func=job, hour=6, minute=15
+    )
+    scheduler.add_daily_job.assert_any_call(
+        job_id="generate_moyuren_image_1", func=job, hour=18, minute=45
+    )
+    scheduler.add_hourly_job.assert_not_called()
+
+
+def test_register_scheduled_jobs_skips_invalid_daily_time() -> None:
+    """格式错误的每日时间不影响有效任务注册。"""
+    scheduler = SimpleNamespace(add_daily_job=MagicMock(), add_hourly_job=MagicMock())
+    config = SimpleNamespace(
+        scheduler=SimpleNamespace(
+            mode="daily", daily_times=["invalid", "18:45"], minute_of_hour=0
+        )
+    )
+
+    async def job() -> None:
+        return None
+
+    register_scheduled_jobs(
+        cast(TaskScheduler, scheduler),
+        cast(AppConfig, config),
+        job,
+        logging.getLogger(__name__),
+    )
+
+    scheduler.add_daily_job.assert_called_once_with(
+        job_id="generate_moyuren_image_1", func=job, hour=18, minute=45
+    )
+
+
+def test_register_scheduled_jobs_registers_hourly_job() -> None:
+    """每小时调度保留配置的分钟数和固定任务 ID。"""
+    scheduler = SimpleNamespace(add_daily_job=MagicMock(), add_hourly_job=MagicMock())
+    config = SimpleNamespace(
+        scheduler=SimpleNamespace(
+            mode="hourly", daily_times=["06:00"], minute_of_hour=23
+        )
+    )
+
+    async def job() -> None:
+        return None
+
+    register_scheduled_jobs(
+        cast(TaskScheduler, scheduler),
+        cast(AppConfig, config),
+        job,
+        logging.getLogger(__name__),
+    )
+
+    scheduler.add_hourly_job.assert_called_once_with(
+        job_id="generate_moyuren_image", func=job, minute=23
+    )
+    scheduler.add_daily_job.assert_not_called()
+
+
+def test_build_services_leaves_missing_or_disabled_optional_sources_disabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """禁用的节假日源和缺失的可选数据源不创建对应服务。"""
+    data_sources = [HolidaySource(type="holiday", enabled=False)]
+    config = SimpleNamespace(
+        paths=SimpleNamespace(cache_dir=str(tmp_path)),
+        network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),
+        instances=SimpleNamespace(),
+        templates=SimpleNamespace(
+            config=SimpleNamespace(
+                text_limits=TextLimitsConfig(), work_end_time="18:00", themes=ThemesConfig()
+            )
+        ),
+        cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
+        data_sources=data_sources,
+        get_templates_config=lambda: SimpleNamespace(items=[]),
+    )
+    config.get_source = lambda source_type: AppConfig.get_source(config, source_type)
+    holiday_service_factory = MagicMock()
+    monkeypatch.setattr(bootstrap_module, "CachedHolidayService", holiday_service_factory)
+    monkeypatch.setattr(bootstrap_module, "ImageRenderer", lambda **kwargs: MagicMock())
+    monkeypatch.setattr(bootstrap_module, "CacheCleaner", lambda **kwargs: MagicMock())
+    monkeypatch.setattr(bootstrap_module, "ImageGenerator", lambda: MagicMock())
+
+    services = build_services(
+        cast(AppConfig, config), logging.getLogger(__name__), MagicMock()
+    )
+
+    assert services.holiday_service is None
+    holiday_service_factory.assert_not_called()
+    assert services.data_fetcher is None
+    assert services.fun_content_service is None
+    assert services.kfc_service is None
+    assert services.stock_index_service is None
+    assert services.gold_price_service is None
+    assert services.daily_english_service is None
+
+
+@pytest.mark.asyncio
+async def test_warmup_daily_cache_skips_missing_holiday_service() -> None:
+    """禁用节假日数据时不添加缓存预热任务。"""
+    data_fetcher = SimpleNamespace(get=AsyncMock(return_value={}))
+    services = SimpleNamespace(
+        holiday_service=None,
+        data_fetcher=data_fetcher,
+        fun_content_service=None,
+        kfc_service=None,
+        gold_price_service=None,
+        daily_english_service=None,
+    )
+    config = SimpleNamespace(network=SimpleNamespace(proxy_url=None))
+
+    await warmup_daily_cache(
+        cast(AppServices, services),
+        cast(AppConfig, config),
+        logging.getLogger(__name__),
+    )
+
+    data_fetcher.get.assert_awaited_once_with()
+
+
+def test_build_services_leaves_disabled_daily_english_unconstructed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """禁用每日英语源时不创建其后端或服务。"""
+    disabled_source = SimpleNamespace(enabled=False, backend=SimpleNamespace())
+
+    def get_source(source_type: type[object]) -> object | None:
+        if source_type is bootstrap_module.DailyEnglishSource:
+            return disabled_source
+        return None
+
+    config = SimpleNamespace(
+        paths=SimpleNamespace(cache_dir=str(tmp_path)),
+        network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),
+        instances=SimpleNamespace(),
+        templates=SimpleNamespace(
+            config=SimpleNamespace(
+                text_limits=TextLimitsConfig(), work_end_time="18:00", themes=ThemesConfig()
+            )
+        ),
+        cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
+        get_source=get_source,
+        get_templates_config=lambda: SimpleNamespace(items=[]),
+    )
+    build_backend = MagicMock()
+    build_daily_service = MagicMock()
+    monkeypatch.setattr(
+        bootstrap_module, "CachedHolidayService", lambda **kwargs: MagicMock()
+    )
+    monkeypatch.setattr(bootstrap_module, "ImageRenderer", lambda **kwargs: MagicMock())
+    monkeypatch.setattr(bootstrap_module, "CacheCleaner", lambda **kwargs: MagicMock())
+    monkeypatch.setattr(bootstrap_module, "ImageGenerator", lambda: MagicMock())
+    monkeypatch.setattr(bootstrap_module, "build_dict_backend", build_backend)
+    monkeypatch.setattr(
+        bootstrap_module, "CachedDailyEnglishService", build_daily_service
+    )
+
+    services = build_services(
+        cast(AppConfig, config), logging.getLogger(__name__), MagicMock()
+    )
+
+    assert services.daily_english_service is None
+    build_backend.assert_not_called()
+    build_daily_service.assert_not_called()
+
+
+@pytest.mark.parametrize("inject_client", [True, False])
+def test_build_services_passes_http_client_to_all_network_services(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, inject_client: bool
+) -> None:
+    """所有网络服务均接收传入的客户端或脚本默认值。"""
+    source = SimpleNamespace(enabled=True, backend=SimpleNamespace(), timeout_sec=7)
+    config = SimpleNamespace(
+        paths=SimpleNamespace(cache_dir=str(tmp_path)),
+        network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),
+        instances=SimpleNamespace(),
+        templates=SimpleNamespace(
+            config=SimpleNamespace(
+                text_limits=TextLimitsConfig(), work_end_time="18:00", themes=ThemesConfig()
+            )
+        ),
+        cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
+        get_source=lambda source_type: source,
+        get_templates_config=lambda: SimpleNamespace(items=[]),
+    )
+    constructors: dict[str, MagicMock] = {}
+    for name in (
+        "CachedDataFetcher",
+        "CachedHolidayService",
+        "CachedFunContentService",
+        "CachedKfcService",
+        "StockIndexService",
+        "CachedGoldPriceService",
+        "CachedDailyEnglishService",
+    ):
+        constructors[name] = MagicMock()
+        monkeypatch.setattr(bootstrap_module, name, constructors[name])
+    computer_constructor = MagicMock()
+    monkeypatch.setattr(bootstrap_module, "DataComputer", computer_constructor)
+    for name in ("ImageRenderer", "CacheCleaner", "ImageGenerator", "build_dict_backend"):
+        monkeypatch.setattr(bootstrap_module, name, MagicMock())
+
+    logger = logging.getLogger(__name__)
+    http_client = cast(httpx.AsyncClient, MagicMock(spec=httpx.AsyncClient))
+    if inject_client:
+        build_services(cast(AppConfig, config), logger, http_client)
+    else:
+        build_services(cast(AppConfig, config), logger)
+
+    computer_constructor.assert_called_once_with(
+        text_limits=config.templates.config.text_limits,
+        work_end_time=config.templates.config.work_end_time,
+        themes=config.templates.config.themes,
+    )
+    for constructor in constructors.values():
+        constructor.assert_called_once()
+        assert constructor.call_args.kwargs["http_client"] is (
+            http_client if inject_client else None
+        )
+
+
+def test_build_services_constructs_enabled_notifier_with_shared_client(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """启用 Webhook 配置时使用共享依赖创建通知器。"""
+    notify = SimpleNamespace(enabled=True, webhooks=[SimpleNamespace(name="alerts")])
+    config = SimpleNamespace(
+        paths=SimpleNamespace(cache_dir=str(tmp_path)),
+        server=SimpleNamespace(base_domain="https://calendar.example"),
+        network=SimpleNamespace(proxy_url="http://proxy.example", ghproxy_urls=[]),
+        instances=SimpleNamespace(),
+        templates=SimpleNamespace(
+            config=SimpleNamespace(
+                text_limits=TextLimitsConfig(), work_end_time="18:00", themes=ThemesConfig()
+            )
+        ),
+        cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
+        notify=notify,
+        get_source=lambda source_type: None,
+        get_templates_config=lambda: SimpleNamespace(items=[]),
+    )
+    notifier_factory = MagicMock()
+    monkeypatch.setattr(bootstrap_module, "WebhookNotifier", notifier_factory)
+    monkeypatch.setattr(bootstrap_module, "ImageRenderer", lambda **kwargs: MagicMock())
+    monkeypatch.setattr(bootstrap_module, "CacheCleaner", lambda **kwargs: MagicMock())
+    http_client = cast(httpx.AsyncClient, MagicMock(spec=httpx.AsyncClient))
+    logger = logging.getLogger(__name__)
+
+    services = build_services(cast(AppConfig, config), logger, http_client)
+
+    notifier_factory.assert_called_once_with(
+        config=notify,
+        cache_dir=tmp_path,
+        base_domain="https://calendar.example",
+        logger=logger,
+        http_client=http_client,
+        proxy_url="http://proxy.example",
+    )
+    assert services.notifier is notifier_factory.return_value
+
+
+@pytest.mark.parametrize(
+    "notify", [None, SimpleNamespace(enabled=False, webhooks=[object()]), SimpleNamespace(enabled=True, webhooks=[])]
+)
+def test_build_services_leaves_unconfigured_notifier_disabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, notify: object | None
+) -> None:
+    """通知配置缺失、禁用或为空时不创建通知器。"""
+    config = SimpleNamespace(
+        paths=SimpleNamespace(cache_dir=str(tmp_path)),
+        network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),
+        instances=SimpleNamespace(),
+        templates=SimpleNamespace(
+            config=SimpleNamespace(
+                text_limits=TextLimitsConfig(), work_end_time="18:00", themes=ThemesConfig()
+            )
+        ),
+        cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
+        get_source=lambda source_type: None,
+        get_templates_config=lambda: SimpleNamespace(items=[]),
+    )
+    if notify is not None:
+        config.notify = notify
+    notifier_factory = MagicMock()
+    monkeypatch.setattr(bootstrap_module, "WebhookNotifier", notifier_factory)
+    monkeypatch.setattr(bootstrap_module, "ImageRenderer", lambda **kwargs: MagicMock())
+    monkeypatch.setattr(bootstrap_module, "CacheCleaner", lambda **kwargs: MagicMock())
+
+    services = build_services(cast(AppConfig, config), logging.getLogger(__name__))
+
+    assert services.notifier is None
+    notifier_factory.assert_not_called()

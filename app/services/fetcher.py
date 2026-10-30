@@ -1,5 +1,6 @@
-"""Data fetching service module."""
+"""数据获取服务模块。"""
 
+import asyncio
 import logging
 import re
 from collections.abc import Callable
@@ -29,7 +30,7 @@ _NEWS_STATIC_CDN_URLS = (
 
 
 class DataFetcher:
-    """Asynchronous data fetcher for news API."""
+    """新闻 API 的异步数据获取器。"""
 
     def __init__(
         self,
@@ -63,10 +64,11 @@ class DataFetcher:
             logger,
             proxy_url=proxy_url,
             timeout_sec=float(source.timeout_sec),
+            http_client=http_client,
         )
 
     async def fetch(self) -> dict[str, Any] | None:
-        """Fetch data from the news source.
+        """从新闻源获取数据。
 
         依次尝试主源、公共实例（智能切换），最后回退到 60s 静态镜像，
         避免新闻长期停留在旧日期。
@@ -100,7 +102,7 @@ class DataFetcher:
         result = await self._router.fetch_json(
             client,
             str(self.source.url),
-            parse=lambda data: data if isinstance(data, dict) else None,
+            parse=self._parse_news_response,
             params=self.source.params,
             timeout=httpx.Timeout(self.source.timeout_sec),
         )
@@ -108,9 +110,26 @@ class DataFetcher:
             return result[1]
 
         self.logger.warning(
-            f"All news endpoints unavailable for {self.source.type}, trying static mirror"
+            "All news endpoints unavailable for %s, trying static mirror", self.source.type
         )
         return await self._fetch_static_with_client(client)
+
+    @staticmethod
+    def _parse_news_response(data: Any) -> dict[str, Any] | None:
+        """校验新闻信封，仅接受成功状态与非空新闻列表。"""
+        if not isinstance(data, dict):
+            return None
+        if "code" in data:
+            code = data["code"]
+            if not isinstance(code, int) or code != 200:
+                return None
+        payload = data.get("data")
+        if not isinstance(payload, dict):
+            return None
+        news_items = payload.get("news")
+        if not isinstance(news_items, list) or not news_items:
+            return None
+        return data
 
     def _build_static_urls(self, target_date: date) -> list[str]:
         """构建指定日期的静态镜像地址列表。
@@ -173,16 +192,6 @@ class DataFetcher:
             "All static news mirrors failed (today=%s)", today.isoformat()
         )
         return None
-
-    async def fetch_all(self) -> dict[str, dict[str, Any] | None]:
-        """Fetch data and return in legacy format for backward compatibility.
-
-        Returns:
-            A dictionary mapping source name to fetched data.
-        """
-        self.logger.info("Fetching news data")
-        result = await self.fetch()
-        return {"news": result}
 
 
 class CachedDataFetcher(DailyCache[dict[str, Any]]):
@@ -274,11 +283,11 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
                 return date(int(year), int(month), int(day))
 
             # 都失败
-            self.logger.warning(f"无法解析日期格式: {date_str}")
+            self.logger.warning("无法解析日期格式: %s", date_str)
             return None
 
         except (AttributeError, TypeError, ValueError) as e:
-            self.logger.warning(f"提取新闻日期时出错: {e}")
+            self.logger.warning("提取新闻日期时出错: %s", e)
             return None
 
     async def fetch_fresh(self) -> dict[str, Any] | None:
@@ -288,14 +297,10 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
             获取的数据字典，如果获取失败返回 None
         """
         try:
-            result = await self._fetcher.fetch_all()
-            # 检查 fetch_all 返回的数据是否有效
-            # fetch_all 返回 {"news": <data>}，如果 <data> 是 None 说明获取失败
-            if result is not None and result.get("news") is None:
-                return None
-            return result
+            result = await self._fetcher.fetch()
+            return {"news": result} if result is not None else None
         except Exception as e:
-            self.logger.error(f"Failed to fetch data: {e}")
+            self.logger.error("Failed to fetch data: %s", e)
             return None
 
     async def get(self, force_refresh: bool = False) -> dict[str, Any] | None:
@@ -308,7 +313,7 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
            b. 如果缓存新闻日期 == 今天日期，直接返回缓存
            c. 否则调 API 获取新数据
               - 如果 API 新闻日期 == 今天日期，保存并返回新数据
-              - 如果 API 新闻日期 != 今天日期（API 未更新），返回本地缓存（不覆盖）
+              - 如果 API 新闻日期 != 今天日期，比较日期并保留较新的数据
            d. API 调用失败时，返回本地缓存（降级策略）
 
         Args:
@@ -319,14 +324,72 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
         """
         from app.services.calendar import today_business
 
-        # 获取今天的 date 对象
-        provider = self._date_provider or today_business
-        today = provider()
+        async with self._get_lock:
+            # 获取今天的 date 对象
+            provider = self._date_provider or today_business
+            today = provider()
 
-        # 1. 强制刷新模式
-        if force_refresh:
-            self.logger.info("Force refresh mode for %s", self.namespace)
-            fresh_data: dict[str, Any] | None = None
+            # 1. 强制刷新模式
+            if force_refresh:
+                self.logger.info("Force refresh mode for %s", self.namespace)
+                fresh_data: dict[str, Any] | None = None
+                try:
+                    fresh_data = await self.fetch_fresh()
+                except Exception as e:
+                    self.logger.exception(
+                        "Exception while fetching fresh data for %s: %s",
+                        self.namespace,
+                        e,
+                    )
+
+                if fresh_data is not None:
+                    await asyncio.to_thread(self.save_cache, fresh_data)
+                    self._record_outcome("fresh")
+                    return fresh_data
+
+                # 降级：返回过期缓存
+                self.logger.warning(
+                    "Force refresh failed for %s, trying stale cache",
+                    self.namespace,
+                )
+                stale_data = await asyncio.to_thread(self.load_cache)
+                if stale_data is not None:
+                    self.logger.info(
+                        "Using stale cache for %s as fallback",
+                        self.namespace,
+                    )
+                    self._record_outcome("stale")
+                    return stale_data
+
+                self.logger.error(
+                    "No data available for %s (fresh fetch failed and no cache)",
+                    self.namespace,
+                )
+                self._record_outcome("failed")
+                return None
+
+            # 2. 正常模式：检查缓存中的新闻日期
+            cached_data = await asyncio.to_thread(self.load_cache)
+            cached_news_date = self._extract_news_date(cached_data)
+
+            # 2a. 如果缓存新闻日期 == 今天，直接返回缓存
+            if cached_news_date == today:
+                self.logger.debug(
+                    "Cache hit for %s: news date matches today (%s)",
+                    self.namespace,
+                    today.isoformat(),
+                )
+                self._record_outcome("cache")
+                return cached_data
+
+            # 2b. 缓存新闻日期不是今天（或无缓存），调用 API
+            self.logger.info(
+                "Fetching fresh data for %s (cached_news_date=%s, today=%s)",
+                self.namespace,
+                cached_news_date.isoformat() if cached_news_date else None,
+                today.isoformat(),
+            )
+            fresh_data = None
             try:
                 fresh_data = await self.fetch_fresh()
             except Exception as e:
@@ -336,118 +399,79 @@ class CachedDataFetcher(DailyCache[dict[str, Any]]):
                     e,
                 )
 
+            # 2c. API 调用成功，检查 API 返回的新闻日期
             if fresh_data is not None:
-                self.save_cache(fresh_data)
+                api_news_date = self._extract_news_date(fresh_data)
+
+                # 无法解析 API 日期
+                if api_news_date is None:
+                    if cached_news_date is not None:
+                        self.logger.warning(
+                            "无法从 API 响应中提取日期，保留日期已知的本地缓存"
+                        )
+                        self._record_outcome("stale")
+                        return cached_data
+                    self.logger.warning(
+                        "无法从 API 响应中提取日期，保存到缓存（无法判断是否为今天）"
+                    )
+                    await asyncio.to_thread(self.save_cache, fresh_data)
+                    self._record_outcome("fresh")
+                    return fresh_data
+
+                # API 新闻日期 == 今天，保存并返回
+                if api_news_date == today:
+                    self.logger.info(
+                        "API news date matches today (%s), saving to cache",
+                        today.isoformat(),
+                    )
+                    await asyncio.to_thread(self.save_cache, fresh_data)
+                    self._record_outcome("fresh")
+                    return fresh_data
+
+                # API 新闻日期 != 今天（API 还没更新）
+                self.logger.warning(
+                    "API 新闻日期 (%s) 非今天 (%s)，API 尚未更新",
+                    api_news_date.isoformat(),
+                    today.isoformat(),
+                )
+
+                # 本地缓存日期已知且不早于 API 时，保留本地缓存
+                if cached_news_date is not None and api_news_date <= cached_news_date:
+                    self.logger.info(
+                        "Keeping local cache for %s (not overwriting with stale API data)",
+                        self.namespace,
+                    )
+                    self._record_outcome("stale")
+                    return cached_data
+
+                # API 日期更新或缓存日期未知时，保存 API 数据
+                self.logger.info(
+                    "Saving newer API data for %s (api_news_date=%s, cached_news_date=%s)",
+                    self.namespace,
+                    api_news_date.isoformat(),
+                    cached_news_date.isoformat() if cached_news_date else None,
+                )
+                await asyncio.to_thread(self.save_cache, fresh_data)
+                self._record_outcome("fresh")
                 return fresh_data
 
-            # 降级：返回过期缓存
+            # 2d. API 调用失败（fresh_data is None），降级返回本地缓存
             self.logger.warning(
-                "Force refresh failed for %s, trying stale cache",
+                "Failed to fetch fresh data for %s, trying stale cache",
                 self.namespace,
             )
-            stale_data = self.load_cache()
-            if stale_data is not None:
+            if cached_data is not None:
                 self.logger.info(
                     "Using stale cache for %s as fallback",
                     self.namespace,
                 )
-                return stale_data
+                self._record_outcome("stale")
+                return cached_data
 
+            # 都失败
             self.logger.error(
                 "No data available for %s (fresh fetch failed and no cache)",
                 self.namespace,
             )
+            self._record_outcome("failed")
             return None
-
-        # 2. 正常模式：检查缓存中的新闻日期
-        cached_data = self.load_cache()
-        cached_news_date = self._extract_news_date(cached_data)
-
-        # 2a. 如果缓存新闻日期 == 今天，直接返回缓存
-        if cached_news_date == today:
-            self.logger.debug(
-                "Cache hit for %s: news date matches today (%s)",
-                self.namespace,
-                today.isoformat(),
-            )
-            return cached_data
-
-        # 2b. 缓存新闻日期不是今天（或无缓存），调用 API
-        self.logger.info(
-            "Fetching fresh data for %s (cached_news_date=%s, today=%s)",
-            self.namespace,
-            cached_news_date.isoformat() if cached_news_date else None,
-            today.isoformat(),
-        )
-        fresh_data = None
-        try:
-            fresh_data = await self.fetch_fresh()
-        except Exception as e:
-            self.logger.exception(
-                "Exception while fetching fresh data for %s: %s",
-                self.namespace,
-                e,
-            )
-
-        # 2c. API 调用成功，检查 API 返回的新闻日期
-        if fresh_data is not None:
-            api_news_date = self._extract_news_date(fresh_data)
-
-            # 无法解析 API 日期
-            if api_news_date is None:
-                self.logger.warning(
-                    "无法从 API 响应中提取日期，保存到缓存（无法判断是否为今天）"
-                )
-                self.save_cache(fresh_data)
-                return fresh_data
-
-            # API 新闻日期 == 今天，保存并返回
-            if api_news_date == today:
-                self.logger.info(
-                    "API news date matches today (%s), saving to cache",
-                    today.isoformat(),
-                )
-                self.save_cache(fresh_data)
-                return fresh_data
-
-            # API 新闻日期 != 今天（API 还没更新）
-            self.logger.warning(
-                "API 新闻日期 (%s) 非今天 (%s)，API 尚未更新",
-                api_news_date.isoformat(),
-                today.isoformat(),
-            )
-
-            # 如果有本地缓存，返回本地缓存（不覆盖）
-            if cached_data is not None:
-                self.logger.info(
-                    "Keeping local cache for %s (not overwriting with stale API data)",
-                    self.namespace,
-                )
-                return cached_data
-
-            # 如果没有本地缓存，保存 API 数据（总比没有好）
-            self.logger.info(
-                "No local cache, saving API data for %s (better than nothing)",
-                self.namespace,
-            )
-            self.save_cache(fresh_data)
-            return fresh_data
-
-        # 2d. API 调用失败（fresh_data is None），降级返回本地缓存
-        self.logger.warning(
-            "Failed to fetch fresh data for %s, trying stale cache",
-            self.namespace,
-        )
-        if cached_data is not None:
-            self.logger.info(
-                "Using stale cache for %s as fallback",
-                self.namespace,
-            )
-            return cached_data
-
-        # 都失败
-        self.logger.error(
-            "No data available for %s (fresh fetch failed and no cache)",
-            self.namespace,
-        )
-        return None

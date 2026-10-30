@@ -38,6 +38,9 @@ jobs:
       - name: Install Playwright Chromium
         run: python -m playwright install --with-deps chromium
 
+      - name: Run font timeout regression test
+        run: python -m pytest -q tests/e2e/test_render_font_timeout.py
+
       - name: Run render smoke test
         run: |
           python scripts/render_once.py

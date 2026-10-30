@@ -1,8 +1,12 @@
 import asyncio
+import contextlib
 import json
 import logging
 import os
+import tempfile
 import time
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -10,6 +14,7 @@ from typing import Any
 import httpx
 
 from app.core.network import create_async_client, redact_url, safe_exception_for_log
+from app.core.fileutil import set_output_permissions
 from app.services.calendar import get_business_timezone
 from app.services.daily_cache import DailyCache
 
@@ -17,6 +22,23 @@ from app.services.daily_cache import DailyCache
 GITHUB_RAW_URL = (
     "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json"
 )
+
+
+def _future_make_up_workdays(values: Any, today: date) -> list[str]:
+    """规范化补班日期，过滤无效与过往日期并排序去重。"""
+    if not isinstance(values, list):
+        return []
+    workdays: set[str] = set()
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        try:
+            workday = date.fromisoformat(value)
+        except ValueError:
+            continue
+        if workday >= today:
+            workdays.add(workday.isoformat())
+    return sorted(workdays)
 
 
 class HolidayService:
@@ -33,6 +55,7 @@ class HolidayService:
         ghproxy_urls: list[str] | None = None,
         timeout_sec: int = 10,
         proxy_url: str | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """初始化节假日数据服务。
 
@@ -42,6 +65,7 @@ class HolidayService:
             ghproxy_urls: GitHub raw 镜像代理前缀列表，按顺序优先尝试。
             timeout_sec: 请求超时时间，单位秒。
             proxy_url: 可选全局代理 URL。
+            http_client: 可选外部 HTTP 客户端；由调用方管理生命周期。
 
         Side Effects:
             创建缓存目录（如果不存在）。
@@ -52,6 +76,19 @@ class HolidayService:
         self._ghproxy_urls = ghproxy_urls or []
         self._timeout_sec = timeout_sec
         self._proxy_url = proxy_url
+        self._http_client = http_client
+        self.make_up_workdays: list[str] = []
+
+    @asynccontextmanager
+    async def _get_client(self) -> AsyncIterator[httpx.AsyncClient]:
+        """复用注入客户端，未注入时创建临时客户端。"""
+        if self._http_client is not None:
+            yield self._http_client
+        else:
+            async with create_async_client(
+                timeout=self._timeout_sec, proxy_url=self._proxy_url
+            ) as client:
+                yield client
 
     def _build_urls(self, year: int) -> list[str]:
         """构建 URL 列表：镜像源优先，GitHub 原始源兜底"""
@@ -63,9 +100,7 @@ class HolidayService:
         for proxy_prefix in self._ghproxy_urls:
             # 校验镜像前缀必须包含协议
             if not proxy_prefix.startswith(("http://", "https://")):
-                self._logger.warning(
-                    f"跳过无效代理前缀（缺少协议）: {redact_url(proxy_prefix)}"
-                )
+                self._logger.warning("跳过无效代理前缀（缺少协议）: %s", redact_url(proxy_prefix))
                 continue
             # 确保代理地址以 / 结尾
             prefix = proxy_prefix.rstrip("/") + "/"
@@ -97,7 +132,7 @@ class HolidayService:
         ttl = self._get_ttl(year)
         if ttl is None:
             # 往年数据：缓存存在即有效
-            self._logger.debug(f"{year} 年为往年数据，缓存永久有效")
+            self._logger.debug("%s 年为往年数据，缓存永久有效", year)
             return True
 
         # 检查 mtime
@@ -105,35 +140,36 @@ class HolidayService:
         age = time.time() - mtime
         # 兜底：系统时间回拨时视为过期
         if age < 0:
-            self._logger.warning(
-                f"{year} 年缓存 mtime 异常（系统时间可能回拨），视为过期"
-            )
+            self._logger.warning("%s 年缓存 mtime 异常（系统时间可能回拨），视为过期", year)
             return False
         if age < ttl:
             self._logger.debug(
-                f"{year} 年缓存有效，已缓存 {age / 3600:.1f} 小时，TTL {ttl / 3600:.1f} 小时"
+                "%s 年缓存有效，已缓存 %.1f 小时，TTL %.1f 小时", year, age / 3600, ttl / 3600
             )
             return True
         else:
             self._logger.debug(
-                f"{year} 年缓存已过期，已缓存 {age / 3600:.1f} 小时，TTL {ttl / 3600:.1f} 小时"
+                "%s 年缓存已过期，已缓存 %.1f 小时，TTL %.1f 小时", year, age / 3600, ttl / 3600
             )
             return False
 
-    async def fetch_holidays(self) -> list[dict[str, Any]]:
-        """获取去年、今年和明年的节假日数据，合并处理后返回"""
+    async def fetch_holidays(self) -> list[dict[str, Any]] | None:
+        """获取去年、今年和明年的节假日数据，合并处理后返回。
+
+        Returns:
+            至少一年获取成功时返回合并列表（可为空），全部失败时返回 None。
+        """
         today = self._get_today()
+        self.make_up_workdays = []
         current_year = today.year
         prev_year = current_year - 1
         next_year = current_year + 1
 
         self._logger.info(
-            f"开始获取 {prev_year}、{current_year} 和 {next_year} 年节假日数据"
+            "开始获取 %s、%s 和 %s 年节假日数据", prev_year, current_year, next_year
         )
 
-        async with create_async_client(
-            timeout=self._timeout_sec, proxy_url=self._proxy_url
-        ) as client:
+        async with self._get_client() as client:
             tasks = [
                 self._fetch_year_data(client, prev_year),
                 self._fetch_year_data(client, current_year),
@@ -141,7 +177,20 @@ class HolidayService:
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        return self._merge_and_process(list(results))
+        valid_data = [data for data in results if isinstance(data, dict)]
+        if not valid_data:
+            self._logger.error("所有年份节假日数据均获取失败")
+            return None
+
+        return self._merge_and_process(valid_data)
+
+    def _is_valid_year_data(self, data: Any) -> bool:
+        """校验年度数据包含 days 列表，且每个条目均为字典"""
+        return (
+            isinstance(data, dict)
+            and isinstance(data.get("days"), list)
+            and all(isinstance(day, dict) for day in data["days"])
+        )
 
     async def _fetch_year_data(
         self, client: httpx.AsyncClient, year: int
@@ -151,7 +200,7 @@ class HolidayService:
         if self._is_cache_valid(year):
             cached_data = self._load_from_cache(year)
             if cached_data:
-                self._logger.debug(f"使用 {year} 年有效缓存数据")
+                self._logger.debug("使用 %s 年有效缓存数据", year)
                 return cached_data
 
         # 2. 缓存无效或不存在，尝试从网络获取
@@ -159,10 +208,15 @@ class HolidayService:
 
         for url in urls:
             try:
-                response = await client.get(url)
+                response = await client.get(
+                    url, timeout=httpx.Timeout(self._timeout_sec)
+                )
                 response.raise_for_status()
                 data = response.json()
-                self._logger.debug(f"成功从 {redact_url(url)} 获取 {year} 年节假日数据")
+                if not self._is_valid_year_data(data):
+                    self._logger.warning("数据源 %s 返回的 %s 年数据格式无效", redact_url(url), year)
+                    continue
+                self._logger.debug("成功从 %s 获取 %s 年节假日数据", redact_url(url), year)
 
                 # 成功获取后更新缓存
                 self._save_to_cache(year, data)
@@ -170,51 +224,72 @@ class HolidayService:
 
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 404:
-                    self._logger.warning(f"数据源 {redact_url(url)} 返回 404")
+                    self._logger.warning("数据源 %s 返回 404", redact_url(url))
                     continue
                 self._logger.warning(
-                    f"数据源 {redact_url(url)} 请求失败: {safe_exception_for_log(e, url, self._proxy_url)}"
+                    "数据源 %s 请求失败: %s",
+                    redact_url(url),
+                    safe_exception_for_log(e, url, self._proxy_url),
                 )
             except Exception as e:
                 self._logger.warning(
-                    f"数据源 {redact_url(url)} 访问异常: {safe_exception_for_log(e, url, self._proxy_url)}"
+                    "数据源 %s 访问异常: %s",
+                    redact_url(url),
+                    safe_exception_for_log(e, url, self._proxy_url),
                 )
 
         # 3. 网络请求全部失败，尝试读取过期缓存（降级策略）
-        self._logger.warning(f"所有数据源均无法获取 {year} 年数据，尝试读取本地缓存")
+        self._logger.warning("所有数据源均无法获取 %s 年数据，尝试读取本地缓存", year)
         cached_data = self._load_from_cache(year)
         if cached_data:
-            self._logger.info(f"成功读取 {year} 年本地缓存数据")
+            self._logger.info("成功读取 %s 年本地缓存数据", year)
             return cached_data
 
-        self._logger.error(f"无法获取 {year} 年节假日数据 (网络失败且无缓存)")
+        self._logger.error("无法获取 %s 年节假日数据 (网络失败且无缓存)", year)
         return None
 
     def _save_to_cache(self, year: int, data: dict[str, Any]) -> None:
-        """保存数据到本地缓存"""
+        """通过临时文件和原子替换保存数据到本地缓存"""
+        tmp_path: str | None = None
         try:
             cache_file = self._cache_dir / f"{year}.json"
-            with open(cache_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            self._logger.debug(f"已缓存 {year} 年数据到 {cache_file}")
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self._cache_dir,
+                delete=False,
+                suffix=".tmp",
+            ) as tmp_file:
+                tmp_path = tmp_file.name
+                json.dump(data, tmp_file, ensure_ascii=False, indent=2)
+            set_output_permissions(tmp_path)
+            os.replace(tmp_path, cache_file)
+            self._logger.debug("已缓存 %s 年数据到 %s", year, cache_file)
         except Exception as e:
-            self._logger.warning(f"缓存 {year} 年数据失败: {e}")
+            self._logger.warning("缓存 %s 年数据失败: %s", year, e)
+            if tmp_path:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp_path)
 
     def _load_from_cache(self, year: int) -> dict[str, Any] | None:
-        """从本地缓存读取数据"""
+        """从本地缓存读取数据，格式无效时返回 None"""
         try:
             cache_file = self._cache_dir / f"{year}.json"
             if not cache_file.exists():
                 return None
 
             with open(cache_file, encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+            if not self._is_valid_year_data(data):
+                self._logger.warning("%s 年缓存数据格式无效", year)
+                return None
+            return data
         except Exception as e:
-            self._logger.warning(f"读取 {year} 年缓存失败: {e}")
+            self._logger.warning("读取 %s 年缓存失败: %s", year, e)
             return None
 
     def _merge_and_process(
-        self, data_list: list[dict[str, Any] | None | Exception]
+        self, data_list: Sequence[dict[str, Any] | None | Exception]
     ) -> list[dict[str, Any]]:
         """合并多年数据，过滤休息日，排序后聚合连续假期"""
         all_days: list[dict[str, Any]] = []
@@ -222,7 +297,7 @@ class HolidayService:
         for data in data_list:
             # 过滤异常结果（来自 gather 的 return_exceptions=True）
             if isinstance(data, Exception):
-                self._logger.warning(f"跳过异常结果: {data}")
+                self._logger.warning("跳过异常结果: %s", data)
                 continue
             if data is None:
                 continue
@@ -236,12 +311,15 @@ class HolidayService:
         today = self._get_today()
         today_str = today.isoformat()
         workdays = [d for d in all_days if d.get("isOffDay") is False]
+        self.make_up_workdays = _future_make_up_workdays(
+            [day.get("date") for day in workdays], today
+        )
         today_workday = next((d for d in workdays if d.get("date") == today_str), None)
 
         # 按 date 升序排序
         off_days.sort(key=lambda x: x.get("date", ""))
 
-        self._logger.debug(f"合并后共 {len(off_days)} 个休息日")
+        self._logger.debug("合并后共 %s 个休息日", len(off_days))
 
         # 处理正常假期
         result = self._group_continuous_holidays(off_days)
@@ -259,7 +337,7 @@ class HolidayService:
                 "is_off_day": False,
             }
             result.insert(0, workday_entry)
-            self._logger.info(f"今天是补班日：{holiday_name}")
+            self._logger.info("今天是补班日：%s", holiday_name)
 
         return result
 
@@ -279,7 +357,7 @@ class HolidayService:
                 day_date = date.fromisoformat(day["date"])
                 day_name = day.get("name", "")
             except (KeyError, ValueError) as e:
-                self._logger.warning(f"跳过无效日期数据: {day}, 错误: {e}")
+                self._logger.warning("跳过无效日期数据: %s, 错误: %s", day, e)
                 continue
 
             if not current_group:
@@ -291,7 +369,7 @@ class HolidayService:
                 last_date = date.fromisoformat(last_day["date"])
                 last_name = last_day.get("name", "")
             except (KeyError, ValueError) as e:
-                self._logger.warning(f"跳过无效日期数据: {last_day}, 错误: {e}")
+                self._logger.warning("跳过无效日期数据: %s, 错误: %s", last_day, e)
                 current_group = [day]
                 continue
 
@@ -318,7 +396,7 @@ class HolidayService:
                 if date.fromisoformat(g["end_date"]) >= today:
                     result.append(g)
             except (KeyError, ValueError) as e:
-                self._logger.warning(f"跳过无效假期组: {g}, 错误: {e}")
+                self._logger.warning("跳过无效假期组: %s, 错误: %s", g, e)
                 continue
 
         # 计算 days_left
@@ -327,10 +405,10 @@ class HolidayService:
                 start = date.fromisoformat(group["start_date"])
                 group["days_left"] = (start - today).days if start > today else 0
             except (KeyError, ValueError) as e:
-                self._logger.warning(f"无法计算 days_left: {group}, 错误: {e}")
+                self._logger.warning("无法计算 days_left: %s, 错误: %s", group, e)
                 group["days_left"] = 0
 
-        self._logger.info(f"处理完成，共 {len(result)} 个有效假期")
+        self._logger.info("处理完成，共 %s 个有效假期", len(result))
 
         return result
 
@@ -353,11 +431,11 @@ class HolidayService:
         }
 
 
-class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
+class CachedHolidayService(DailyCache[dict[str, Any]]):
     """带日级缓存的节假日服务。
 
     原始年度数据仍保留在 cache/holidays/ 目录，
-    聚合后的节假日列表缓存在 cache/holidays.json。
+    聚合后的节假日列表与补班日期缓存在 cache/holidays.json。
 
     继承 DailyCache，为 HolidayService 提供日级缓存能力。
     缓存在每日零点自动过期，网络获取失败时返回过期缓存。
@@ -371,6 +449,7 @@ class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
         ghproxy_urls: list[str] | None = None,
         timeout_sec: int = 10,
         proxy_url: str | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """初始化带缓存的节假日服务。
 
@@ -381,6 +460,7 @@ class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
             ghproxy_urls: 代理源 URL 列表
             timeout_sec: 请求超时时间（秒）
             proxy_url: 可选全局代理 URL
+            http_client: 可选外部 HTTP 客户端；由调用方管理生命周期
         """
         super().__init__("holidays", cache_dir, logger)
         self._service = HolidayService(
@@ -389,16 +469,35 @@ class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
             ghproxy_urls=ghproxy_urls,
             timeout_sec=timeout_sec,
             proxy_url=proxy_url,
+            http_client=http_client,
         )
 
-    async def fetch_fresh(self) -> list[dict[str, Any]] | None:
+    def load_cache(self) -> dict[str, Any] | None:
+        """读取包含节假日列表与补班日期的日缓存。"""
+        data = super().load_cache()
+        if not isinstance(data, dict) or not isinstance(data.get("holidays"), list):
+            return None
+        return {
+            "holidays": data["holidays"],
+            "make_up_workdays": _future_make_up_workdays(
+                data.get("make_up_workdays"), self._service._get_today()
+            ),
+        }
+
+    async def fetch_fresh(self) -> dict[str, Any] | None:
         """从网络获取新鲜数据。
 
         Returns:
-            聚合后的节假日列表，如果获取失败返回 None
+            节假日列表与补班日期，如果获取失败返回 None
         """
         try:
-            return await self._service.fetch_holidays()
+            holidays = await self._service.fetch_holidays()
+            if holidays is None:
+                return None
+            return {
+                "holidays": holidays,
+                "make_up_workdays": self._service.make_up_workdays,
+            }
         except Exception as e:
             self.logger.error("Failed to fetch holidays: %s", safe_exception_for_log(e))
             return None

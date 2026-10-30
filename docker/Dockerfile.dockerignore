@@ -54,9 +54,9 @@ static/
 config.yaml.local
 
 # Docker
-docker-compose.yaml
-Dockerfile
-.dockerignore
+deploy/
+docker/Dockerfile
+docker/Dockerfile.dockerignore
 
 # Documentation
 README.md

@@ -7,8 +7,11 @@
   <meta name="moyuren:show-kfc" content="true">
   <meta name="moyuren:show-stock" content="true">
   <meta name="moyuren:show-daily-english" content="true">
+  <meta name="moyuren:description" content="棉花糖波普版摸鱼日历，以明快可爱的卡片展示每日信息。">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>摸鱼日历 {{ date.year_month }} - 棉花糖波普版</title>
+  <link rel="stylesheet" href="https://fonts.moyuren.invalid/fonts.css">
+  {% if remote_font_fallback %}
   {% if use_china_cdn %}
   <link rel="preconnect" href="https://fonts.googleapis.cn" crossorigin>
   <link rel="preconnect" href="https://fonts.gstatic.cn" crossorigin>
@@ -17,6 +20,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Nunito:wght@700;900&display=swap" rel="stylesheet">
+  {% endif %}
   {% endif %}
   <style>
     :root {
@@ -30,8 +34,12 @@
       --m-mint: #B5EAD7;
       --m-peach: #FFDAC1;
       --m-lilac: #C7CEEA;
-      --m-soft-red: #FF9AA2;
+      --m-soft-red: #B42332;
       --m-gray: #E8E4E0;
+
+      /* 股票专用（A 股红涨绿跌） */
+      --color-up: #B91C1C;
+      --color-down: #047857;
 
       /* 半透明变体 */
       --m-pink-light: rgba(255, 154, 162, 0.15);
@@ -52,8 +60,129 @@
       --radius-sm: 8px;
 
       /* 字体系统 */
-      --font-cute: 'ZCOOL KuaiLe', 'PingFang SC', 'Microsoft YaHei', cursive;
-      --font-body: 'Nunito', 'Varela Round', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+      --font-cute: 'Moyuren ZCOOL KuaiLe', 'ZCOOL KuaiLe', 'Moyuren Noto Sans SC', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', cursive;
+      --font-body: 'Moyuren Nunito', 'Nunito', 'Moyuren Noto Sans SC', 'Noto Sans SC', 'Varela Round', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+    }
+
+    /* 节日主题更鲜明；正文/底色 #4A1717/#FFF7ED，满足 WCAG AA */
+    body.theme-spring_festival {
+      --bg-cream: #FFF7ED;
+      --line-coffee: #4A1717;
+      --card-bg: #FFFDF8;
+      --m-pink: #F6A6A0;
+      --m-mint: #F4D58D;
+      --m-peach: #FFD98E;
+      --m-lilac: #E9B4A8;
+      --m-soft-red: #B91C1C;
+      --m-gray: #F0DDD5;
+      --m-gold-bg: #FFF2C7;
+      --color-up: #B91C1C;
+      --color-down: #047857;
+    }
+
+    /* 中秋暖金配靛蓝；正文/底色 #292342/#FFF8E7，满足 WCAG AA */
+    body.theme-mid_autumn {
+      --bg-cream: #FFF8E7;
+      --line-coffee: #292342;
+      --card-bg: #FFFCF4;
+      --m-pink: #E8B98A;
+      --m-mint: #C9D3C0;
+      --m-peach: #F4D58D;
+      --m-lilac: #B9B6D9;
+      --m-soft-red: #A33A3A;
+      --m-gray: #E6E0D5;
+      --m-gold-bg: #FFF0BC;
+      --color-up: #B91C1C;
+      --color-down: #047857;
+    }
+
+    /* 国庆红色强调；正文/底色 #461515/#FFF8F5，满足 WCAG AA */
+    body.theme-national_day {
+      --bg-cream: #FFF8F5;
+      --line-coffee: #461515;
+      --card-bg: #FFFCFA;
+      --m-pink: #F3AAA5;
+      --m-mint: #E8D3BD;
+      --m-peach: #FFD59A;
+      --m-lilac: #E7B9B5;
+      --m-soft-red: #B91C1C;
+      --m-gray: #ECDDD8;
+      --m-gold-bg: #FFF1C2;
+      --color-up: #B91C1C;
+      --color-down: #047857;
+    }
+
+    /* 春季嫩绿微调；正文/底色 #263B2E/#F5FBF4，满足 WCAG AA */
+    body.theme-spring {
+      --bg-cream: #F5FBF4;
+      --line-coffee: #263B2E;
+      --card-bg: #FFFFFF;
+      --m-pink: #F1B8B4;
+      --m-mint: #A9DDBE;
+      --m-peach: #F7D9B6;
+      --m-lilac: #C7D8C4;
+      --m-soft-red: #B42332;
+      --m-gray: #E1E9DF;
+      --m-gold-bg: #FFF8DF;
+      --color-up: #B91C1C;
+      --color-down: #047857;
+    }
+
+    /* 夏季湖蓝微调；正文/底色 #213A49/#F2FBFC，满足 WCAG AA */
+    body.theme-summer {
+      --bg-cream: #F2FBFC;
+      --line-coffee: #213A49;
+      --card-bg: #FFFFFF;
+      --m-pink: #F0B9B2;
+      --m-mint: #A8DED8;
+      --m-peach: #F7D8AC;
+      --m-lilac: #B9D5E5;
+      --m-soft-red: #B42332;
+      --m-gray: #DFE9EB;
+      --m-gold-bg: #FFF8DE;
+      --color-up: #B91C1C;
+      --color-down: #047857;
+    }
+
+    /* 秋季枫叶暖调；正文/底色 #4A2C1B/#FFF9F0，满足 WCAG AA */
+    body.theme-autumn {
+      --bg-cream: #FFF9F0;
+      --line-coffee: #4A2C1B;
+      --card-bg: #FFFEFA;
+      --m-pink: #EFB29E;
+      --m-mint: #C9D5B5;
+      --m-peach: #EDC38B;
+      --m-lilac: #D4B6A5;
+      --m-soft-red: #A93A32;
+      --m-gray: #E9DFD3;
+      --m-gold-bg: #FFF1CC;
+      --color-up: #B91C1C;
+      --color-down: #047857;
+    }
+
+    /* 冬季霜蓝微调；正文/底色 #293849/#F4F8FC，满足 WCAG AA */
+    body.theme-winter {
+      --bg-cream: #F4F8FC;
+      --line-coffee: #293849;
+      --card-bg: #FFFFFF;
+      --m-pink: #DDBCC6;
+      --m-mint: #B9D8D7;
+      --m-peach: #E6D6C9;
+      --m-lilac: #BACBE3;
+      --m-soft-red: #B42332;
+      --m-gray: #E1E7EE;
+      --m-gold-bg: #FFF8DF;
+      --color-up: #B91C1C;
+      --color-down: #047857;
+    }
+
+    body[class*="theme-"] {
+      /* 在 body 上重新绑定，确保边框和阴影跟随主题正文色 */
+      --border-thick: 3px solid var(--line-coffee);
+      --border-thin: 2px solid var(--line-coffee);
+      --shadow-hard: 4px 4px 0px var(--line-coffee);
+      --shadow-sm: 2px 2px 0px var(--line-coffee);
+      --shadow-md: 3px 3px 0px var(--line-coffee);
     }
 
     * {
@@ -136,6 +265,7 @@
     }
     .badge-relax { background: rgba(181, 234, 215, 0.4); }
     .badge-work { background: rgba(255, 183, 178, 0.4); }
+    .off-work-badge { white-space: nowrap; font-size: 13px; color: var(--line-coffee); }
 
     /* --- 2. 进度条区域 --- */
     .progress-section {
@@ -339,7 +469,7 @@
     /* 类型变体：法定假日 */
     .hc-legal {
       background: var(--m-pink-light);
-      --cd-color: #E74C3C;
+      --cd-color: #B91C1C;
     }
     .hc-legal .cd-value { color: var(--cd-color); }
 
@@ -356,9 +486,9 @@
       border: 2px dashed rgba(92, 64, 51, 0.35);
       box-shadow: none;
     }
-    .hc-work .hc-name { opacity: 0.7; }
+    .hc-work .hc-name { color: var(--line-coffee); }
     .hc-work .hc-icon { filter: grayscale(100%); opacity: 0.6; }
-    .hc-work .cd-value { color: var(--line-coffee); opacity: 0.6; }
+    .hc-work .cd-value { color: var(--line-coffee); }
 
     /* Hero Card：首项全宽高亮 */
     .holiday-hero {
@@ -389,7 +519,7 @@
 
     /* Hero 类型变体 */
     .holiday-hero.hc-legal { background: var(--m-pink-light); }
-    .holiday-hero.hc-legal .cd-value { color: #E74C3C; }
+    .holiday-hero.hc-legal .cd-value { color: #B91C1C; }
     .holiday-hero.hc-normal { background: var(--m-mint-light); }
     .holiday-hero.hc-normal .cd-value { color: #00796B; }
     .holiday-hero.hc-work {
@@ -397,8 +527,8 @@
       border: 2.5px dashed rgba(92, 64, 51, 0.35);
       box-shadow: none;
     }
-    .holiday-hero.hc-work .hc-name { opacity: 0.7; }
-    .holiday-hero.hc-work .cd-value { color: var(--line-coffee); opacity: 0.6; }
+    .holiday-hero.hc-work .hc-name { color: var(--line-coffee); }
+    .holiday-hero.hc-work .cd-value { color: var(--line-coffee); }
 
     /* --- 5. 股票区块 --- */
     .stock-card { padding: 10px 14px; }
@@ -418,10 +548,10 @@
       gap: 8px;
       color: var(--line-coffee);
     }
-    .trend-up { background: var(--m-pink-light); }
-    .trend-down { background: var(--m-mint-light); }
+    .trend-up { background: var(--m-pink-light); color: var(--color-up); }
+    .trend-down { background: var(--m-mint-light); color: var(--color-down); }
     .trend-flat { background: rgba(232, 228, 224, 0.5); }
-    .stock-name { font-size: 16px; font-weight: 800; opacity: 0.9; line-height: 1; }
+    .stock-name { font-size: 16px; font-weight: 800; line-height: 1; }
     .stock-data {
       display: flex;
       align-items: center;
@@ -442,7 +572,7 @@
     .stock-updated {
       text-align: right;
       font-size: 13px;
-      opacity: 0.5;
+      color: var(--line-coffee);
       margin-top: 14px;
     }
     .gold-item { background: var(--m-gold-bg) !important; }
@@ -491,7 +621,7 @@
       border-radius: 8px;
       background: var(--card-bg);
       box-shadow: 2px 2px 0 var(--line-coffee);
-      font-family: 'DejaVu Sans', 'Noto Sans', var(--font-body);
+      font-family: 'DejaVu Sans', 'Noto Sans', 'Moyuren Noto Sans SC', var(--font-body);
     }
     .english-tags { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
     .english-tag {
@@ -537,7 +667,6 @@
       text-align: center;
       font-size: 14px;
       color: var(--line-coffee);
-      opacity: 0.6;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -566,7 +695,6 @@
       min-height: 50px;
       font-size: 18px;
       color: var(--line-coffee);
-      opacity: 0.5;
     }
 
     /* 防溢出保护 */
@@ -577,21 +705,31 @@
     }
   </style>
 </head>
-<body>
+<body class="theme-{{ theme.name if theme is defined else 'default' }}">
   <div class="canvas">
     <!-- 1. Header -->
     <header class="header card">
       <div class="header-left">
         <div class="date-main font-cute">{{ date.year_month }} {{ date.day }}日</div>
-        <div class="date-sub">{{ date.lunar_year }}年 {{ date.lunar_date }}</div>
+        {% set lunar_year = date.lunar_year | string %}
+        <div class="date-sub">{{ lunar_year }}{% if not lunar_year.endswith('年') %}年{% endif %} {{ date.lunar_date }}</div>
         <div class="date-sub">{{ date.week_en }}</div>
       </div>
       <div class="header-right">
         <div class="badge-week font-cute">{{ date.week_cn }}</div>
-        {% if weekend.is_weekend %}
+        {% if next_rest_day is defined %}
+        {% if next_rest_day.is_today_off %}
+        <div class="badge-weekend badge-relax font-cute">🎉 {% if next_rest_day.today_name %}{{ next_rest_day.today_name }}快乐！{% else %}休息啦！{% endif %}</div>
+        {% else %}
+        <div class="badge-weekend badge-work font-cute">⏳ 距休息 {{ next_rest_day.days_left }} 天</div>
+        {% endif %}
+        {% elif weekend.is_weekend %}
         <div class="badge-weekend badge-relax font-cute">🎉 周末啦！</div>
         {% else %}
         <div class="badge-weekend badge-work font-cute">⏳ 距周末 {{ weekend.days_left }} 天</div>
+        {% endif %}
+        {% if off_work is defined and off_work %}
+        <div class="off-work-badge font-cute">{% if off_work.done %}已下班{% elif off_work.hours > 0 %}距下班 {{ off_work.hours }} 小时{% if off_work.minutes > 0 %} {{ off_work.minutes }} 分{% endif %}{% elif off_work.minutes > 0 %}距下班 {{ off_work.minutes }} 分{% else %}即将下班{% endif %}</div>
         {% endif %}
       </div>
     </header>
@@ -704,7 +842,7 @@
 
       {# === 首项：单独一行全宽显示 === #}
       {% set hero = holidays[0] %}
-      {% if hero.is_off_day is false %}
+      {% if hero.is_legal_holiday and hero.is_off_day is false %}
       <div class="holiday-hero hc-work">
         <div class="hc-info">
           <div class="hc-name font-cute"><span class="hc-icon">💼</span>{{ hero.name }}</div>
@@ -768,7 +906,7 @@
       <div class="holidays-grid">
         {% for holiday in holidays[1:] %}
 
-        {% if holiday.is_off_day is false %}
+        {% if holiday.is_legal_holiday and holiday.is_off_day is false %}
         <div class="holiday-card hc-work">
           <div class="hc-info">
             <div class="hc-name font-cute"><span class="hc-icon">💼</span>{{ holiday.name }}</div>
@@ -880,7 +1018,11 @@
       <div class="stock-updated">更新于 {{ stock_indices.updated | format_datetime }}</div>
       {% endif %}
       {% else %}
+      {% if stock_indices and stock_indices.is_data_missing %}
+      <div class="empty-state font-cute">数据更新失败，请稍后再试</div>
+      {% else %}
       <div class="empty-state font-cute">(っ˘ω˘ς ) 股市休息中...</div>
+      {% endif %}
       {% if gold_price %}
       <div class="stock-item gold-item trend-{{ gold_price.trend }}" style="margin-top: 10px;">
         <div class="stock-name">💰 {{ gold_price.name }}</div>
@@ -909,6 +1051,10 @@
     <footer class="footer">
       {% if is_fallback_mode %}
       <span class="fallback-badge">Fallback Mode</span>
+      {% endif %}
+      {% if data_freshness is defined and data_freshness.is_stale %}
+      <span>{{ ('数据日期 ' ~ data_freshness.source_date ~ '（非当日）') if data_freshness.news_is_stale else '部分数据为缓存' }}</span>
+      <span>·</span>
       {% endif %}
       <span>{{ github_url | default('MR-MonkeyRay/moyuren_server') }}</span>
       <span>·</span>

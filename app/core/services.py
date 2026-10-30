@@ -7,11 +7,13 @@ if TYPE_CHECKING:
     from app.services.daily_english import CachedDailyEnglishService
     from app.services.fetcher import CachedDataFetcher
     from app.services.fun_content import CachedFunContentService
+    from app.services.generator import ImageGenerator
     from app.services.gold_price import CachedGoldPriceService
     from app.services.holiday import CachedHolidayService
     from app.services.kfc import CachedKfcService
     from app.services.renderer import ImageRenderer
     from app.services.stock_index import StockIndexService
+    from app.services.notifier import WebhookNotifier
 
 
 @dataclass
@@ -19,7 +21,7 @@ class AppServices:
     """应用服务容器 - 类型安全的服务访问"""
 
     data_fetcher: "CachedDataFetcher | None"
-    holiday_service: "CachedHolidayService"
+    holiday_service: "CachedHolidayService | None"
     fun_content_service: "CachedFunContentService | None"
     kfc_service: "CachedKfcService | None"
     stock_index_service: "StockIndexService | None"
@@ -28,3 +30,5 @@ class AppServices:
     image_renderer: "ImageRenderer"
     data_computer: "DataComputer"
     cache_cleaner: "CacheCleaner"
+    generator: "ImageGenerator"
+    notifier: "WebhookNotifier | None" = None

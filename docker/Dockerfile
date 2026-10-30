@@ -61,14 +61,14 @@ RUN playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 # 复制启动脚本
-COPY --chown=appuser:appuser docker-entrypoint.sh /app/
+COPY --chown=appuser:appuser docker/docker-entrypoint.sh /app/
 RUN chmod +x /app/docker-entrypoint.sh
 
 # 复制应用代码（使用 --chown 替代后续 chown -R）
 COPY --chown=appuser:appuser . /app
 
 # 创建挂载目录（entrypoint 会在运行时处理权限）
-RUN mkdir -p /app/cache/data /app/cache/images /app/cache/holidays /app/cache/daily /app/logs /app/templates \
+RUN mkdir -p /app/cache/data /app/cache/images /app/cache/holidays /app/cache/daily /app/cache/ecdict /app/logs /app/templates \
     && chown -R appuser:appuser /app/cache /app/logs /app/templates
 
 # 暴露端口
@@ -76,7 +76,7 @@ EXPOSE 8000
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD wget --spider -q http://127.0.0.1:${SERVER_PORT:-8000}/healthz || exit 1
+    CMD wget --spider -q http://127.0.0.1:${MOYUREN_SERVER_PORT:-${SERVER_PORT:-8000}}/healthz || exit 1
 
 # 启动命令
 ENTRYPOINT ["bash", "/app/docker-entrypoint.sh"]

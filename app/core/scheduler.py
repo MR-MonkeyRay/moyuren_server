@@ -1,31 +1,48 @@
-"""Task scheduler module using APScheduler."""
+"""基于 APScheduler 的任务调度模块。"""
 
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, tzinfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 
 from app.core.config import SchedulerConfig
+from app.services.calendar import get_business_timezone
+
+MISFIRE_GRACE_TIME_SECONDS = 300
 
 
 class TaskScheduler:
-    """Async task scheduler using APScheduler."""
+    """基于 APScheduler 的异步任务调度器。"""
 
-    def __init__(self, config: SchedulerConfig, logger: logging.Logger) -> None:
-        """Initialize the task scheduler.
+    def __init__(
+        self,
+        config: SchedulerConfig,
+        logger: logging.Logger,
+        timezone: tzinfo | None = None,
+    ) -> None:
+        """初始化任务调度器。
 
         Args:
-            config: Scheduler configuration including default times.
-            logger: Logger instance for logging scheduler events.
+            config: 调度配置，包含默认执行时间。
+            logger: 记录调度事件的日志实例。
+            timezone: 调度时区；为 None 时使用业务时区。
         """
         self.config = config
         self.logger = logger
+        self.timezone = timezone if timezone is not None else get_business_timezone()
 
-        # Initialize AsyncIOScheduler with local timezone
-        self.scheduler = AsyncIOScheduler()
+        # 使用业务时区和默认任务配置初始化 AsyncIOScheduler
+        self.scheduler = AsyncIOScheduler(
+            timezone=self.timezone,
+            job_defaults={
+                "coalesce": True,
+                "max_instances": 1,
+                "misfire_grace_time": MISFIRE_GRACE_TIME_SECONDS,
+            },
+        )
 
     def add_daily_job(
         self,
@@ -34,15 +51,15 @@ class TaskScheduler:
         hour: int | None = None,
         minute: int | None = None,
     ) -> None:
-        """Add a daily scheduled job.
+        """添加每日定时任务。
 
         Args:
-            job_id: Unique identifier for the job.
-            func: Async function to execute.
-            hour: Hour of day (0-23). If None, uses first time from config.daily_times.
-            minute: Minute of hour (0-59). If None, uses first time from config.daily_times.
+            job_id: 任务的唯一标识符。
+            func: 要执行的异步函数。
+            hour: 小时（0-23）；为 None 时使用 config.daily_times 中首个时间的小时。
+            minute: 分钟（0-59）；为 None 时使用 config.daily_times 中首个时间的分钟。
         """
-        # Parse default time from config if not specified
+        # 未指定时，从配置中解析默认时间
         if hour is None or minute is None:
             try:
                 default_time = self.config.daily_times[0] if self.config.daily_times else "06:00"
@@ -50,14 +67,14 @@ class TaskScheduler:
                 hour = hour if hour is not None else default_hour
                 minute = minute if minute is not None else default_minute
             except (ValueError, AttributeError, IndexError) as e:
-                self.logger.warning(f"Invalid daily_times config, using 06:00: {e}")
+                self.logger.warning("Invalid daily_times config, using 06:00: %s", e)
                 hour = hour if hour is not None else 6
                 minute = minute if minute is not None else 0
 
-        # Create cron trigger for daily execution
-        trigger = CronTrigger(hour=hour, minute=minute)
+        # 创建每日执行的 cron 触发器
+        trigger = CronTrigger(hour=hour, minute=minute, timezone=self.timezone)
 
-        # Add job to scheduler
+        # 将任务添加到调度器
         self.scheduler.add_job(
             func,
             trigger=trigger,
@@ -66,7 +83,9 @@ class TaskScheduler:
             replace_existing=True,
         )
 
-        self.logger.info(f"Added daily job '{job_id}' at {hour:02d}:{minute:02d}")
+        self.logger.info(
+            "Added daily job '%s' at %02d:%02d (%s)", job_id, hour, minute, self.timezone
+        )
 
     def add_hourly_job(
         self,
@@ -74,17 +93,17 @@ class TaskScheduler:
         func: Callable,
         minute: int | None = None,
     ) -> None:
-        """Add an hourly scheduled job.
+        """添加每小时定时任务。
 
         Args:
-            job_id: Unique identifier for the job.
-            func: Async function to execute.
-            minute: Minute of hour (0-59). If None, uses config.minute_of_hour.
+            job_id: 任务的唯一标识符。
+            func: 要执行的异步函数。
+            minute: 每小时的执行分钟（0-59）；为 None 时使用 config.minute_of_hour。
         """
         if minute is None:
             minute = self.config.minute_of_hour
 
-        trigger = CronTrigger(minute=minute)
+        trigger = CronTrigger(minute=minute, timezone=self.timezone)
 
         self.scheduler.add_job(
             func,
@@ -94,18 +113,20 @@ class TaskScheduler:
             replace_existing=True,
         )
 
-        self.logger.info(f"Added hourly job '{job_id}' at minute {minute:02d}")
+        self.logger.info(
+            "Added hourly job '%s' at minute %02d (%s)", job_id, minute, self.timezone
+        )
 
     def start(self) -> None:
-        """Start the scheduler."""
+        """启动调度器。"""
         if not self.scheduler.running:
             self.scheduler.start()
-            self.logger.info("Task scheduler started")
+            self.logger.info("Task scheduler started (%s)", self.timezone)
         else:
             self.logger.warning("Task scheduler is already running")
 
     def shutdown(self) -> None:
-        """Stop the scheduler gracefully."""
+        """优雅停止调度器。"""
         if self.scheduler.running:
             self.scheduler.shutdown(wait=True)
             self.logger.info("Task scheduler stopped")
@@ -113,37 +134,36 @@ class TaskScheduler:
             self.logger.debug("Task scheduler is not running")
 
     def run_job_now(self, job_id: str) -> None:
-        """Execute a registered job immediately.
+        """立即执行已注册的任务。
 
-        Creates a one-time job that runs immediately with the same function
-        as the registered job.
+        创建立即执行的一次性任务，使用已注册任务的同一函数。
 
         Args:
-            job_id: The ID of the job to run.
+            job_id: 要执行的任务 ID。
         """
         try:
             job = self.scheduler.get_job(job_id)
             if job is None:
-                self.logger.error(f"Job '{job_id}' not found")
+                self.logger.error("Job '%s' not found", job_id)
                 return
 
-            # Add a one-time job that runs immediately
+            # 添加立即执行的一次性任务
             self.scheduler.add_job(
                 job.func,
-                trigger=DateTrigger(run_date=datetime.now()),
+                trigger=DateTrigger(run_date=datetime.now(self.timezone)),
                 id=f"{job_id}_immediate",
                 name=f"{job_id}_immediate",
                 replace_existing=True,
             )
-            self.logger.info(f"Triggered immediate execution of job '{job_id}'")
+            self.logger.info("Triggered immediate execution of job '%s'", job_id)
         except Exception as e:
-            self.logger.error(f"Failed to run job '{job_id}': {e}")
+            self.logger.error("Failed to run job '%s': %s", job_id, e)
 
     @property
     def is_running(self) -> bool:
-        """Check if the scheduler is running.
+        """检查调度器是否正在运行。
 
         Returns:
-            True if scheduler is running, False otherwise.
+            调度器正在运行时返回 True，否则返回 False。
         """
         return self.scheduler.running

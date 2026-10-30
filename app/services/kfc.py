@@ -1,6 +1,8 @@
-"""KFC Crazy Thursday service module."""
+"""KFC 疯狂星期四服务模块。"""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -16,45 +18,58 @@ logger = logging.getLogger(__name__)
 
 
 class KfcService:
-    """Service for fetching KFC Crazy Thursday content."""
+    """获取 KFC 疯狂星期四文案的服务。"""
 
     def __init__(
         self,
         config: CrazyThursdaySource,
         proxy_url: str | None = None,
         instances: InstancesConfig | None = None,
-    ):
-        """Initialize the service with configuration.
+        http_client: httpx.AsyncClient | None = None,
+    ) -> None:
+        """用配置初始化服务。
 
         Args:
-            config: Crazy Thursday configuration.
-            proxy_url: Optional outbound proxy URL.
-            instances: Global 60s public instance configuration.
+            config: 疯狂星期四配置。
+            proxy_url: 可选的出站代理 URL。
+            instances: 全局 60s 公共实例配置。
+            http_client: 可选的外部 HTTP 客户端，由调用方管理。
         """
         self.config = config
+        self._http_client = http_client
         self._proxy_url = proxy_url
         self._router = InstanceRouter.from_config(
             instances,
             logger,
+            http_client=http_client,
             proxy_url=proxy_url,
             timeout_sec=float(config.timeout_sec),
         )
 
+    @asynccontextmanager
+    async def _get_client(self) -> AsyncIterator[httpx.AsyncClient]:
+        """复用注入的客户端，否则临时创建并管理客户端。"""
+        if self._http_client is not None:
+            yield self._http_client
+        else:
+            async with create_async_client(
+                timeout=self.config.timeout_sec, proxy_url=self._proxy_url
+            ) as client:
+                yield client
+
     async def fetch_kfc_copy(self) -> str | None:
-        """Fetch KFC crazy thursday copy.
+        """获取 KFC 疯狂星期四文案。
 
         主源不可用时按健康度切换到 60s 公共实例。
 
         Returns:
-            The content string if successful, None otherwise.
+            成功返回文案字符串，失败返回 None。
         """
         if not self.config.enabled:
             return None
 
         try:
-            async with create_async_client(
-                timeout=self.config.timeout_sec, proxy_url=self._proxy_url
-            ) as client:
+            async with self._get_client() as client:
                 result = await self._router.fetch_json(
                     client,
                     self.config.url,
@@ -63,7 +78,8 @@ class KfcService:
                 )
         except httpx.RequestError as e:
             logger.warning(
-                f"Failed to fetch KFC content: {safe_exception_for_log(e, self.config.url, self._proxy_url)}"
+                "Failed to fetch KFC content: %s",
+                safe_exception_for_log(e, self.config.url, self._proxy_url),
             )
             return None
 
@@ -93,10 +109,10 @@ class KfcService:
         elif isinstance(data, str):
             content = data
 
-        if not content:
+        if not isinstance(content, str) or not content.strip():
             return None
-        # Handle escaped newlines in the text
-        return str(content).strip().replace("\\n", "\n")
+        # 处理文案中的转义换行符
+        return content.strip().replace("\\n", "\n")
 
 
 class CachedKfcService(DailyCache[str]):
@@ -113,6 +129,7 @@ class CachedKfcService(DailyCache[str]):
         cache_dir: Path,
         proxy_url: str | None = None,
         instances: InstancesConfig | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """初始化带缓存的 KFC 服务。
 
@@ -122,11 +139,17 @@ class CachedKfcService(DailyCache[str]):
             cache_dir: 缓存目录路径
             proxy_url: 可选全局代理 URL
             instances: 全局 60s 公共实例配置；主源不可用时按健康度切换
+            http_client: 可选外部 HTTP 客户端；由调用方管理生命周期
         """
         super().__init__("kfc", cache_dir, logger)
         self.config = config
         self._proxy_url = proxy_url
-        self._service = KfcService(config, proxy_url=proxy_url, instances=instances)
+        self._service = KfcService(
+            config,
+            http_client=http_client,
+            proxy_url=proxy_url,
+            instances=instances,
+        )
 
     async def fetch_fresh(self) -> str | None:
         """从网络获取新鲜数据（仅周四获取）。
@@ -141,7 +164,8 @@ class CachedKfcService(DailyCache[str]):
             return await self._service.fetch_kfc_copy()
         except Exception as e:
             self.logger.error(
-                f"Failed to fetch KFC content: {safe_exception_for_log(e, self.config.url, self._proxy_url)}"
+                "Failed to fetch KFC content: %s",
+                safe_exception_for_log(e, self.config.url, self._proxy_url),
             )
             return None
 

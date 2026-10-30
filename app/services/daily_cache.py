@@ -3,6 +3,7 @@
 提供基于日期的缓存机制，支持自动过期和降级策略。
 """
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -15,6 +16,8 @@ from datetime import date
 from pathlib import Path
 from typing import Generic, TypeVar
 
+from app.core.metrics import FetchOutcome, record_source_fetch
+from app.core.fileutil import set_output_permissions
 from app.services.calendar import today_business
 
 T = TypeVar("T")
@@ -58,9 +61,16 @@ class DailyCache(ABC, Generic[T]):
         self.cache_dir = cache_dir
         self.logger = logger
         self._date_provider = date_provider
+        self._get_lock = asyncio.Lock()
+        self.last_outcome: FetchOutcome | None = None
 
         # 确保缓存目录存在
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def _record_outcome(self, outcome: FetchOutcome) -> None:
+        """记录本次获取结果并更新指标。"""
+        self.last_outcome = outcome
+        record_source_fetch(self.namespace, outcome)
 
     def _get_cache_file(self) -> Path:
         """获取缓存文件路径。
@@ -178,6 +188,7 @@ class DailyCache(ABC, Generic[T]):
                 json.dump(cache_data, tmp_file, ensure_ascii=False, indent=2)
 
             # 原子性地替换目标文件
+            set_output_permissions(tmp_path)
             os.replace(tmp_path, cache_file)
 
             self.logger.info(
@@ -223,52 +234,57 @@ class DailyCache(ABC, Generic[T]):
         Returns:
             数据，如果获取失败返回 None
         """
-        # 1. 检查缓存
-        if not force_refresh and self.is_cache_valid():
-            cached_data = self.load_cache()
-            if cached_data is not None:
-                self.logger.debug(
-                    "Using valid cache for %s",
+        async with self._get_lock:
+            # 1. 检查缓存（等待锁的调用方会重新检查）
+            if not force_refresh and await asyncio.to_thread(self.is_cache_valid):
+                cached_data = await asyncio.to_thread(self.load_cache)
+                if cached_data is not None:
+                    self.logger.debug(
+                        "Using valid cache for %s",
+                        self.namespace,
+                    )
+                    self._record_outcome("cache")
+                    return cached_data
+
+            # 2. 获取新鲜数据
+            self.logger.info(
+                "Fetching fresh data for %s",
+                self.namespace,
+            )
+            fresh_data: T | None = None
+            try:
+                fresh_data = await self.fetch_fresh()
+            except Exception as e:
+                self.logger.exception(
+                    "Exception while fetching fresh data for %s: %s",
+                    self.namespace,
+                    e,
+                )
+
+            # 3. 保存并返回新数据
+            if fresh_data is not None:
+                await asyncio.to_thread(self.save_cache, fresh_data)
+                self._record_outcome("fresh")
+                return fresh_data
+
+            # 4. 降级策略：返回过期缓存
+            self.logger.warning(
+                "Failed to fetch fresh data for %s, trying stale cache",
+                self.namespace,
+            )
+            stale_data = await asyncio.to_thread(self.load_cache)
+            if stale_data is not None:
+                self.logger.info(
+                    "Using stale cache for %s as fallback",
                     self.namespace,
                 )
-                return cached_data
+                self._record_outcome("stale")
+                return stale_data
 
-        # 2. 获取新鲜数据
-        self.logger.info(
-            "Fetching fresh data for %s",
-            self.namespace,
-        )
-        fresh_data: T | None = None
-        try:
-            fresh_data = await self.fetch_fresh()
-        except Exception as e:
-            self.logger.exception(
-                "Exception while fetching fresh data for %s: %s",
-                self.namespace,
-                e,
-            )
-
-        # 3. 保存并返回新数据
-        if fresh_data is not None:
-            self.save_cache(fresh_data)
-            return fresh_data
-
-        # 4. 降级策略：返回过期缓存
-        self.logger.warning(
-            "Failed to fetch fresh data for %s, trying stale cache",
-            self.namespace,
-        )
-        stale_data = self.load_cache()
-        if stale_data is not None:
-            self.logger.info(
-                "Using stale cache for %s as fallback",
+            # 5. 都失败
+            self.logger.error(
+                "No data available for %s (fresh fetch failed and no cache)",
                 self.namespace,
             )
-            return stale_data
-
-        # 5. 都失败
-        self.logger.error(
-            "No data available for %s (fresh fetch failed and no cache)",
-            self.namespace,
-        )
-        return None
+            self._record_outcome("failed")
+            return None

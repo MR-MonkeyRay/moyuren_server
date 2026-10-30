@@ -1,23 +1,31 @@
-"""Tests for standalone script network and browser lifecycle wiring."""
+"""测试独立脚本的网络配置与浏览器生命周期管理。"""
 
 import importlib
 import logging
-from types import SimpleNamespace
+from pathlib import Path
+from types import ModuleType, SimpleNamespace
+from typing import Any, Callable
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from app.core.config import TextLimitsConfig, ThemesConfig
 
 
 class _FailingDataFetcher:
-    """DataFetcher double that fails after all services are constructed."""
+    """在所有服务构建完成后触发失败的 DataFetcher 替身。"""
 
     def __init__(self, *args, **kwargs):
         self.kwargs = kwargs
 
-    async def fetch_all(self):
+    async def fetch(self):
         raise RuntimeError(
             "failed https://user:pass@example.com/path?token=secret#frag"
         )
+
+
+class _SuccessfulDataFetcher:
+    async def fetch(self) -> dict[str, Any] | None:
+        return None
 
 
 class _AsyncService:
@@ -46,17 +54,25 @@ class _ImageRenderer:
 
 
 class _DataComputer:
-    def compute(self, raw_data):
+    def __init__(self) -> None:
+        self.raw_data: dict[str, Any] | None = None
+
+    def compute(
+        self, raw_data: dict[str, Any], **kwargs: Any
+    ) -> dict[str, Any]:
+        self.raw_data = raw_data
         return {"date": {}, "history": {}, "news_list": []}
 
 
-def _fake_config(tmp_path):
+def _fake_config(
+    tmp_path: Path, *, holiday_enabled: bool = True
+) -> SimpleNamespace:
     proxy_url = "http://user:pass@proxy.example:8080"
 
-    def get_source(cls):
+    def get_source(cls: type[Any]) -> SimpleNamespace | None:
         name = cls.__name__
         if name == "HolidaySource":
-            return SimpleNamespace(timeout_sec=5)
+            return SimpleNamespace(timeout_sec=5) if holiday_enabled else None
         if name == "DailyEnglishSource":
             return SimpleNamespace(enabled=True, backend=SimpleNamespace())
         return SimpleNamespace(enabled=True)
@@ -70,7 +86,11 @@ def _fake_config(tmp_path):
             ghproxy_urls=["https://mirror.example/"],
         ),
         instances=SimpleNamespace(list_url=None, urls=None),
-        templates=SimpleNamespace(config=SimpleNamespace()),
+        templates=SimpleNamespace(
+            config=SimpleNamespace(
+                text_limits=TextLimitsConfig(), work_end_time="18:00", themes=ThemesConfig()
+            )
+        ),
         get_source=get_source,
         get_templates_config=lambda: SimpleNamespace(
             items=[SimpleNamespace(name="moyuren")]
@@ -78,11 +98,17 @@ def _fake_config(tmp_path):
     )
 
 
-def _install_common_fakes(monkeypatch, module, tmp_path):
-    records = {}
-    order = []
+def _install_common_fakes(
+    monkeypatch: pytest.MonkeyPatch,
+    module: ModuleType,
+    tmp_path: Path,
+    *,
+    holiday_enabled: bool = True,
+) -> tuple[SimpleNamespace, logging.Logger, SimpleNamespace, dict[str, dict[str, Any]], list[str]]:
+    records: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
     logger = logging.getLogger(f"test.{module.__name__}")
-    config = _fake_config(tmp_path)
+    config = _fake_config(tmp_path, holiday_enabled=holiday_enabled)
 
     browser_manager = SimpleNamespace(
         configure=MagicMock(),
@@ -94,8 +120,10 @@ def _install_common_fakes(monkeypatch, module, tmp_path):
         close=AsyncMock(side_effect=lambda: order.append("stock")),
     )
 
-    def record_factory(name, instance=None):
-        def factory(*args, **kwargs):
+    def record_factory(
+        name: str, instance: Any = None
+    ) -> Callable[..., Any]:
+        def factory(*args: Any, **kwargs: Any) -> Any:
             records[name] = kwargs
             return instance if instance is not None else _AsyncService()
 
@@ -105,7 +133,9 @@ def _install_common_fakes(monkeypatch, module, tmp_path):
     monkeypatch.setattr(module, "setup_logging", lambda *args, **kwargs: logger)
     monkeypatch.setattr(module, "init_timezones", lambda *args, **kwargs: None)
     monkeypatch.setattr(module, "browser_manager", browser_manager)
-    monkeypatch.setattr(module, "DataComputer", lambda *args, **kwargs: _DataComputer())
+    monkeypatch.setattr(
+        module, "DataComputer", record_factory("DataComputer", _DataComputer())
+    )
     monkeypatch.setattr(
         module, "DataFetcher", record_factory("DataFetcher", _FailingDataFetcher())
     )
@@ -146,7 +176,7 @@ def _install_common_fakes(monkeypatch, module, tmp_path):
 async def test_scripts_configure_browser_pass_proxy_and_cleanup(
     monkeypatch, tmp_path, module_name, raises_system_exit
 ):
-    """Standalone scripts should pass proxy settings without declaring trust_env and cleanup browser resources."""
+    """独立脚本应传递代理配置，不显式指定 trust_env，并清理浏览器资源。"""
     module = importlib.import_module(module_name)
     config, logger, browser_manager, records, order = _install_common_fakes(
         monkeypatch, module, tmp_path
@@ -176,6 +206,11 @@ async def test_scripts_configure_browser_pass_proxy_and_cleanup(
     browser_manager.configure.assert_called_once_with(
         logger, proxy_url=config.network.proxy_url
     )
+    assert records["DataComputer"] == {
+        "text_limits": config.templates.config.text_limits,
+        "work_end_time": config.templates.config.work_end_time,
+        "themes": config.templates.config.themes,
+    }
     assert order == ["stock", "browser"]
 
     expected = {
@@ -195,3 +230,115 @@ async def test_scripts_configure_browser_pass_proxy_and_cleanup(
     for name in expected:
         assert records[name]["proxy_url"] == config.network.proxy_url
         assert "trust_env" not in records[name]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "module_name, raises_system_exit",
+    [
+        ("scripts.render_once", False),
+        ("scripts.publish_static", True),
+    ],
+)
+async def test_scripts_skip_holiday_service_when_source_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    module_name: str,
+    raises_system_exit: bool,
+) -> None:
+    """禁用节假日配置时，不应构建或调用该服务。"""
+    module = importlib.import_module(module_name)
+    _, _, _, records, _ = _install_common_fakes(
+        monkeypatch, module, tmp_path, holiday_enabled=False
+    )
+
+    if hasattr(module, "parse_args"):
+        monkeypatch.setattr(
+            module,
+            "parse_args",
+            lambda: SimpleNamespace(
+                output=str(tmp_path / "out"),
+                base_url="https://example.com",
+            ),
+        )
+
+    if raises_system_exit:
+        with pytest.raises(SystemExit) as exc_info:
+            await module.main()
+        assert exc_info.value.code == 10
+    else:
+        with pytest.raises(RuntimeError):
+            await module.main()
+
+    assert "HolidayService" not in records
+
+
+@pytest.mark.asyncio
+async def test_render_once_generates_with_empty_holidays_when_source_disabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """禁用节假日时，应以空列表参与生成。"""
+    module = importlib.import_module("scripts.render_once")
+    _install_common_fakes(monkeypatch, module, tmp_path, holiday_enabled=False)
+    data_computer = _DataComputer()
+    monkeypatch.setattr(
+        module, "DataFetcher", lambda *args, **kwargs: _SuccessfulDataFetcher()
+    )
+    monkeypatch.setattr(module, "DataComputer", lambda **kwargs: data_computer)
+
+    await module.main()
+
+    assert data_computer.raw_data is not None
+    assert data_computer.raw_data["holidays"] == []
+
+
+@pytest.mark.asyncio
+async def test_publish_static_generates_with_empty_holidays_when_source_disabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """禁用节假日时，静态发布应使用空节假日列表完成。"""
+    module = importlib.import_module("scripts.publish_static")
+    _, _, _, records, _ = _install_common_fakes(
+        monkeypatch, module, tmp_path, holiday_enabled=False
+    )
+    data_computer = _DataComputer()
+    image_path = tmp_path / "cache" / "images" / "moyuren.jpg"
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    image_path.write_bytes(b"image")
+    monkeypatch.setattr(
+        module, "parse_args", lambda: SimpleNamespace(
+            output=str(tmp_path / "out"), base_url="https://example.com"
+        )
+    )
+    monkeypatch.setattr(
+        module, "DataFetcher", lambda *args, **kwargs: _SuccessfulDataFetcher()
+    )
+    monkeypatch.setattr(module, "DataComputer", lambda **kwargs: data_computer)
+    monkeypatch.setattr(module, "DailyDataFile", _PassthroughDailyDataFile)
+
+    await module.main()
+
+    assert "HolidayService" not in records
+    assert data_computer.raw_data is not None
+    assert data_computer.raw_data["holidays"] == []
+
+
+class _PassthroughDailyDataFile:
+    """用于测试脚本产物流程的最简 DailyDataFile 替身。"""
+
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self.payload = payload
+        self.images: dict[str, str] = payload.get("images", {})
+        self.image_variants: dict[str, Any] | None = None
+
+    @classmethod
+    def model_validate(
+        cls, payload: dict[str, Any]
+    ) -> "_PassthroughDailyDataFile":
+        return cls(payload)
+
+    def model_dump(self, *, mode: str, exclude_unset: bool = False) -> dict[str, Any]:
+        return dict(self.payload)
+
+    def dump_json(self) -> str:
+        return "{}"
