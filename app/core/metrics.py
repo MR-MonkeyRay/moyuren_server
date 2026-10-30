@@ -10,6 +10,7 @@ from app.core.network import redact_url
 
 FetchOutcome = Literal["cache", "fresh", "stale", "failed"]
 GenerationResult = Literal["success", "partial", "failure"]
+NotifyResult = Literal["success", "failure", "skipped"]
 
 registry = CollectorRegistry()
 
@@ -29,6 +30,12 @@ source_fetch_total = Counter(
     "moyuren_source_fetch_total",
     "Data source retrieval outcomes.",
     ["source", "result"],
+    registry=registry,
+)
+notify_total = Counter(
+    "moyuren_notify_total",
+    "Webhook notification outcomes per template delivery.",
+    ["webhook", "result"],
     registry=registry,
 )
 instance_consecutive_failures = Gauge(
@@ -70,3 +77,8 @@ def record_instance_health(url: str, failures: int, cooling_down: bool) -> None:
     endpoint = f"{parsed.scheme}://{parsed.netloc}" if parsed.netloc else "<redacted-url>"
     instance_consecutive_failures.labels(endpoint=endpoint).set(failures)
     instance_cooling_down.labels(endpoint=endpoint).set(int(cooling_down))
+
+
+def record_notify(webhook: str, result: NotifyResult) -> None:
+    """记录每个 webhook 的模板通知结果。"""
+    notify_total.labels(webhook=webhook, result=result).inc()

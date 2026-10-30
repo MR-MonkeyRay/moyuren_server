@@ -32,6 +32,34 @@ ops:
 #   enabled: true  # 环境变量：MOYUREN_FEED_ENABLED
 #   max_items: 7  # 1–60；环境变量：MOYUREN_FEED_MAX_ITEMS
 
+# 图片生成成功通知；Webhook URL/签名密钥建议通过环境变量提供
+# notify:
+#   enabled: false
+#   once_per_day: true
+#   triggers: ["scheduled"]  # 可选：scheduled、manual、startup
+#   timeout_sec: 10
+#   webhooks:
+#     - name: "wecom-team"
+#       type: "wecom"
+#       url_env: "MOYUREN_WECOM_WEBHOOK_URL"
+#       templates: null  # null 表示全部模板
+#     - name: "feishu-team"
+#       type: "feishu"
+#       url_env: "MOYUREN_FEISHU_WEBHOOK_URL"
+#       secret_env: "MOYUREN_FEISHU_WEBHOOK_SECRET"
+#     - name: "dingtalk-team"
+#       type: "dingtalk"
+#       url_env: "MOYUREN_DINGTALK_WEBHOOK_URL"
+#       secret_env: "MOYUREN_DINGTALK_WEBHOOK_SECRET"
+#     - name: "telegram-channel"
+#       type: "telegram"
+#       url_env: "MOYUREN_TELEGRAM_BOT_API_URL"  # https://api.telegram.org/bot<token>
+#       chat_id: "@example_channel"
+#     - name: "automation"
+#       type: "generic"
+#       url_env: "MOYUREN_GENERIC_WEBHOOK_URL"
+#       secret_env: "MOYUREN_GENERIC_WEBHOOK_SECRET"
+
 network:
   proxy_url: null  # Optional: "http://proxy.example:8080" or "socks5://proxy.example:1080"
   ghproxy_urls:

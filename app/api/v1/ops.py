@@ -97,7 +97,7 @@ async def ops_generate(request: Request) -> JSONResponse:
         return _auth_error_response(e.message)
 
     try:
-        results = await generate_and_save_image(request.app)
+        results = await generate_and_save_image(request.app, trigger="manual")
         templates_config = request.app.state.config.get_templates_config()
         total_templates = len(templates_config.items)
         data_dir = Path(request.app.state.config.paths.cache_dir) / "data"

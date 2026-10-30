@@ -61,7 +61,7 @@ async def test_concurrent_generation_returns_success(
     release = asyncio.Event()
 
     async def generate(
-        _app: FastAPI, template_name: str | None = None
+        _app: FastAPI, template_name: str | None = None, trigger: str = "manual"
     ) -> dict[str, str]:
         started.set()
         await release.wait()
@@ -104,7 +104,7 @@ async def test_generation_wait_timeout_keeps_busy_response(
     release = asyncio.Event()
 
     async def generate(
-        _app: FastAPI, template_name: str | None = None
+        _app: FastAPI, template_name: str | None = None, trigger: str = "manual"
     ) -> dict[str, str]:
         started.set()
         await release.wait()

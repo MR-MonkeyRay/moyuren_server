@@ -73,7 +73,10 @@ def _sanitize_message(value: str) -> str:
     return _URL_IN_TEXT_RE.sub(lambda match: redact_url(match.group(0)), value)
 
 
-def safe_exception_for_log(exc: BaseException, *known_urls: str | None) -> str:
+def safe_exception_for_log(
+    exc: BaseException, *known_urls: str | None,
+    sensitive_values: tuple[str, ...] = (),
+) -> str:
     """Return a diagnostic exception summary safe for logs."""
     exc_type = type(exc).__name__
     parts: list[str] = []
@@ -84,9 +87,15 @@ def safe_exception_for_log(exc: BaseException, *known_urls: str | None) -> str:
     request = getattr(exc, "request", None)
     request_url = getattr(request, "url", None)
     if request_url is not None:
-        parts.append(f"url={redact_url(str(request_url))}")
+        parts.append("url=<redacted-url>" if sensitive_values else f"url={redact_url(str(request_url))}")
 
-    message = _sanitize_message(str(exc).strip())
+    message = str(exc).strip()
+    # Webhook paths can contain bot tokens; strip complete signed URLs first.
+    if sensitive_values:
+        message = _URL_IN_TEXT_RE.sub("<redacted-url>", message)
+        for value in sorted(filter(None, sensitive_values), key=len, reverse=True):
+            message = message.replace(value, "<redacted>")
+    message = _sanitize_message(message)
     for url in known_urls:
         if url:
             message = message.replace(url, redact_url(url))

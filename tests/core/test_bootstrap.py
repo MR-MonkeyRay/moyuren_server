@@ -255,3 +255,76 @@ def test_build_services_passes_http_client_to_all_network_services(
         assert constructor.call_args.kwargs["http_client"] is (
             http_client if inject_client else None
         )
+
+
+def test_build_services_constructs_enabled_notifier_with_shared_client(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Enabled webhook configuration builds the notifier with shared dependencies."""
+    notify = SimpleNamespace(enabled=True, webhooks=[SimpleNamespace(name="alerts")])
+    config = SimpleNamespace(
+        paths=SimpleNamespace(cache_dir=str(tmp_path)),
+        server=SimpleNamespace(base_domain="https://calendar.example"),
+        network=SimpleNamespace(proxy_url="http://proxy.example", ghproxy_urls=[]),
+        instances=SimpleNamespace(),
+        templates=SimpleNamespace(
+            config=SimpleNamespace(
+                text_limits=TextLimitsConfig(), work_end_time="18:00", themes=ThemesConfig()
+            )
+        ),
+        cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
+        notify=notify,
+        get_source=lambda source_type: None,
+        get_templates_config=lambda: SimpleNamespace(items=[]),
+    )
+    notifier_factory = MagicMock()
+    monkeypatch.setattr(bootstrap_module, "WebhookNotifier", notifier_factory)
+    monkeypatch.setattr(bootstrap_module, "ImageRenderer", lambda **kwargs: MagicMock())
+    monkeypatch.setattr(bootstrap_module, "CacheCleaner", lambda **kwargs: MagicMock())
+    http_client = cast(httpx.AsyncClient, MagicMock(spec=httpx.AsyncClient))
+    logger = logging.getLogger(__name__)
+
+    services = build_services(cast(AppConfig, config), logger, http_client)
+
+    notifier_factory.assert_called_once_with(
+        config=notify,
+        cache_dir=tmp_path,
+        base_domain="https://calendar.example",
+        logger=logger,
+        http_client=http_client,
+        proxy_url="http://proxy.example",
+    )
+    assert services.notifier is notifier_factory.return_value
+
+
+@pytest.mark.parametrize(
+    "notify", [None, SimpleNamespace(enabled=False, webhooks=[object()]), SimpleNamespace(enabled=True, webhooks=[])]
+)
+def test_build_services_leaves_unconfigured_notifier_disabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, notify: object | None
+) -> None:
+    """Missing, disabled, and empty notification configs do not build a notifier."""
+    config = SimpleNamespace(
+        paths=SimpleNamespace(cache_dir=str(tmp_path)),
+        network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),
+        instances=SimpleNamespace(),
+        templates=SimpleNamespace(
+            config=SimpleNamespace(
+                text_limits=TextLimitsConfig(), work_end_time="18:00", themes=ThemesConfig()
+            )
+        ),
+        cache=SimpleNamespace(retain_days=30, max_images_per_template_per_day=3),
+        get_source=lambda source_type: None,
+        get_templates_config=lambda: SimpleNamespace(items=[]),
+    )
+    if notify is not None:
+        config.notify = notify
+    notifier_factory = MagicMock()
+    monkeypatch.setattr(bootstrap_module, "WebhookNotifier", notifier_factory)
+    monkeypatch.setattr(bootstrap_module, "ImageRenderer", lambda **kwargs: MagicMock())
+    monkeypatch.setattr(bootstrap_module, "CacheCleaner", lambda **kwargs: MagicMock())
+
+    services = build_services(cast(AppConfig, config), logging.getLogger(__name__))
+
+    assert services.notifier is None
+    notifier_factory.assert_not_called()

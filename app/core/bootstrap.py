@@ -34,6 +34,7 @@ from app.services.generator import ImageGenerator, generate_and_save_image
 from app.services.gold_price import CachedGoldPriceService
 from app.services.holiday import CachedHolidayService
 from app.services.kfc import CachedKfcService
+from app.services.notifier import WebhookNotifier
 from app.services.renderer import ImageRenderer
 from app.services.stock_index import StockIndexService
 
@@ -167,6 +168,21 @@ def build_services(
         max_images_per_template_per_day=config.cache.max_images_per_template_per_day,
         logger=logger,
     )
+    notify_config = getattr(config, "notify", None)
+    notifier = (
+        WebhookNotifier(
+            config=notify_config,
+            cache_dir=cache_dir,
+            base_domain=config.server.base_domain,
+            logger=logger,
+            http_client=http_client,
+            proxy_url=config.network.proxy_url,
+        )
+        if notify_config is not None
+        and notify_config.enabled
+        and notify_config.webhooks
+        else None
+    )
     return AppServices(
         data_fetcher=data_fetcher,
         holiday_service=holiday_service,
@@ -179,6 +195,7 @@ def build_services(
         data_computer=data_computer,
         cache_cleaner=cache_cleaner,
         generator=ImageGenerator(),
+        notifier=notifier,
     )
 
 
@@ -265,7 +282,7 @@ async def ensure_today_data(app: FastAPI) -> None:
     if cache_is_valid_but_expired:
         logger.info("Cache expired but valid, triggering background refresh...")
         try:
-            await generate_and_save_image(app)
+            await generate_and_save_image(app, trigger="startup")
             logger.info("Background refresh completed successfully")
         except asyncio.CancelledError:
             logger.info("Background refresh cancelled due to shutdown")
@@ -291,7 +308,7 @@ async def ensure_today_data(app: FastAPI) -> None:
 
     logger.info("No valid cache found, generating initial image...")
     try:
-        await generate_and_save_image(app)
+        await generate_and_save_image(app, trigger="startup")
         logger.info("Initial image generated successfully")
     except Exception as exc:
         logger.error(

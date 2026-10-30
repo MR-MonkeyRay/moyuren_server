@@ -11,7 +11,7 @@
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | 入口 | `app/main.py` | 应用生命周期、定时任务注册 |
-| 指标 | `app/core/metrics.py` | 专用 Prometheus 注册表、生成/渲染耗时、获取结果与实例健康指标 |
+| 指标 | `app/core/metrics.py` | 专用 Prometheus 注册表、生成/渲染耗时、获取结果、通知结果与实例健康指标 |
 | 指标 API | `app/api/metrics.py` | 可选根路径 `/metrics` 文本导出 |
 | 启动 | `app/core/bootstrap.py` | 服务构建、定时任务注册、启动缓存验证 |
 | API | `app/api/v1/moyuren.py` | REST 端点 |
@@ -37,6 +37,7 @@
 | 浏览器 | `app/services/browser.py` | Playwright 浏览器生命周期管理 |
 | 模板发现 | `app/services/template_discovery.py` | 自动扫描模板目录，解析 meta 标签 |
 | 图片生成 | `app/services/generator.py` | 图片生成流水线（文件锁防并发、缓存管理） |
+| Webhook 通知 | `app/services/notifier.py` | 生成成功后异步推送企业微信/飞书/钉钉/Telegram/通用 JSON，签名、重试与每日去重 |
 | 图片变体 | `app/services/variants.py` | Pillow 在线程中从 JPEG 原子生成 WebP/缩小图片，失败隔离；API 可按需补建 |
 | 调度 | `app/core/scheduler.py` | APScheduler 定时任务 |
 | 配置 | `app/core/config.py` | YAML + 环境变量 |
@@ -74,6 +75,8 @@ Docker：`docker-compose up -d`
 - `ops.api_key`：Ops API 鉴权密钥（留空则禁用 Ops 端点，所有请求返回 401）
 - `metrics.enabled`：默认 false；环境变量 `MOYUREN_METRICS_ENABLED`；只控制 `/metrics` 是否对外提供，指标记录始终开启
 - `feed.enabled` / `feed.max_items`：RSS 订阅源默认启用、最多 7 条（范围 1–60）；环境变量 `MOYUREN_FEED_ENABLED` / `MOYUREN_FEED_MAX_ITEMS`
+- `notify.enabled` / `notify.once_per_day` / `notify.triggers` / `notify.timeout_sec`：生成成功通知总开关、每日去重、触发来源与请求超时；默认 `false` / `true` / `["scheduled"]` / `10`
+- `notify.webhooks`：Webhook 列表，唯一 `name` 与 `type` 必填；`url`/`url_env` 二选一，`secret`/`secret_env` 可选且互斥，Telegram 还需 `chat_id`，`templates: null` 表示全部模板；URL 和密钥均按敏感值处理
 - `templates.dir`：模板目录路径（默认 `templates`，自动扫描 `*.html`）
 - `templates.config.local_fonts_dir`：本地 WOFF2 字体目录（默认 `templates/fonts`；与 `templates.dir` 一样，相对路径基于进程工作目录，通常为项目根目录）
 - `templates.config.remote_font_fallback`：是否启用 Google Fonts 缺字回退（默认 true，离线部署可关闭）

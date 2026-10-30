@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async def generate_image_task() -> None:
         """Generate the scheduled calendar image."""
         try:
-            await generate_and_save_image(app)
+            await generate_and_save_image(app, trigger="scheduled")
         except Exception as exc:
             logger.error(
                 "Image generation task failed: %s",
@@ -156,6 +156,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning(
                 "Failed to shutdown image generator: %s", safe_exception_for_log(exc)
             )
+
+        if services.notifier is not None:
+            try:
+                await services.notifier.close()
+            except Exception as exc:
+                logger.warning(
+                    "Failed to close webhook notifier: %s",
+                    safe_exception_for_log(exc),
+                )
 
         warmup_task = app.state.browser_warmup_task
         if not warmup_task.done():

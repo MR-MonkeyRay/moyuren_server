@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.services.kfc import CachedKfcService
     from app.services.renderer import ImageRenderer
     from app.services.stock_index import StockIndexService
+    from app.services.notifier import WebhookNotifier
 
 
 @dataclass
@@ -30,3 +31,4 @@ class AppServices:
     data_computer: "DataComputer"
     cache_cleaner: "CacheCleaner"
     generator: "ImageGenerator"
+    notifier: "WebhookNotifier | None" = None

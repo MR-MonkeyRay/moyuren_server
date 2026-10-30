@@ -100,9 +100,12 @@ async def test_startup_warms_cache_before_generating_missing_data(startup_app: F
         warmup_started.set()
         await allow_warmup.wait()
 
-    async def generate(app: FastAPI, template_name: str | None = None) -> None:
+    async def generate(
+        app: FastAPI, template_name: str | None = None, trigger: str = "manual"
+    ) -> None:
         assert allow_warmup.is_set()
         assert template_name is None
+        assert trigger == "startup"
         generation_started.set()
         await allow_generation.wait()
 
@@ -131,7 +134,7 @@ async def test_startup_source_failure_still_finishes_ready(
         assert startup_app.state.startup_state == "ready"
         assert "Cache warmup [holiday] failed" in caplog.text
         startup_app.state.services.generator.generate.assert_awaited_once_with(
-            startup_app, None
+            startup_app, None, "startup"
         )
 
 
@@ -173,15 +176,18 @@ async def test_initial_generation_removes_invalid_data(
     else:
         data_file.write_text(invalid_data, encoding="utf-8")
 
-    async def generate(app: FastAPI, template_name: str | None = None) -> None:
+    async def generate(
+        app: FastAPI, template_name: str | None = None, trigger: str = "manual"
+    ) -> None:
         assert template_name is None
+        assert trigger == "startup"
         assert not data_file.exists()
 
     startup_app.state.services.generator.generate.side_effect = generate
     async with asyncio.timeout(1), main_module.lifespan(startup_app):
         await asyncio.wait_for(startup_app.state.startup_task, timeout=1)
         startup_app.state.services.generator.generate.assert_awaited_once_with(
-            startup_app, None
+            startup_app, None, "startup"
         )
         assert not data_file.exists()
         assert startup_app.state.startup_state == "ready"
@@ -212,7 +218,7 @@ async def test_startup_preserves_valid_cache(startup_app: FastAPI, cached_date: 
             startup_app.state.services.generator.generate.assert_not_awaited()
         else:
             startup_app.state.services.generator.generate.assert_awaited_once_with(
-                startup_app, None
+                startup_app, None, "startup"
             )
         assert startup_app.state.startup_state == "ready"
 
@@ -283,8 +289,11 @@ async def test_shutdown_cancels_initial_generation(
             encoding="utf-8",
         )
 
-    async def generate(app: FastAPI, template_name: str | None = None) -> None:
+    async def generate(
+        app: FastAPI, template_name: str | None = None, trigger: str = "manual"
+    ) -> None:
         assert template_name is None
+        assert trigger == "startup"
         generation_started.set()
         await allow_generation.wait()
 

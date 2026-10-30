@@ -59,6 +59,7 @@ https://api.monkeyray.net/api/v1/moyuren
 - 自动清理过期缓存
 - RESTful API + 静态文件服务
 - Prometheus 可观测性：生成/模板渲染耗时、数据源获取结果与实例健康指标始终记录；`metrics.enabled` 默认关闭，仅控制 `/metrics` 端点是否对外提供
+- 生成成功通知：按触发来源将图片推送到企业微信、飞书、钉钉、Telegram 或通用 JSON Webhook；支持模板筛选、签名及每日去重
 - 数据新鲜度：新闻日期与本次生成的业务日期不一致，或任一数据源使用过期缓存时，图片显示轻量提示；详情 JSON 返回 `is_stale` 和 `source_date`，旧数据文件仍兼容
 - 静态发布到 Cloudflare Pages（GitHub Actions 定时推送）
 - YAML 配置 + 环境变量覆盖
@@ -132,6 +133,7 @@ pytest -m "not e2e"
 | `moyuren_generation_duration_seconds` | `result=success\|partial\|failure` | 整次共享生成任务的耗时；部分模板失败为 partial，所有模板失败为 failure |
 | `moyuren_render_duration_seconds` | `template` | 每个模板的渲染耗时，包含失败尝试 |
 | `moyuren_source_fetch_total` | `source`, `result=cache\|fresh\|stale\|failed` | source 为缓存命名空间；有效缓存命中、新获取、旧缓存降级、无可用数据（股票为占位数据）分别计数 |
+| `moyuren_notify_total` | `webhook`, `result=success\|failure\|skipped` | 每个 Webhook/模板的最终通知结果，重试不重复计数 |
 | `moyuren_instance_consecutive_failures` | `endpoint` | 实例最近报告的连续失败次数 |
 | `moyuren_instance_cooling_down` | `endpoint` | 实例最近健康更新时是否冷却（0/1） |
 | `moyuren_build_info` | `version` | 应用版本，值为 1 |
@@ -406,6 +408,16 @@ pytest -m "not e2e"
 | `metrics.enabled` | `MOYUREN_METRICS_ENABLED` | 是否对外提供根路径 `/metrics`，默认 `false`；修改后重启应用，指标记录始终开启 |
 | `feed.enabled` | `MOYUREN_FEED_ENABLED` | 是否提供 `/api/v1/feed.xml`，默认 `true`；关闭时返回 404 |
 | `feed.max_items` | `MOYUREN_FEED_MAX_ITEMS` | RSS 条目上限，默认 7，范围 1–60 |
+| `notify.enabled` | `MOYUREN_NOTIFY_ENABLED` | 是否启用生成成功通知，默认 `false`；未配置 Webhook 时不创建通知服务 |
+| `notify.once_per_day` | `MOYUREN_NOTIFY_ONCE_PER_DAY` | 默认 `true`；同一业务日期的同一 Webhook/模板只发送一次，状态持久化到 `<cache_dir>/notify_state.json` |
+| `notify.triggers` | `MOYUREN_NOTIFY_TRIGGERS` | 允许发送的生成来源，默认 `["scheduled"]`；可选 `scheduled`、`manual`、`startup` |
+| `notify.timeout_sec` | `MOYUREN_NOTIFY_TIMEOUT_SEC` | 单次 Webhook 请求超时秒数，默认 `10`，必须大于 0 |
+| `notify.webhooks[].name` | - | Webhook 唯一名称，用作日志和指标标签 |
+| `notify.webhooks[].type` | - | `wecom`、`feishu`、`dingtalk`、`telegram` 或 `generic` |
+| `notify.webhooks[].url` / `url_env` | - | 二选一；直接 HTTP(S) URL，或保存 URL 的环境变量名称。环境变量缺失时启动失败；URL 按敏感值隐藏 |
+| `notify.webhooks[].secret` / `secret_env` | - | 可选且二选一；飞书/钉钉签名密钥或通用 HMAC 密钥，按敏感值隐藏 |
+| `notify.webhooks[].chat_id` | - | Telegram 必填的目标会话或频道 ID；其 URL 是含 Bot Token 的 API 基地址，如 `https://api.telegram.org/bot<token>` |
+| `notify.webhooks[].templates` | - | 可选模板名称列表；`null` 表示发送本次生成的全部模板 |
 | `logging.level` | `MOYUREN_LOGGING_LEVEL` | 日志级别 |
 | `logging.file` | `MOYUREN_LOGGING_FILE` | 日志文件路径（空字符串表示只输出到标准输出） |
 | `timezone.business` | `MOYUREN_TIMEZONE_BUSINESS` | 业务时区（节假日/节气/周末判断） |
@@ -448,6 +460,22 @@ pytest -m "not e2e"
 | `daily_english_definition` | 200 | 每日英语释义字符数 |
 | `daily_english_translation` | 200 | 每日英语翻译字符数 |
 | `holiday_name` | 20 | 节假日及节日名称字符数 |
+
+### 生成成功通知
+
+`notify.enabled` 默认关闭，`webhooks` 默认为 `[]`。`scheduled` 表示定时任务，`manual` 表示手动生成（包括 Ops），`startup` 表示启动时补建图片；默认只推送 `scheduled`。每次实际生成成功后，后台按 Webhook/模板组合发送一条消息，`templates: null` 选择全部生成模板，空列表不发送。加入已有生成任务的调用方不会重复推送；直接复用缓存也不推送。通知失败只记录警告，不影响图片生成结果。
+
+消息包含“摸鱼日历 YYYY-MM-DD 星期X”、农历日期和过期数据提示。图片地址使用 `server.base_domain` 加 `/static/<filename>`，需能被消息接收方访问。URL/密钥建议用 `url_env`/`secret_env` 引用已导出的进程环境变量；Telegram URL 必须包含 Bot Token，`chat_id` 可用数字 ID 或频道名。以下均为占位示例，不含真实凭据：
+
+| 提供商 / `type` | `url_env` 对应的 URL 示例 | 推送内容与签名 |
+| --- | --- | --- |
+| 企业微信 / `wecom` | `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=<key>` | `news.articles` 图文卡片，含标题、描述、链接和图片 URL |
+| 飞书 / `feishu` | `https://open.feishu.cn/open-apis/bot/v2/hook/<token>` | `post` 富文本标题、文字及图片链接，不上传图片；可选时间戳/HMAC 签名 |
+| 钉钉 / `dingtalk` | `https://oapi.dingtalk.com/robot/send?access_token=<token>` | `markdown` 标题、图片及文字；可选 URL 时间戳/HMAC 签名 |
+| Telegram / `telegram` | `https://api.telegram.org/bot<token>` | 向 `/sendPhoto` 发送 `chat_id`、图片 URL 与说明文字 |
+| 通用 JSON / `generic` | `https://hooks.example.com/moyuren` | `event: moyuren.generated`、`date`、`template`、`image_url`、`updated_at`、`is_stale`；可选秒级 `X-Moyuren-Timestamp` 与 `X-Moyuren-Signature: sha256=<HMAC>`，签名内容为 `<timestamp>.<原始请求体>`，接收方应校验时间戳以拒绝重放 |
+
+网络错误和 HTTP 5xx 在短暂退避后重试一次；HTTP 4xx、其他非 2xx 及提供商错误响应计为失败。`once_per_day: true` 按业务日期、Webhook 名称和模板去重，成功发送的 `updated_at` 原子保存到 `<cache_dir>/notify_state.json`；重启、第二次每日调度、同日重新生成均不重复发送。失败不会消耗当天发送资格；`once_per_day: false` 每次符合触发条件的实际生成都推送。状态文件缺失或损坏时按空状态处理并警告一次。日志隐藏 URL、Token、签名查询和密钥，配置的 `repr()`/序列化也隐藏敏感值。
 
 ### 调度配置说明
 
@@ -521,6 +549,34 @@ scheduler:
 # feed:
 #   enabled: true
 #   max_items: 7
+
+# 生成成功通知（敏感 URL/密钥通过命名的环境变量读取）
+notify:
+  enabled: true
+  once_per_day: true
+  triggers: ["scheduled", "manual"]
+  timeout_sec: 10
+  webhooks:
+    - name: "wecom-team"
+      type: "wecom"
+      url_env: "MOYUREN_WECOM_WEBHOOK_URL"
+      templates: ["moyuren"]
+    - name: "feishu-team"
+      type: "feishu"
+      url_env: "MOYUREN_FEISHU_WEBHOOK_URL"
+      secret_env: "MOYUREN_FEISHU_WEBHOOK_SECRET"
+    - name: "dingtalk-team"
+      type: "dingtalk"
+      url_env: "MOYUREN_DINGTALK_WEBHOOK_URL"
+      secret_env: "MOYUREN_DINGTALK_WEBHOOK_SECRET"
+    - name: "telegram-channel"
+      type: "telegram"
+      url_env: "MOYUREN_TELEGRAM_BOT_API_URL"
+      chat_id: "@example_channel"
+    - name: "automation"
+      type: "generic"
+      url_env: "MOYUREN_GENERIC_WEBHOOK_URL"
+      secret_env: "MOYUREN_GENERIC_WEBHOOK_SECRET"
 
 # 每小时模式示例（每小时第 0 分执行）
 # scheduler:
@@ -644,6 +700,7 @@ moyuren_server/
 │   │   ├── gold_price.py # 金价服务
 │   │   ├── browser.py    # Playwright 浏览器管理
 │   │   ├── renderer.py   # 图片渲染
+│   │   ├── notifier.py   # Webhook 通知、签名与每日去重
 │   │   ├── generator.py  # 图片生成流水线
 │   │   └── cache.py      # 缓存清理
 │   └── models/           # 数据模型

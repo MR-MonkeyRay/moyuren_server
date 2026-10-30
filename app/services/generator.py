@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from app.core.config import NotifyTrigger
 from app.core.errors import GenerationBusyError, StorageError
 from app.core.filelock import FileLockTimeout, async_file_lock
 from app.core.metrics import (
@@ -332,9 +333,15 @@ class ImageGenerator:
         """初始化当前任务及其覆盖的模板集合。"""
         self._task: asyncio.Task[dict[str, str]] | None = None
         self._templates: frozenset[str] = frozenset()
+        self._notification_tasks: set[asyncio.Task[None]] = set()
+        self._notification_images: dict[str, str] = {}
+        self._notification_data: dict[str, Any] | None = None
 
     async def generate(
-        self, app: FastAPI, template_name: str | None = None
+        self,
+        app: FastAPI,
+        template_name: str | None = None,
+        trigger: NotifyTrigger = "manual",
     ) -> dict[str, str]:
         """共享覆盖所需模板的任务，或等待后生成尚未覆盖的模板。"""
         deadline = asyncio.get_running_loop().time() + INFLIGHT_WAIT_TIMEOUT_SEC
@@ -357,7 +364,9 @@ class ImageGenerator:
         self._templates = frozenset(
             [template_name] if template_name else (item.name for item in templates_config.items)
         )
-        task = asyncio.create_task(self._generate_and_save_image(app, template_name))
+        task = asyncio.create_task(
+            self._generate_and_save_image(app, template_name, trigger)
+        )
         self._task = task
         task.add_done_callback(self._generation_done)
         return await asyncio.shield(task)
@@ -371,14 +380,22 @@ class ImageGenerator:
             task.exception()
 
     async def shutdown(self) -> None:
-        """关闭依赖服务前取消并等待当前生成任务。"""
+        """关闭依赖服务前取消并等待生成及通知任务。"""
         task = self._task
         if task is not None:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+        notification_tasks = tuple(self._notification_tasks)
+        for notification_task in notification_tasks:
+            notification_task.cancel()
+        if notification_tasks:
+            await asyncio.gather(*notification_tasks, return_exceptions=True)
 
     async def _generate_and_save_image(
-        self, app: FastAPI, template_name: str | None = None
+        self,
+        app: FastAPI,
+        template_name: str | None = None,
+        trigger: NotifyTrigger = "manual",
     ) -> dict[str, str]:
         """Record one duration for each shared generation run."""
         started = time.monotonic()
@@ -388,9 +405,46 @@ class ImageGenerator:
             templates = app.state.config.get_templates_config()
             expected = {template_name} if template_name else {item.name for item in templates.items}
             result = "success" if expected.issubset(images) else "partial"
+            try:
+                self._schedule_notification(app, trigger)
+            except Exception as exc:
+                # 通知只是附带动作，任何调度异常都不能让已成功的生成失败
+                app.state.logger.warning(
+                    "Webhook notification scheduling failed: %s", type(exc).__name__
+                )
             return images
         finally:
             record_generation_duration(time.monotonic() - started, result)
+
+    def _schedule_notification(self, app: FastAPI, trigger: NotifyTrigger) -> None:
+        """Schedule notification delivery for images rendered by this run."""
+        services: AppServices | None = getattr(app.state, "services", None)
+        notifier = getattr(services, "notifier", None)
+        notify_config = getattr(app.state.config, "notify", None)
+        images = dict(self._notification_images)
+        data = self._notification_data
+        if (
+            notifier is None
+            or notify_config is None
+            or trigger not in notify_config.triggers
+            or not images
+            or data is None
+        ):
+            return
+
+        async def _notify() -> None:
+            try:
+                await notifier.notify(images=images, data=data, trigger=trigger)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                app.state.logger.warning(
+                    "Webhook notification task failed: %s", type(exc).__name__
+                )
+
+        task = asyncio.create_task(_notify())
+        self._notification_tasks.add(task)
+        task.add_done_callback(self._notification_tasks.discard)
 
     async def _run_generation(
         self, app: FastAPI, template_name: str | None = None
@@ -424,6 +478,8 @@ class ImageGenerator:
         cache_dir = Path(config.paths.cache_dir)
         data_dir = cache_dir / "data"
         images_dir = cache_dir / "images"
+        self._notification_images = {}
+        self._notification_data = None
 
         # Determine which templates to render
         templates_config = config.get_templates_config()
@@ -506,7 +562,7 @@ class ImageGenerator:
                         except Exception as exc:
                             logger.warning("Image variants failed for '%s': %s", tname, exc)
 
-                        await _update_data_file(
+                        notification_data = await _update_data_file(
                             data_dir=str(data_dir),
                             filename=filename,
                             template_data=template_data,
@@ -517,6 +573,9 @@ class ImageGenerator:
                             image_variants=image_variants,
                         )
                         results[tname] = filename
+                        self._notification_images[tname] = filename
+                        if isinstance(notification_data, dict):
+                            self._notification_data = notification_data
                     except Exception:
                         logger.exception("Failed to render template '%s'", tname)
                         failed_templates.append(tname)
@@ -541,11 +600,13 @@ class ImageGenerator:
 
 
 async def generate_and_save_image(
-    app: FastAPI, template_name: str | None = None
+    app: FastAPI,
+    template_name: str | None = None,
+    trigger: NotifyTrigger = "manual",
 ) -> dict[str, str]:
     """通过应用服务容器生成图片或等待已有任务。"""
     services: AppServices = app.state.services
-    return await services.generator.generate(app, template_name)
+    return await services.generator.generate(app, template_name, trigger)
 
 
 async def _update_data_file(
@@ -557,7 +618,7 @@ async def _update_data_file(
     template_name: str,
     now: datetime | None = None,
     image_variants: list[ImageVariant] | None = None,
-) -> None:
+) -> dict[str, Any]:
     """Atomically update the daily data file with latest image information.
 
     Args:
@@ -577,7 +638,7 @@ async def _update_data_file(
         now = now_business()
     business_date = now.date()
 
-    def _write_data() -> None:
+    def _write_data() -> dict[str, Any]:
         """同步构建并原子写入业务日期的数据文件。
 
         Raises:
@@ -674,5 +735,6 @@ async def _update_data_file(
         }
 
         DailyDataFile.model_validate(data).save_atomic(data_file)
+        return data
 
-    await asyncio.to_thread(_write_data)
+    return await asyncio.to_thread(_write_data)

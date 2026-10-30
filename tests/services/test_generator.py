@@ -285,7 +285,7 @@ class TestImageGeneratorSingleFlight:
 
         assert first_result is second_result
         assert first_result == {"moyuren": "moyuren.jpg"}
-        generate.assert_awaited_once_with(app, "moyuren")
+        generate.assert_awaited_once_with(app, "moyuren", "manual")
         fetch.assert_awaited_once()
         render.assert_awaited_once()
 
@@ -310,7 +310,7 @@ class TestImageGeneratorSingleFlight:
             first_result, second_result = await asyncio.gather(first, second)
 
         assert first_result is second_result
-        generate.assert_awaited_once_with(app, None)
+        generate.assert_awaited_once_with(app, None, "manual")
 
     @pytest.mark.asyncio
     async def test_exception_propagates_to_all_waiters(self) -> None:
@@ -380,7 +380,7 @@ class TestImageGeneratorSingleFlight:
             creator_result, waiter_result = await asyncio.gather(creator, waiter)
 
         assert creator_result is waiter_result
-        generate.assert_awaited_once_with(app, "moyuren")
+        generate.assert_awaited_once_with(app, "moyuren", "manual")
 
     @pytest.mark.asyncio
     async def test_uncovered_template_runs_after_current_generation(self) -> None:
@@ -391,7 +391,9 @@ class TestImageGeneratorSingleFlight:
         first_release = asyncio.Event()
         calls: list[str | None] = []
 
-        async def run(_app: object, template_name: str | None) -> dict[str, str]:
+        async def run(
+            _app: object, template_name: str | None, _trigger: str
+        ) -> dict[str, str]:
             calls.append(template_name)
             if template_name == "moyuren":
                 first_started.set()
@@ -420,7 +422,9 @@ class TestImageGeneratorSingleFlight:
         first_release = asyncio.Event()
         calls: list[str | None] = []
 
-        async def run(_app: object, template_name: str | None) -> dict[str, str]:
+        async def run(
+            _app: object, template_name: str | None, _trigger: str
+        ) -> dict[str, str]:
             calls.append(template_name)
             if template_name == "moyuren":
                 first_started.set()
@@ -454,7 +458,9 @@ class TestImageGeneratorSingleFlight:
         max_active = 0
         calls: list[str | None] = []
 
-        async def run(_app: object, template_name: str | None) -> dict[str, str]:
+        async def run(
+            _app: object, template_name: str | None, _trigger: str
+        ) -> dict[str, str]:
             nonlocal active, max_active
             calls.append(template_name)
             active += 1

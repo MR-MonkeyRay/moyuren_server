@@ -1,15 +1,18 @@
 """Configuration management module."""
 
-import re
 import logging
+import os
+import re
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypeVar, cast
+from urllib.parse import urlsplit
 
 import yaml
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SecretStr,
     ValidationError,
     ValidationInfo,
     field_validator,
@@ -1275,6 +1278,12 @@ class TimezoneConfig(BaseModel):
 # ---------------------------------------------------------------------------
 
 T = TypeVar("T", bound=DataSourceBase)
+NotifyTrigger = Literal["scheduled", "manual", "startup"]
+
+
+def _default_notify_triggers() -> list[NotifyTrigger]:
+    """返回默认通知触发来源。"""
+    return ["scheduled"]
 
 
 class _FilteredEnvSettingsSource(PydanticBaseSettingsSource):
@@ -1344,6 +1353,110 @@ class FeedConfig(BaseModel):
     max_items: int = Field(default=7, ge=1, le=60)
 
 
+class WebhookConfig(BaseModel):
+    """单个通知 Webhook 配置。"""
+
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    name: str
+    type: Literal["wecom", "feishu", "dingtalk", "telegram", "generic"]
+    url: SecretStr | None = None
+    url_env: str | None = None
+    secret: SecretStr | None = None
+    secret_env: str | None = None
+    chat_id: str | None = None
+    templates: list[str] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_environment_values(cls, value: Any) -> Any:
+        """校验直接值与环境变量名互斥，并解析环境变量。"""
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        url = data.get("url")
+        url_env = data.get("url_env")
+        if (url is None) == (url_env is None):
+            raise ValueError("exactly one of url or url_env is required")
+        secret = data.get("secret")
+        secret_env = data.get("secret_env")
+        if secret is not None and secret_env is not None:
+            raise ValueError("secret and secret_env are mutually exclusive")
+        if url_env is not None:
+            resolved_url = os.getenv(str(url_env))
+            if resolved_url is None:
+                raise ValueError(f"environment variable {url_env} is not set")
+            data["url"] = SecretStr(resolved_url)
+        if secret_env is not None:
+            resolved_secret = os.getenv(str(secret_env))
+            if resolved_secret is None:
+                raise ValueError(f"environment variable {secret_env} is not set")
+            data["secret"] = SecretStr(resolved_secret)
+        return data
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        """校验 Webhook 名称非空。"""
+        name = value.strip()
+        if not name:
+            raise ValueError("name cannot be empty")
+        return name
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: SecretStr | None) -> SecretStr | None:
+        """只接受 HTTP(S) Webhook URL。"""
+        if value is None:
+            return value
+        url = value.get_secret_value()
+        try:
+            parsed = urlsplit(url)
+            hostname = parsed.hostname
+            parsed.port
+        except ValueError as err:
+            raise ValueError("url must be a valid http(s) URL") from err
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or not hostname:
+            raise ValueError("url must be a valid http(s) URL")
+        return value
+
+    @field_validator("chat_id")
+    @classmethod
+    def normalize_chat_id(cls, value: str | None) -> str | None:
+        """去除 Telegram 会话 ID 首尾空白。"""
+        if value is None:
+            return value
+        return value.strip() or None
+
+    @model_validator(mode="after")
+    def validate_provider_fields(self) -> "WebhookConfig":
+        """校验提供商特有字段。"""
+        if self.type == "telegram" and not self.chat_id:
+            raise ValueError("chat_id is required for telegram webhooks")
+        return self
+
+
+class NotifyConfig(BaseModel):
+    """图片生成成功后的 Webhook 通知配置。"""
+
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    enabled: bool = False
+    once_per_day: bool = True
+    triggers: list[NotifyTrigger] = Field(default_factory=_default_notify_triggers)
+    timeout_sec: float = Field(default=10.0, gt=0)
+    webhooks: list[WebhookConfig] = Field(default_factory=list)
+
+    @field_validator("webhooks")
+    @classmethod
+    def validate_unique_names(cls, value: list[WebhookConfig]) -> list[WebhookConfig]:
+        """校验 Webhook 名称唯一。"""
+        names = [webhook.name for webhook in value]
+        if len(names) != len(set(names)):
+            raise ValueError("webhook names must be unique")
+        return value
+
+
 class AppConfig(BaseSettings):
     """Main application configuration."""
 
@@ -1364,6 +1477,7 @@ class AppConfig(BaseSettings):
     ops: OpsConfig = Field(default_factory=OpsConfig)
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     feed: FeedConfig = Field(default_factory=FeedConfig)
+    notify: NotifyConfig = Field(default_factory=NotifyConfig)
     templates: TemplatesConfig
     data_sources: list[DataSource]
     logging: LoggingConfig

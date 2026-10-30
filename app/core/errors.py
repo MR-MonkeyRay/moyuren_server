@@ -96,6 +96,15 @@ class FetchError(AppError):
         super().__init__(message, code)
 
 
+class WebhookDeliveryError(FetchError):
+    """Webhook delivery failed at HTTP or provider-response level."""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        """Preserve an HTTP status without retaining a secret-bearing request."""
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class RenderError(AppError):
     """Rendering related error."""
 
