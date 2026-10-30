@@ -22,6 +22,7 @@ cache:
 
 ops:
   api_key: ""
+  preview_wait_timeout_sec: 2.0
 
 # Prometheus 指标始终记录；仅在启用后注册 /metrics 端点
 # metrics:
@@ -78,6 +79,8 @@ instances:
 templates:
   default: "moyuren"
   dir: "templates"
+  hot_reload: true
+  hot_reload_interval_sec: 5.0
   config:
     device_scale_factor: 3
     jpeg_quality: 100

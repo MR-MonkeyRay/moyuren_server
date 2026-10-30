@@ -66,7 +66,24 @@ class _MetaParser(HTMLParser):
 class TemplateDiscovery:
     """扫描 templates 目录，解析 HTML meta 标签，返回 TemplateItemConfig 列表。"""
 
-    def discover(self, templates_dir: str, global_config: TemplateRenderConfig) -> list[TemplateItemConfig]:
+    def fingerprint(self, templates_dir: str) -> tuple[tuple[str, int, int], ...]:
+        """返回 HTML 模板文件名、纳秒 mtime 和大小组成的稳定目录指纹。"""
+        dir_path = Path(templates_dir).resolve()
+        if not dir_path.is_dir():
+            raise ValueError(f"Templates directory not found: {templates_dir}")
+        entries: list[tuple[str, int, int]] = []
+        for html_file in sorted(dir_path.glob("*.html")):
+            stat = html_file.stat()
+            entries.append((html_file.name, stat.st_mtime_ns, stat.st_size))
+        return tuple(entries)
+
+    def discover(
+        self,
+        templates_dir: str,
+        global_config: TemplateRenderConfig,
+        *,
+        strict: bool = False,
+    ) -> list[TemplateItemConfig]:
         """扫描目录，返回按文件名排序的模板配置列表。
 
         Args:
@@ -100,15 +117,23 @@ class TemplateDiscovery:
                 items.append(item)
                 logger.info("Discovered template: %s (%s)", item.name, html_file)
             except UnicodeDecodeError as e:
+                if strict:
+                    raise ValueError(f"Invalid template {filename}: encoding error") from e
                 logger.warning("Skipping template %s: encoding error - %s", filename, e)
                 continue
             except ValueError as e:
+                if strict:
+                    raise ValueError(f"Invalid template {filename}: {e}") from e
                 logger.warning("Skipping template %s: configuration error - %s", filename, e)
                 continue
             except OSError as e:
+                if strict:
+                    raise
                 logger.warning("Skipping template %s: file read error - %s", filename, e)
                 continue
             except Exception:
+                if strict:
+                    raise
                 logger.exception("Skipping template %s: unexpected error", filename)
                 continue
 
@@ -176,6 +201,7 @@ class TemplateDiscovery:
         return TemplateItemConfig(
             name=name,
             path=str(html_path),
+            description=meta.get("description", "").strip()[:200] or None,
             viewport=ViewportConfig(width=viewport_width, height=viewport_height),
             device_scale_factor=device_scale_factor,
             jpeg_quality=jpeg_quality,

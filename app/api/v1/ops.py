@@ -3,20 +3,21 @@
 import asyncio
 import hmac
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time
 from pathlib import Path
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.routing import APIRoute
 from starlette.datastructures import MutableHeaders
 from starlette.types import Message, Receive, Scope, Send
 
 from app.core.errors import ErrorCode, StorageError, error_response, get_http_status
 from app.core.services import AppServices
-from app.models.schemas import DailyDataFile
-from app.services.calendar import today_business
+from app.models.schemas import DailyDataFile, TemplatePreviewRequest
+from app.services.calendar import get_business_timezone, today_business
 from app.services.generator import GenerationBusyError, generate_and_save_image
+from app.services.preview_sample import cached_raw_data, sample_raw_data
 
 GET_DEPRECATION_TIMESTAMP = int(datetime(2026, 10, 30, tzinfo=UTC).timestamp())
 
@@ -26,7 +27,7 @@ class _OpsRoute(APIRoute):
 
     async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Wrap ops responses, including auth, validation and operation errors."""
-        if scope["method"] != "GET":
+        if scope["method"] != "GET" or "GET" not in (self.methods or set()):
             await super().handle(scope, receive, send)
             return
 
@@ -83,6 +84,65 @@ def _auth_error_response(message: str) -> JSONResponse:
         status_code=get_http_status(ErrorCode.AUTH_UNAUTHORIZED),
         headers={"Cache-Control": "no-store", "WWW-Authenticate": "Bearer"},
     )
+
+
+@router.post("/templates/preview", response_class=Response)
+async def ops_template_preview(request: Request, body: TemplatePreviewRequest) -> Response:
+    """Render a private preview without generation side effects or data fetching."""
+    try:
+        _verify_api_key(request)
+    except _UnauthorizedError as exc:
+        return _auth_error_response(exc.message)
+
+    config = request.app.state.config
+    logger: logging.Logger = request.app.state.logger
+    templates = await asyncio.to_thread(config.get_templates_config)
+    if not any(item.name == body.template for item in templates.items):
+        return JSONResponse(
+            content=error_response(ErrorCode.API_TEMPLATE_NOT_FOUND, "模板不存在"),
+            status_code=get_http_status(ErrorCode.API_TEMPLATE_NOT_FOUND),
+            headers={"Cache-Control": "no-store"},
+        )
+
+    # Each application owns its preview queue independently of real generation locks.
+    lock: asyncio.Lock | None = getattr(request.app.state, "preview_lock", None)
+    if lock is None:
+        lock = asyncio.Lock()
+        request.app.state.preview_lock = lock
+    try:
+        await asyncio.wait_for(lock.acquire(), timeout=config.ops.preview_wait_timeout_sec)
+    except TimeoutError:
+        return JSONResponse(
+            content=error_response(ErrorCode.GENERATION_BUSY, "模板预览繁忙，请稍后重试"),
+            status_code=get_http_status(ErrorCode.GENERATION_BUSY),
+            headers={"Retry-After": "2", "Cache-Control": "no-store"},
+        )
+
+    try:
+        preview_date = date.fromisoformat(body.date) if body.date else today_business()
+        now = datetime.combine(preview_date, time(hour=9), tzinfo=get_business_timezone())
+        services: AppServices = request.app.state.services
+        raw_data = (
+            await asyncio.to_thread(cached_raw_data, services, now, logger)
+            if body.data == "cached"
+            else sample_raw_data(now)
+        )
+        data = services.data_computer.compute(raw_data, now=now)
+        jpeg = await services.image_renderer.render_bytes(data, template_name=body.template)
+        return Response(
+            content=jpeg,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "no-store"},
+        )
+    except Exception as exc:
+        logger.error("Template preview failed: %s", exc)
+        return JSONResponse(
+            content=error_response(ErrorCode.GENERATION_FAILED, "模板预览失败"),
+            status_code=get_http_status(ErrorCode.GENERATION_FAILED),
+            headers={"Cache-Control": "no-store"},
+        )
+    finally:
+        lock.release()
 
 
 @router.get("/generate", deprecated=True)

@@ -3,6 +3,8 @@
 import logging
 import os
 import re
+import threading
+import time
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypeVar, cast
 from urllib.parse import urlsplit
@@ -12,6 +14,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    PrivateAttr,
     SecretStr,
     ValidationError,
     ValidationInfo,
@@ -199,6 +202,7 @@ class OpsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     api_key: str = ""
+    preview_wait_timeout_sec: float = Field(default=2.0, gt=0, allow_inf_nan=False)
 
 
 # ---------------------------------------------------------------------------
@@ -1069,6 +1073,7 @@ class TemplateItemConfig(BaseModel):
 
     name: str
     path: str
+    description: str | None = None
     viewport: ViewportConfig
     device_scale_factor: int | None = None
     jpeg_quality: int | None = None
@@ -1144,6 +1149,8 @@ class TemplatesConfig(BaseModel):
 
     default: str | None = None
     dir: str = "templates"
+    hot_reload: bool = True
+    hot_reload_interval_sec: float = Field(default=5.0, gt=0, allow_inf_nan=False)
     config: TemplateRenderConfig = Field(default_factory=TemplateRenderConfig)
     items: list[TemplateItemConfig] = Field(default_factory=list, exclude=True)
 
@@ -1485,6 +1492,12 @@ class AppConfig(BaseSettings):
     instances: InstancesConfig = Field(default_factory=InstancesConfig)
     timezone: TimezoneConfig = Field(default_factory=TimezoneConfig)
 
+    _templates_fingerprint: tuple[tuple[str, int, int], ...] | None = PrivateAttr(
+        default=None
+    )
+    _templates_last_check: float = PrivateAttr(default=float("-inf"))
+    _templates_reload_lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
+
     @model_validator(mode="after")
     def validate_unique_source_types(self) -> "AppConfig":
         """校验数据源类型唯一.
@@ -1557,12 +1570,44 @@ class AppConfig(BaseSettings):
         Side Effects:
             当 templates.items 为空时执行模板发现并写回 self.templates.items.
         """
-        if not self.templates.items:
-            from app.services.template_discovery import TemplateDiscovery
+        from app.services.template_discovery import TemplateDiscovery
 
-            discovery = TemplateDiscovery()
-            items = discovery.discover(self.templates.dir, self.templates.config)
-            self.templates.items = items
+        discovery = TemplateDiscovery()
+        with self._templates_reload_lock:
+            if not self.templates.items:
+                items = discovery.discover(self.templates.dir, self.templates.config)
+                self.templates.items = items
+                self._templates_fingerprint = discovery.fingerprint(self.templates.dir)
+                self._templates_last_check = time.monotonic()
+            elif self.templates.hot_reload:
+                now = time.monotonic()
+                if now - self._templates_last_check >= self.templates.hot_reload_interval_sec:
+                    # 目录指纹只包含一次 glob/stat，并按配置节流，避免频繁扫描模板目录。
+                    self._templates_last_check = now
+                    try:
+                        fingerprint = discovery.fingerprint(self.templates.dir)
+                        if fingerprint != self._templates_fingerprint:
+                            items = discovery.discover(
+                                self.templates.dir,
+                                self.templates.config,
+                                strict=True,
+                            )
+                            if self.templates.default and not any(
+                                item.name == self.templates.default for item in items
+                            ):
+                                logging.getLogger(__name__).warning(
+                                    "Default template '%s' was removed; using '%s'",
+                                    self.templates.default,
+                                    items[0].name,
+                                )
+                                self.templates.default = items[0].name
+                            self.templates.items = items
+                            self._templates_fingerprint = fingerprint
+                    except Exception as exc:
+                        logging.getLogger(__name__).warning(
+                            "Template hot reload failed; keeping previous templates: %s",
+                            exc,
+                        )
         # 验证 default（无条件执行）
         if self.templates.default:
             names = [item.name for item in self.templates.items]

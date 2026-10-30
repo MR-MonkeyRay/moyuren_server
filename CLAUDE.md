@@ -15,7 +15,7 @@
 | 指标 API | `app/api/metrics.py` | 可选根路径 `/metrics` 文本导出 |
 | 启动 | `app/core/bootstrap.py` | 服务构建、定时任务注册、启动缓存验证 |
 | API | `app/api/v1/moyuren.py` | REST 端点 |
-| Ops API | `app/api/v1/ops.py` | 运维端点（手动生成、缓存清理） |
+| Ops API | `app/api/v1/ops.py` | 运维端点（手动生成、缓存清理、鉴权模板预览） |
 | 模板 API | `app/api/v1/templates.py` | 模板列表查询 |
 | RSS API | `app/api/v1/feed.py` | 最近每日图片 RSS 2.0 订阅源、条件请求与缓存 |
 | API 公共工具 | `app/api/v1/common.py` | 图片 URL、ETag 与条件请求校验 |
@@ -33,9 +33,10 @@
 | 股票指数 | `app/services/stock_index.py` | 大盘指数实时行情（StockIndexService） |
 | 每日英语 | `app/services/daily_english.py` | 每日英语单词服务（ECDICT + 随机 API） |
 | 计算 | `app/services/compute.py` | 原始数据 → 模板上下文，合并假期内节日，按业务快照计算休息日/下班倒计时与数据新鲜度 |
-| 渲染 | `app/services/renderer.py` | Jinja2 + Playwright 截图；通过虚拟域名提供本地 WOFF2 字体，Google Fonts 仅作缺字回退 |
+| 渲染 | `app/services/renderer.py` | Jinja2 + Playwright 截图与无文件写入的 JPEG bytes 预览；通过虚拟域名提供本地 WOFF2 字体，Google Fonts 仅作缺字回退 |
 | 浏览器 | `app/services/browser.py` | Playwright 浏览器生命周期管理 |
-| 模板发现 | `app/services/template_discovery.py` | 自动扫描模板目录，解析 meta 标签 |
+| 预览样例 | `app/services/preview_sample.py` | 确定性离线样例与只读日级磁盘缓存组装（逐来源回退，不联网） |
+| 模板发现 | `app/services/template_discovery.py` | 按文件名/mtime/大小指纹热加载模板，解析渲染与描述 meta 标签 |
 | 图片生成 | `app/services/generator.py` | 图片生成流水线（文件锁防并发、缓存管理） |
 | Webhook 通知 | `app/services/notifier.py` | 生成成功后异步推送企业微信/飞书/钉钉/Telegram/通用 JSON，签名、重试与每日去重 |
 | 图片变体 | `app/services/variants.py` | Pillow 在线程中从 JPEG 原子生成 WebP/缩小图片，失败隔离；API 可按需补建 |
@@ -60,6 +61,7 @@ Docker：`docker-compose up -d`
 | GET | `/api/v1/templates` | 获取可用模板列表 |
 | POST | `/api/v1/ops/generate` | 手动触发图片生成（需鉴权） |
 | POST | `/api/v1/ops/cache/clean` | 清理过期缓存（需鉴权） |
+| POST | `/api/v1/ops/templates/preview` | 鉴权预览：template/date/data（cached 或 sample），返回 JPEG，no-store，单独并发锁 |
 | GET | `/static/{filename}` | 静态图片 |
 
 ## 配置
@@ -77,6 +79,8 @@ Docker：`docker-compose up -d`
 - `feed.enabled` / `feed.max_items`：RSS 订阅源默认启用、最多 7 条（范围 1–60）；环境变量 `MOYUREN_FEED_ENABLED` / `MOYUREN_FEED_MAX_ITEMS`
 - `notify.enabled` / `notify.once_per_day` / `notify.triggers` / `notify.timeout_sec`：生成成功通知总开关、每日去重、触发来源与请求超时；默认 `false` / `true` / `["scheduled"]` / `10`
 - `notify.webhooks`：Webhook 列表，唯一 `name` 与 `type` 必填；`url`/`url_env` 二选一，`secret`/`secret_env` 可选且互斥，Telegram 还需 `chat_id`，`templates: null` 表示全部模板；URL 和密钥均按敏感值处理
+- `ops.preview_wait_timeout_sec`：预览锁等待上限（默认 2 秒，超时 503 + Retry-After）
+- `templates.hot_reload` / `templates.hot_reload_interval_sec`：默认 `true` / `5.0`；按 HTML 文件名、纳秒 mtime、大小指纹节流重扫，失败保留上次列表；环境变量 `MOYUREN_TEMPLATES_HOT_RELOAD` / `MOYUREN_TEMPLATES_HOT_RELOAD_INTERVAL_SEC`
 - `templates.dir`：模板目录路径（默认 `templates`，自动扫描 `*.html`）
 - `templates.config.local_fonts_dir`：本地 WOFF2 字体目录（默认 `templates/fonts`；与 `templates.dir` 一样，相对路径基于进程工作目录，通常为项目根目录）
 - `templates.config.remote_font_fallback`：是否启用 Google Fonts 缺字回退（默认 true，离线部署可关闭）
@@ -100,7 +104,7 @@ Docker：`docker-compose up -d`
 - **修改每日英语**：`daily_english.py` → `compute.py` → 模板
 - **修改日历/农历**：`calendar.py` → `compute.py`
 - **修改配色主题**：选择规则在 `config.py` / `templates.config.themes`，农历春节期间与当前节气复用 `CalendarService`，`DomainDataAggregator` 在同一业务快照中按法定休假区间 → 当日节日 → 除夕至正月十五 → 当前节气季节 → 默认的顺序选择；`TemplateAdapter` 透传 `theme: {name, source, kind}`（kind 为 festival/season/default）。配色只在两套模板 CSS，未知主题及缺失 theme 保持默认外观；新增主题需补充文本/背景 WCAG AA 对比度测试，涨跌颜色保持红/绿。`DataComputer` 的 `themes=` 与 text_limits/work_end_time 一起由 bootstrap 及三个渲染脚本显式传入
-- **添加新模板**：在 `templates/` 目录创建 HTML 文件，在 `<head>` 中添加 `<meta name="moyuren:viewport-width" content="794">` 等 meta 标签，重启后自动发现
+- **添加新模板**：在 `templates/` 创建 HTML，在前 16KB 的 `<head>` 中填写 `moyuren:description`（去空白、最多 200 字符）和 `moyuren:viewport-width` 等 meta；默认 5 秒间隔热发现，无需重启。用 `POST /api/v1/ops/templates/preview` + Bearer 鉴权，传 `template`、`date`（可选，业务日 09:00）、`data: "sample"` 离线预览；`cached` 只读已有日级磁盘缓存，缺项用样例，不写正式图片/JSON、不通知、不计正式生成指标、不占生成锁
 - **重建字体子集**：安装开发依赖后运行 `python scripts/build_fonts.py --src /path/to/fontsrc --out templates/fonts`；许可证保存在 `templates/fonts/licenses/`
 - **添加 API**：在 `app/api/v1/` 创建路由 → `main.py` 注册
 - **测试渲染**：`python scripts/render_once.py`

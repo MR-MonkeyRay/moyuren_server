@@ -360,6 +360,7 @@ class ImageGenerator:
             if covered:
                 return result
 
+        # Keep task publication atomic; the directory check is throttled to one glob/stat pass.
         templates_config = app.state.config.get_templates_config()
         self._templates = frozenset(
             [template_name] if template_name else (item.name for item in templates_config.items)
@@ -402,7 +403,9 @@ class ImageGenerator:
         result: GenerationResult = "failure"
         try:
             images = await self._run_generation(app, template_name)
-            templates = app.state.config.get_templates_config()
+            templates = await asyncio.to_thread(
+                app.state.config.get_templates_config
+            )
             expected = {template_name} if template_name else {item.name for item in templates.items}
             result = "success" if expected.issubset(images) else "partial"
             try:
@@ -482,7 +485,7 @@ class ImageGenerator:
         self._notification_data = None
 
         # Determine which templates to render
-        templates_config = config.get_templates_config()
+        templates_config = await asyncio.to_thread(config.get_templates_config)
         if template_name:
             templates_to_render = [templates_config.get_template(template_name)]
         else:

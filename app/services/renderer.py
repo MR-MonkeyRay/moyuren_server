@@ -227,9 +227,6 @@ class ImageRenderer:
                 "Local font bundle missing at %s; using configured remote/system font fallbacks",
                 self.local_fonts_dir,
             )
-
-        # Ensure images directory exists
-        self.images_dir.mkdir(parents=True, exist_ok=True)
         self.resource_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_jinja_env(self, template_path: str) -> Environment:
@@ -239,6 +236,7 @@ class ImageRenderer:
             env = Environment(
                 loader=FileSystemLoader(template_dir),
                 autoescape=True,  # 启用自动转义，防止 XSS
+                auto_reload=True,
             )
             env.filters["format_datetime"] = format_datetime
             env.filters["nl2br"] = nl2br  # 换行转 <br> 过滤器
@@ -267,7 +265,6 @@ class ImageRenderer:
         """
         if now is None:
             now = now_business()
-        self._render_degraded = False
         template_item = self.templates_config.get_template(template_name)
         render_start = time.monotonic()
         self.logger.info(
@@ -278,25 +275,9 @@ class ImageRenderer:
             template_item.viewport.height,
         )
 
-        # Step 1: Render HTML with Jinja2
-        html_content = self._render_template(data, template_item)
-        self.logger.info(
-            "Rendered HTML for '%s' (%s bytes)", template_item.name, len(html_content)
-        )
-
-        # Step 2: Generate screenshot with Playwright
-        viewport = template_item.viewport
-        jpeg_quality = template_item.jpeg_quality or self.render_config.jpeg_quality
-        device_scale_factor = (
-            template_item.device_scale_factor or self.render_config.device_scale_factor
-        )
-        image_bytes = await self._generate_screenshot(
-            html_content,
-            viewport,
-            jpeg_quality,
-            device_scale_factor,
-            template_item.name,
-        )
+        self.images_dir.mkdir(parents=True, exist_ok=True)
+        self.resource_cache_dir.mkdir(parents=True, exist_ok=True)
+        image_bytes = await self._render_image_bytes(data, template_item)
 
         # Step 3: Atomically write to file
         filename = self._generate_filename(template_item.name, now=now)
@@ -311,6 +292,60 @@ class ImageRenderer:
         if self._render_degraded:
             self.logger.warning("Render completed with degraded stylesheet(s)")
         return filename
+
+    async def render_bytes(
+        self,
+        data: dict[str, Any],
+        template_name: str | None = None,
+    ) -> bytes:
+        """Render a template to JPEG bytes without writing renderer output or caches."""
+        template_item = self.templates_config.get_template(template_name)
+        render_start = time.monotonic()
+        self.logger.info(
+            "Rendering template preview '%s' from %s (viewport=%sx%s)",
+            template_item.name,
+            template_item.path,
+            template_item.viewport.width,
+            template_item.viewport.height,
+        )
+        image_bytes = await self._render_image_bytes(
+            data, template_item, persist_resource_cache=False
+        )
+        self.logger.info(
+            "Successfully rendered template preview '%s' (%s bytes, %.1fs)",
+            template_item.name,
+            len(image_bytes),
+            time.monotonic() - render_start,
+        )
+        if self._render_degraded:
+            self.logger.warning("Template preview completed with degraded stylesheet(s)")
+        return image_bytes
+
+    async def _render_image_bytes(
+        self,
+        data: dict[str, Any],
+        template_item: TemplateItemConfig,
+        *,
+        persist_resource_cache: bool = True,
+    ) -> bytes:
+        """Render template data through the shared Playwright screenshot path."""
+        self._render_degraded = False
+        html_content = self._render_template(data, template_item)
+        self.logger.info(
+            "Rendered HTML for '%s' (%s bytes)", template_item.name, len(html_content)
+        )
+        jpeg_quality = template_item.jpeg_quality or self.render_config.jpeg_quality
+        device_scale_factor = (
+            template_item.device_scale_factor or self.render_config.device_scale_factor
+        )
+        return await self._generate_screenshot(
+            html_content,
+            template_item.viewport,
+            jpeg_quality,
+            device_scale_factor,
+            template_item.name,
+            persist_resource_cache=persist_resource_cache,
+        )
 
     def _render_template(
         self, data: dict[str, Any], template_item: TemplateItemConfig
@@ -353,6 +388,8 @@ class ImageRenderer:
         jpeg_quality: int,
         device_scale_factor: int,
         template_name: str,
+        *,
+        persist_resource_cache: bool = True,
     ) -> bytes:
         """Generate screenshot from HTML using Playwright.
 
@@ -386,7 +423,9 @@ class ImageRenderer:
                 }
             )
             tracked_resources = self._track_page_requests(page)
-            font_requests = await self._install_resource_cache_routes(page)
+            font_requests = await self._install_resource_cache_routes(
+                page, persist_cache=persist_resource_cache
+            )
 
             # Set HTML content without waiting for network idle. Remote font/CDN requests
             # can keep the network busy long enough to fail otherwise valid renders.
@@ -674,7 +713,9 @@ class ImageRenderer:
             body=body,
         )
 
-    async def _install_resource_cache_routes(self, page: Any) -> _FontRequests:
+    async def _install_resource_cache_routes(
+        self, page: Any, *, persist_cache: bool = True
+    ) -> _FontRequests:
         """Keep font requests abortable and optionally cache remote resources."""
         fonts = _FontRequests(logger=self.logger)
         blocked_urls: set[str] = set()
@@ -731,13 +772,15 @@ class ImageRenderer:
                     )
                 request_headers = self._content_negotiation_headers(request)
                 try:
-                    return await self._get_remote_resource(
-                        url,
-                        ttl=ttl,
-                        timeout=timeout,
-                        request_headers=request_headers,
-                        blocked_urls=blocked_urls,
-                    )
+                    kwargs: dict[str, Any] = {
+                        "ttl": ttl,
+                        "timeout": timeout,
+                        "request_headers": request_headers,
+                        "blocked_urls": blocked_urls,
+                    }
+                    if not persist_cache:
+                        kwargs["persist_cache"] = False
+                    return await self._get_remote_resource(url, **kwargs)
                 except ValueError:
                     # Size limit exceeded - treat as unavailable
                     self.logger.warning(
@@ -936,6 +979,7 @@ class ImageRenderer:
         timeout: float,
         request_headers: dict[str, str] | None = None,
         blocked_urls: set[str] | None = None,
+        persist_cache: bool = True,
     ) -> _CachedResource | None:
         """读取或刷新远程渲染资源缓存。
 
@@ -1032,7 +1076,9 @@ class ImageRenderer:
             )
             return None
 
-        self._write_cached_resource(body_path, meta_path, url, content_type, body, now)
+        if persist_cache:
+            self.resource_cache_dir.mkdir(parents=True, exist_ok=True)
+            self._write_cached_resource(body_path, meta_path, url, content_type, body, now)
         return _CachedResource(
             body=self._rewrite_css_urls(body, url, content_type),
             content_type=content_type,

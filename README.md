@@ -122,9 +122,10 @@ pytest -m "not e2e"
 | GET | `/api/v1/templates` | 获取支持的模板列表 |
 | POST | `/api/v1/ops/generate` | 手动触发图片生成（需鉴权） |
 | POST | `/api/v1/ops/cache/clean` | 清理过期缓存（需鉴权） |
+| POST | `/api/v1/ops/templates/preview` | 模板开发预览，直接返回 JPEG（需鉴权） |
 | GET | `/static/{filename}` | 静态图片文件 |
 
-> 注：当无可用图片时，API 会自动触发按需生成；同一进程内的并发请求会等待当前生成任务，复用结果或依次生成未覆盖的模板。仅当其他进程持有生成锁或等待超时（90 秒）时返回 `503`，并附带 `Retry-After` 响应头（图片 API 为 5 秒，Ops 为 10 秒）。Ops 端点需要 `Authorization: Bearer <api_key>` 鉴权。Ops 的 GET 请求仍兼容，但已弃用；响应包含 `Deprecation: @1793318400`，同一 URL 的 POST 请求为后继版本。
+> 注：当无可用图片时，API 会自动触发按需生成；同一进程内的并发请求会等待当前生成任务，复用结果或依次生成未覆盖的模板。仅当其他进程持有生成锁或等待超时（90 秒）时返回 `503`，并附带 `Retry-After` 响应头（图片 API 为 5 秒，Ops 为 10 秒）。Ops 端点需要 `Authorization: Bearer <api_key>` 鉴权。生成和清理端点的 GET 请求仍兼容，但已弃用；响应包含 `Deprecation: @1793318400`，同一 URL 的 POST 请求为后继版本。
 
 启用 `metrics.enabled` 后，`GET /metrics` 导出专用注册表中的以下指标（不出现在 OpenAPI 中）：
 
@@ -280,26 +281,26 @@ pytest -m "not e2e"
   "data": [
     {
       "name": "moyuren",
-      "description": "摸鱼日历moyuren模板",
+      "description": "杂志风格版摸鱼日历，清晰呈现日期、热点与生活信息。",
       "image": "https://api.monkeyray.net/static/moyuren_20260210_072232.jpg"
     },
     {
       "name": "moyuren_cute",
-      "description": "摸鱼日历moyuren_cute模板",
+      "description": "棉花糖波普版摸鱼日历，以明快可爱的卡片展示每日信息。",
       "image": "https://api.monkeyray.net/static/moyuren_cute_20260210_072232.jpg"
     }
   ]
 }
 ```
 
-**缓存**：`Cache-Control: public, max-age=300, must-revalidate`
+**缓存**：`Cache-Control: public, max-age=300, must-revalidate`。`description` 来自 HTML 的 `moyuren:description` meta，去除首尾空白、截断至 200 字符；未提供时为 `null`。模板变动由服务端热加载，客户端缓存仍可保留 300 秒。
 
 </details>
 
 <details>
 <summary>POST /api/v1/ops/* - 运维端点（需鉴权）</summary>
 
-所有 Ops 端点需要 `Authorization: Bearer <api_key>` 请求头。GET 请求仍兼容，但已弃用；包括错误响应在内均返回 `Deprecation: @1793318400`，同一 URL 的 POST 请求为后继版本。
+所有 Ops 端点需要 `Authorization: Bearer <api_key>` 请求头。生成和清理端点的 GET 请求仍兼容，但已弃用；包括错误响应在内均返回 `Deprecation: @1793318400`，同一 URL 的 POST 请求为后继版本。
 
 **POST /api/v1/ops/generate** - 手动触发图片生成
 
@@ -323,6 +324,24 @@ pytest -m "not e2e"
 
 **POST /api/v1/ops/cache/clean** - 清理过期缓存
 - 可选查询参数：`keep_days`（保留最近 N 天，POST 请求也通过 URL 查询参数传递）
+
+**POST /api/v1/ops/templates/preview** - 模板预览（仅 POST，无 GET 兼容路由）
+
+JSON 请求体：`{"template": "moyuren", "date": "2026-10-29", "data": "sample"}`。`template` 必填且必须已发现；`date` 可省略或为 `null`，默认为业务时区今天，严格使用 `YYYY-MM-DD`，按该日业务时间 09:00 计算上下文。`data` 可为 `cached`（默认）或 `sample`。
+
+`cached` 仅通过日级缓存的 `load_cache()` 读取已有磁盘文件（news、holidays、fun_content、kfc、gold_price、daily_english），不检查过期后抓取、不联网、不写缓存；新闻按键合并，缺失或类型无效的来源逐项回退内置样例。过期磁盘数据也可预览；股票当前只有进程内缓存，因此始终使用样例。`sample` 使用与日期确定对应的内置离线数据，无需任何数据源服务。
+
+成功直接返回 `200 image/jpeg` 和 `Cache-Control: no-store`，不写 images/data JSON，不更新正式生成指标，不发送通知，不占用正式生成锁。预览每个应用进程只允许一个渲染；等待超过 `ops.preview_wait_timeout_sec`（默认 2 秒）返回 `503 GENERATION_5002`、`Retry-After: 2`。使用正式渲染器的视口、质量、资源策略与加载/字体/截图超时；预览不写远程资源缓存。数据源访问完全离线；浏览器仍可按配置加载远程字体，离线环境可关闭 `remote_font_fallback` 并使用本地资源。
+
+未知模板返回 `404 API_7004`，无效日期/数据模式或缺少必填字段返回 `422`，鉴权失败返回 `401 AUTH_6001`，渲染失败返回 `500 GENERATION_5001`。
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ops/templates/preview \
+  -H "Authorization: Bearer $MOYUREN_OPS_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"template":"moyuren","data":"sample","date":"2026-10-29"}' \
+  --output /tmp/moyuren-preview.jpg
+```
 
 **鉴权失败响应**（401）：
 
@@ -361,8 +380,8 @@ pytest -m "not e2e"
 | 400 | `API_7002` | 无效的 encode 参数 |
 | 400 | `API_7003` | 无效的请求参数 |
 | 401 | `AUTH_6001` | 未授权（API Key 无效） |
-| 404 | `API_7004` | 数据不存在 |
-| 404 | `API_7005` | 模板不存在 |
+| 404 | `API_7004` | 模板不存在 |
+| 404 | `API_7005` | 数据不存在 |
 | 404 | `STORAGE_4003` | 无可用图片 |
 | 500 | `GENERATION_5001` | 图片生成失败 |
 | 503 | `GENERATION_5002` | 其他进程正在生成或等待超时（Retry-After: 5） |
@@ -404,6 +423,7 @@ pytest -m "not e2e"
 | `templates.items[].viewport` | - | 各模板视口尺寸（width/height） |
 | `cache.retain_days` | `MOYUREN_CACHE_RETAIN_DAYS` | 缓存保留天数（默认 30） |
 | `cache.max_images_per_template_per_day` | `MOYUREN_CACHE_MAX_IMAGES_PER_TEMPLATE_PER_DAY` | 每个模板每天保留的最大图片数（默认 3） |
+| `ops.preview_wait_timeout_sec` | `MOYUREN_OPS_PREVIEW_WAIT_TIMEOUT_SEC` | 预览并发锁等待秒数，默认 2，必须为有限正数 |
 | `ops.api_key` | `MOYUREN_OPS_API_KEY` | 运维 API Key（留空则禁用 ops 端点，所有请求返回 401） |
 | `metrics.enabled` | `MOYUREN_METRICS_ENABLED` | 是否对外提供根路径 `/metrics`，默认 `false`；修改后重启应用，指标记录始终开启 |
 | `feed.enabled` | `MOYUREN_FEED_ENABLED` | 是否提供 `/api/v1/feed.xml`，默认 `true`；关闭时返回 404 |
@@ -434,6 +454,8 @@ pytest -m "not e2e"
 | `instances.allowlist` | `MOYUREN_INSTANCES_ALLOWLIST` | 自动发现实例的主机白名单，默认 `null`（不筛选）；`[]` 拒绝所有发现实例；显式 `instances.urls` 始终受信任 |
 | `templates.default` | - | 默认模板名 |
 | `templates.dir` | - | 模板目录（默认 `templates`，自动扫描 HTML 文件） |
+| `templates.hot_reload` | `MOYUREN_TEMPLATES_HOT_RELOAD` | 模板发现热加载，默认 `true` |
+| `templates.hot_reload_interval_sec` | `MOYUREN_TEMPLATES_HOT_RELOAD_INTERVAL_SEC` | 检查目录指纹的最小间隔秒数，默认 5，必须为有限正数 |
 
 环境变量按进程环境、当前工作目录的 `.env`、`config.yaml` 的顺序覆盖。进程环境和 `.env` 内均以 `MOYUREN_` 前缀名称为准；同一来源同时设置新旧名称时，新名称优先。已知配置项的旧无前缀名称仍可用，但已弃用，使用时会记录警告；无关或未知名称会被忽略。
 
@@ -645,6 +667,8 @@ data_sources:
 templates:
   default: "moyuren"
   dir: "templates"
+  hot_reload: true
+  hot_reload_interval_sec: 5.0
   config:
     device_scale_factor: 3
     jpeg_quality: 100
@@ -720,6 +744,19 @@ moyuren_server/
 ├── config.yaml           # 配置文件
 └── docker-compose.yaml   # Docker 编排
 ```
+
+## 添加新模板
+
+在 `templates/` 创建文件名只含字母、数字、下划线和连字符的 `.html` 文件。在文件前 16KB 的 `<head>` 中填写元数据，例如：
+
+```html
+<meta name="moyuren:description" content="我的摸鱼日历模板">
+<meta name="moyuren:viewport-width" content="794">
+<meta name="moyuren:viewport-height" content="1123">
+<meta name="moyuren:jpeg-quality" content="90">
+```
+
+模板使用 Jinja2，参考内置模板的上下文变量。通过上述预览端点选择 `sample` 可离线调试数据与日期，不用生成正式图片。默认无需重启：模板列表、生成与预览通过 `get_templates_config()` 检查 HTML 文件名、纳秒 mtime 和大小的指纹，检查受 5 秒间隔节流；变化后重新发现新增、修改和删除的模板。发现失败时记录警告并保留上一份可用列表。Jinja 的 `FileSystemLoader` 开启 `auto_reload`，下次渲染会读取编辑后的内容；禁用 `hot_reload` 则固定发现列表。模板列表 HTTP 缓存仍为 300 秒，开发时直接重新请求服务端查看更新。
 
 ## 许可证
 

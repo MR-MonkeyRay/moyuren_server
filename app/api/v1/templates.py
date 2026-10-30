@@ -1,23 +1,24 @@
 """Templates API endpoint."""
 
+import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from app.core.errors import StorageError
-from app.models.schemas import DailyDataFile
+from app.models.schemas import DailyDataFile, TemplateListItemResponse
 from app.services.calendar import today_business
 
 router = APIRouter(prefix="/api/v1", tags=["templates"])
 
 
-@router.get("/templates")
+@router.get("/templates", response_model=dict[str, list[TemplateListItemResponse]])
 async def get_templates(request: Request) -> JSONResponse:
     """获取支持的模板列表。"""
     config = request.app.state.config
     base_domain = config.server.base_domain.rstrip("/")
-    templates_config = config.get_templates_config()
+    templates_config = await asyncio.to_thread(config.get_templates_config)
 
     # Read today's data to get latest image URLs
     data_dir = Path(config.paths.cache_dir) / "data"
@@ -36,7 +37,7 @@ async def get_templates(request: Request) -> JSONResponse:
         image_url = f"{base_domain}/static/{filename}" if filename else None
         result.append({
             "name": item.name,
-            "description": f"摸鱼日历{item.name}模板",
+            "description": item.description,
             "image": image_url,
             "show_daily_english": item.show_daily_english,
         })

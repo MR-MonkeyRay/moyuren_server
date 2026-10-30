@@ -14,6 +14,31 @@ from app.core.errors import ErrorCode, StorageError
 DAILY_DATA_SCHEMA_VERSION = 1
 
 
+class TemplatePreviewRequest(BaseModel):
+    """Authenticated template preview using cached or deterministic sample data."""
+
+    template: str
+    date: str | None = None
+    data: Literal["cached", "sample"] = "cached"
+
+    @field_validator("date")
+    @classmethod
+    def validate_preview_date(cls, value: str | None) -> str | None:
+        """Require an exact ISO calendar date when supplied."""
+        if value is not None and calendar_date.fromisoformat(value).isoformat() != value:
+            raise ValueError("date must use YYYY-MM-DD format")
+        return value
+
+
+class TemplateListItemResponse(BaseModel):
+    """Public template metadata, including the optional HTML description."""
+
+    name: str
+    description: str | None = None
+    image: str | None = None
+    show_daily_english: bool = True
+
+
 def _validate_image_filename(filename: str) -> str:
     """Require filenames confined to the images directory."""
     if not filename.strip() or any(part in filename for part in ("/", "\\", "..", "\x00")):

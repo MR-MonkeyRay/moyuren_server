@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import time
 from collections.abc import AsyncIterator
 from datetime import datetime
@@ -151,6 +152,45 @@ class TestImageRenderer:
         assert (renderer.images_dir / filename).read_bytes() == b"jpeg"
         mock_now.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_render_bytes_uses_screenshot_path_without_writing(
+        self,
+        templates_config: TemplatesConfig,
+        render_config: TemplateRenderConfig,
+        tmp_path: Path,
+        logger,
+    ) -> None:
+        """Preview rendering returns JPEG bytes without creating output directories."""
+        images_dir = tmp_path / "missing" / "images"
+        renderer = ImageRenderer(
+            templates_config=templates_config,
+            images_dir=str(images_dir),
+            render_config=render_config,
+            logger=logger,
+        )
+        page = AsyncMock()
+        page.on = MagicMock()
+        page.evaluate.side_effect = ["ready", 600]
+        page.screenshot.return_value = b"preview jpeg"
+
+        with patch("app.services.renderer.browser_manager") as manager:
+            manager.create_page = AsyncMock(return_value=page)
+            manager.release_page = AsyncMock()
+            result = await renderer.render_bytes({"title": "Preview"}, "test")
+
+        assert result == b"preview jpeg"
+        assert not images_dir.exists()
+        assert list(renderer.resource_cache_dir.iterdir()) == []
+        page.set_content.assert_awaited_once_with(
+            "<html><body>Preview</body></html>",
+            wait_until="domcontentloaded",
+            timeout=10000,
+        )
+        page.screenshot.assert_awaited_once_with(
+            type="jpeg", quality=90, full_page=True, timeout=10000
+        )
+        manager.release_page.assert_awaited_once_with(page)
+
     @pytest.fixture
     def templates_config(self, tmp_path: Path) -> TemplatesConfig:
         """Create a templates configuration."""
@@ -196,7 +236,8 @@ class TestImageRenderer:
             logger=logger,
         )
 
-    def test_renderer_creates_images_dir(
+    @pytest.mark.asyncio
+    async def test_render_creates_images_dir(
         self,
         templates_config: TemplatesConfig,
         render_config: TemplateRenderConfig,
@@ -205,12 +246,17 @@ class TestImageRenderer:
     ) -> None:
         """Test renderer creates static directory if not exists."""
         images_dir = tmp_path / "new_static"
-        ImageRenderer(
+        renderer = ImageRenderer(
             templates_config=templates_config,
             images_dir=str(images_dir),
             render_config=render_config,
             logger=logger,
         )
+        with patch.object(
+            renderer, "_generate_screenshot", new=AsyncMock(return_value=b"jpeg")
+        ):
+            await renderer.render({"title": "test"})
+
         assert images_dir.exists()
 
     def test_get_jinja_env(
@@ -235,6 +281,26 @@ class TestImageRenderer:
         env2 = renderer._get_jinja_env(template_item.path)
 
         assert env1 is env2
+
+    def test_jinja_environment_auto_reloads_template_changes(
+        self, renderer: ImageRenderer, templates_config: TemplatesConfig
+    ) -> None:
+        """Cached Jinja environments reload template contents after an edit."""
+        template_item = templates_config.get_template("test")
+        template_path = Path(template_item.path)
+
+        assert renderer._render_template({"title": "First"}, template_item) == (
+            "<html><body>First</body></html>"
+        )
+        previous_mtime = template_path.stat().st_mtime
+        template_path.write_text(
+            "<html><body>changed {{ title }}</body></html>", encoding="utf-8"
+        )
+        os.utime(template_path, (previous_mtime + 2, previous_mtime + 2))
+
+        assert renderer._render_template({"title": "Second"}, template_item) == (
+            "<html><body>changed Second</body></html>"
+        )
 
     @pytest.mark.asyncio
     async def test_fit_viewport_shrinks_to_content(

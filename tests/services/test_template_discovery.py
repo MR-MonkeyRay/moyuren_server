@@ -125,6 +125,28 @@ class TestTemplateDiscovery:
         assert items[0].show_kfc is True  # 默认值
         assert items[0].show_stock is True  # 默认值
 
+    def test_discover_description_strips_truncates_and_defaults_to_none(
+        self,
+        discovery: TemplateDiscovery,
+        global_config: TemplateRenderConfig,
+        tmp_path: Path,
+    ) -> None:
+        """描述 meta 去除首尾空白、限制长度，缺失时为 None。"""
+        _create_template(
+            tmp_path,
+            "described",
+            f'<meta name="moyuren:description" content="  {"简" * 205}  ">',
+        )
+        _create_template(tmp_path, "plain")
+
+        items = {
+            item.name: item
+            for item in discovery.discover(str(tmp_path), global_config)
+        }
+
+        assert items["described"].description == "简" * 200
+        assert items["plain"].description is None
+
     def test_production_templates_have_matching_feature_meta(
         self, discovery: TemplateDiscovery, global_config: TemplateRenderConfig
     ) -> None:
@@ -139,6 +161,8 @@ class TestTemplateDiscovery:
         assert items["moyuren_cute"].show_kfc is True
         assert items["moyuren_cute"].show_stock is True
         assert items["moyuren_cute"].show_daily_english is True
+        assert items["moyuren"].description == "杂志风格版摸鱼日历，清晰呈现日期、热点与生活信息。"
+        assert items["moyuren_cute"].description == "棉花糖波普版摸鱼日历，以明快可爱的卡片展示每日信息。"
 
     def test_discover_skips_meta_without_attribute_values(
         self, discovery: TemplateDiscovery, global_config: TemplateRenderConfig, tmp_path: Path

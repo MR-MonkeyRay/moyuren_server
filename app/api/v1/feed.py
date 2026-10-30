@@ -188,7 +188,7 @@ async def get_feed(
             "msg": f"Input should be less than or equal to {config.feed.max_items}",
             "input": selected_limit, "ctx": {"le": config.feed.max_items},
         }])
-    templates = config.get_templates_config()
+    templates = await asyncio.to_thread(config.get_templates_config)
     default = templates.default or (templates.items[0].name if templates.items else "moyuren")
     selected_template = default if template is None else template
     if not any(item.name == selected_template for item in templates.items):

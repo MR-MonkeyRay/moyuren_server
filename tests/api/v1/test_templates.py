@@ -1,8 +1,10 @@
 """Tests for app/api/v1/templates.py - templates API endpoint."""
 
+import asyncio
 import json
 from datetime import date
 from pathlib import Path
+from typing import Callable
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,6 +14,18 @@ from httpx import ASGITransport, AsyncClient
 from app.api.v1.templates import router as templates_router
 from app.core.config import TemplateRenderConfig
 from app.services.template_discovery import TemplateDiscovery
+
+
+@pytest.fixture(autouse=True)
+def run_to_thread_inline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Avoid sandbox threadpool hangs while preserving the async call boundary."""
+
+    async def inline(
+        function: Callable[..., object], *args: object, **kwargs: object
+    ) -> object:
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", inline)
 
 
 @pytest.fixture
@@ -27,6 +41,7 @@ def templates_app(tmp_path: Path) -> FastAPI:
     # Create template items
     item1 = MagicMock()
     item1.name = "moyuren"
+    item1.description = "杂志风格版"
     item1.show_daily_english = False
     templates_config = MagicMock()
     templates_config.items = [item1]
@@ -54,6 +69,7 @@ class TestTemplatesAPI:
         assert "data" in data
         assert len(data["data"]) == 1
         assert data["data"][0]["name"] == "moyuren"
+        assert data["data"][0]["description"] == "杂志风格版"
         assert data["data"][0]["image"] is None  # No data file yet
         assert data["data"][0]["show_daily_english"] is False
 
