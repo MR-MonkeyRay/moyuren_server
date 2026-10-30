@@ -19,6 +19,7 @@ from urllib.parse import quote, urlparse
 import httpx
 
 from app.core.config import DailyEnglishSource, DictBackendConfig, PathsConfig, SQLiteBackendConfig
+from app.core.fileutil import set_output_permissions
 from app.core.network import create_async_client, redact_url, safe_exception_for_log
 from app.core.filelock import async_file_lock
 from app.services.calendar import today_business
@@ -545,6 +546,7 @@ class SQLiteBackend:
                                 self._MAX_DB_SIZE_BYTES,
                             )
 
+                        set_output_permissions(tmp_db_path)
                         os.replace(tmp_db_path, self._db_path)
                     finally:
                         with contextlib.suppress(OSError):

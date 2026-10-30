@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from app.core.network import create_async_client, redact_url, safe_exception_for_log
+from app.core.fileutil import set_output_permissions
 from app.services.calendar import get_business_timezone
 from app.services.daily_cache import DailyCache
 
@@ -261,6 +262,7 @@ class HolidayService:
             ) as tmp_file:
                 tmp_path = tmp_file.name
                 json.dump(data, tmp_file, ensure_ascii=False, indent=2)
+            set_output_permissions(tmp_path)
             os.replace(tmp_path, cache_file)
             self._logger.debug("已缓存 %s 年数据到 %s", year, cache_file)
         except Exception as e:

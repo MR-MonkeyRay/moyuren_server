@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Generic, TypeVar
 
 from app.core.metrics import FetchOutcome, record_source_fetch
+from app.core.fileutil import set_output_permissions
 from app.services.calendar import today_business
 
 T = TypeVar("T")
@@ -187,6 +188,7 @@ class DailyCache(ABC, Generic[T]):
                 json.dump(cache_data, tmp_file, ensure_ascii=False, indent=2)
 
             # 原子性地替换目标文件
+            set_output_permissions(tmp_path)
             os.replace(tmp_path, cache_file)
 
             self.logger.info(

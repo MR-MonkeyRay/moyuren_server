@@ -18,6 +18,7 @@ import httpx
 
 from app.core.config import NotifyConfig, NotifyTrigger, WebhookConfig
 from app.core.errors import StorageError, WebhookDeliveryError
+from app.core.fileutil import set_output_permissions
 from app.core.metrics import record_notify
 from app.core.network import create_async_client, safe_exception_for_log
 
@@ -98,6 +99,7 @@ class WebhookNotifier:
             ) as handle:
                 tmp_path = Path(handle.name)
                 json.dump(self._state, handle, ensure_ascii=False)
+            set_output_permissions(tmp_path)
             os.replace(tmp_path, self._state_file)
         except OSError as exc:
             raise StorageError("Failed to persist notification state") from exc

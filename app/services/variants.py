@@ -10,6 +10,7 @@ from PIL import Image
 
 from app.core.config import TemplateRenderConfig
 from app.core.errors import ErrorCode, RenderError
+from app.core.fileutil import set_output_permissions
 from app.models.schemas import ImageVariant
 
 
@@ -60,6 +61,7 @@ def ensure_variant(
                     format="JPEG" if format == "jpeg" else "WEBP",
                     quality=config.jpeg_quality if format == "jpeg" else config.webp_quality,
                 )
+                set_output_permissions(temporary)
                 os.replace(temporary, target)
             finally:
                 image.close()

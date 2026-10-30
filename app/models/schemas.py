@@ -10,6 +10,7 @@ from typing import Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
 
 from app.core.errors import ErrorCode, StorageError
+from app.core.fileutil import set_output_permissions
 
 DAILY_DATA_SCHEMA_VERSION = 1
 
@@ -162,6 +163,7 @@ class DailyDataFile(BaseModel):
             ) as tmp_file:
                 tmp_path = Path(tmp_file.name)
                 tmp_file.write(self.dump_json())
+            set_output_permissions(tmp_path)
             os.replace(tmp_path, path)
         except Exception as exc:
             raise StorageError(message=f"Failed to update data file {path}: {exc}") from exc

@@ -20,6 +20,7 @@
 | RSS API | `app/api/v1/feed.py` | 最近每日图片 RSS 2.0 订阅源、条件请求与缓存 |
 | API 公共工具 | `app/api/v1/common.py` | 图片 URL、ETag 与条件请求校验 |
 | 服务容器 | `app/core/services.py` | AppServices 服务容器 |
+| 文件写入 | `app/core/fileutil.py` | 按启动时 umask 设置原子输出权限，支持文本/字节与可选 fsync |
 | 日级缓存 | `app/services/daily_cache.py` | 日级缓存抽象基类（自动过期、降级） |
 | 缓存清理 | `app/services/cache.py` | 缓存清理服务 |
 | 获取 | `app/services/fetcher.py` | 异步并行 HTTP 请求（主源 + 公共实例智能切换 + 静态镜像兜底） |

@@ -28,6 +28,7 @@ from app.core.config import (
 )
 from app.core.network import create_async_client, safe_exception_for_log
 from app.core.errors import RenderError, RenderResourceRedirectError
+from app.core.fileutil import set_output_permissions
 from app.services.browser import browser_manager
 from app.services.calendar import now_business
 
@@ -1274,6 +1275,7 @@ class ImageRenderer:
                 body_tmp.flush()
                 os.fsync(body_tmp.fileno())
                 body_tmp.close()
+                set_output_permissions(body_tmp.name)
                 os.replace(body_tmp.name, str(body_path))
             except BaseException:
                 body_tmp.close()
@@ -1300,6 +1302,7 @@ class ImageRenderer:
                 meta_tmp.flush()
                 os.fsync(meta_tmp.fileno())
                 meta_tmp.close()
+                set_output_permissions(meta_tmp.name)
                 os.replace(meta_tmp.name, str(meta_path))
             except BaseException:
                 meta_tmp.close()
@@ -1439,6 +1442,7 @@ class ImageRenderer:
                 tmp_path = tmp_file.name
 
             # Atomic rename
+            set_output_permissions(tmp_path)
             os.replace(tmp_path, target_path)
 
         except Exception as e:

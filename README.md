@@ -91,6 +91,8 @@ docker compose up -d
 
 容器配置覆盖使用 `MOYUREN_` 前缀，例如 `MOYUREN_SERVER_HOST=0.0.0.0`、`MOYUREN_SERVER_PORT=8000`、`MOYUREN_SERVER_BASE_DOMAIN=https://example.com`、`MOYUREN_OPS_API_KEY=...`；端口映射需与监听端口一致。已知旧无前缀名称仍兼容，配置加载时记录弃用警告。
 
+原子写入的图片、变体、数据 JSON 和缓存文件权限遵循进程启动时的 umask（`0666 & ~umask`；通常 umask 为 `0022`，文件权限为 `0644`）。`docker-entrypoint.sh` 不设置 umask，也不读取 `UMASK` 环境变量；它在 root 启动时初始化 `/app/cache` 的属主后通过 `gosu` 切换到 `appuser`，否则直接执行服务。需要更严格权限时，应在启动 Python 服务前设置进程 umask。
+
 如遇挂载目录权限问题（镜像默认 UID/GID 为 1000，可通过构建参数修改）：
 
 ```bash

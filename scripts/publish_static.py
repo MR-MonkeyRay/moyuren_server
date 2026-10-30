@@ -26,6 +26,7 @@ from app.core.config import (
     load_config,
 )
 from app.core.errors import RenderError
+from app.core.fileutil import set_output_permissions, write_atomic as write_output_atomic
 from app.core.logging import setup_logging
 from app.core.network import safe_exception_for_log
 from app.models.schemas import DailyDataFile
@@ -170,29 +171,13 @@ def parse_args():
     return parser.parse_args()
 
 
-def write_atomic(content: str, target_path: Path):
+def write_atomic(content: str, target_path: Path) -> None:
     """Write content to file atomically."""
     target_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=target_path.parent,
-            prefix=".tmp_",
-            suffix=".tmp",
-            delete=False,
-        ) as tmp_file:
-            tmp_file.write(content)
-            tmp_path = tmp_file.name
-        os.replace(tmp_path, target_path)
-    except Exception:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-        raise
+    write_output_atomic(target_path, content)
 
 
-def copy_atomic(src_path: Path, target_path: Path):
+def copy_atomic(src_path: Path, target_path: Path) -> None:
     """Copy file atomically."""
     target_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = None
@@ -207,6 +192,7 @@ def copy_atomic(src_path: Path, target_path: Path):
             with open(src_path, "rb") as src_file:
                 shutil.copyfileobj(src_file, tmp_file)
             tmp_path = tmp_file.name
+        set_output_permissions(tmp_path)
         os.replace(tmp_path, target_path)
     except Exception:
         if tmp_path and os.path.exists(tmp_path):

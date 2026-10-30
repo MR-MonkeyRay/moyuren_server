@@ -3,9 +3,7 @@
 
 import asyncio
 import json
-import os
 import sys
-import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -22,6 +20,7 @@ from app.core.config import (
     StockIndexSource,
     load_config,
 )
+from app.core.fileutil import write_atomic
 from app.core.logging import setup_logging
 from app.core.network import safe_exception_for_log
 from app.services.browser import browser_manager
@@ -346,17 +345,7 @@ async def main() -> None:
             "stale_sources": template_data.get("data_freshness", {}).get("stale_sources", []),
         }
 
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            dir=data_dir,
-            prefix=".data_",
-            suffix=".tmp",
-            delete=False,
-        ) as tmp_file:
-            json.dump(data, tmp_file, ensure_ascii=False, indent=2)
-            tmp_path = tmp_file.name
-
-        os.replace(tmp_path, data_file)
+        write_atomic(data_file, json.dumps(data, ensure_ascii=False, indent=2))
         logger.info("Data file updated: %s", data_file)
 
         # Print results
