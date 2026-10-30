@@ -1,4 +1,4 @@
-"""Tests for prefixed configuration environment overrides and source precedence."""
+"""测试带前缀的环境变量配置覆盖与来源优先级。"""
 
 import os
 import shutil
@@ -12,7 +12,7 @@ from app.core.config import AppConfig, load_config
 
 @pytest.fixture(autouse=True)
 def isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Load the repository YAML from an isolated working directory."""
+    """从隔离的工作目录加载仓库 YAML。"""
     prefixes = ("moyuren_", *(f"{name}_" for name in AppConfig.model_fields))
     for name in os.environ:
         if name.lower().startswith(prefixes):
@@ -26,7 +26,7 @@ def isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_unrelated_variables_are_ignored(
     use_dotenv: bool, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Ignore unknown names even when they resemble configuration sections."""
+    """忽略未知名称，即使它们看起来像配置段。"""
     variables = {
         "SERVER_NAME": "foo",
         "CACHE_DIR": "/x",
@@ -132,7 +132,7 @@ def test_known_overrides(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Only known prefixed direct-field names override YAML in either source."""
+    """两种来源都仅允许已知且带前缀的直接字段覆盖 YAML。"""
     baseline = load_config()
     variable = f"MOYUREN_{name}" if prefixed else name
     if use_dotenv:
@@ -166,7 +166,7 @@ def test_source_precedence(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Prefer prefixed process env to dotenv and ignore every unprefixed value."""
+    """带前缀的进程环境变量优先于 dotenv，忽略所有无前缀的值。"""
     for name, value in env.items():
         monkeypatch.setenv(name, value)
     Path(".env").write_text(
@@ -181,7 +181,7 @@ def test_source_precedence(
 def test_sources_merge_individual_fields(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Preserve lower-priority overrides for different keys in the same section."""
+    """保留同一配置段中不同键的低优先级覆盖值。"""
     monkeypatch.setenv("MOYUREN_SERVER_PORT", "8123")
     Path(".env").write_text("MOYUREN_SERVER_HOST=127.0.0.1\n", encoding="utf-8")
 
@@ -195,7 +195,7 @@ def test_sources_merge_individual_fields(
 def test_prefixed_sections_merge_with_direct_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """JSON sections retain source precedence and nested direct-field overrides."""
+    """JSON 配置段遵循来源优先级，并支持嵌套直接字段覆盖。"""
     monkeypatch.setenv("MOYUREN_SERVER", '{"port": 8123}')
     monkeypatch.setenv("MOYUREN_TEMPLATES_CONFIG", '{"jpeg_quality": 71}')
     monkeypatch.setenv("MOYUREN_SERVER_PORT", "8124")
@@ -216,7 +216,7 @@ def test_prefixed_sections_merge_with_direct_fields(
 def test_prefixed_data_sources_json_replaces_yaml_list(
     use_dotenv: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Whole-list JSON overrides stay supported without index-based variables."""
+    """支持以 JSON 覆盖整个列表，不支持按索引设置的变量。"""
     value = '[{"type": "holiday", "enabled": false}]'
     if use_dotenv:
         Path(".env").write_text(f"MOYUREN_DATA_SOURCES='{value}'\n", encoding="utf-8")
@@ -231,7 +231,7 @@ def test_prefixed_data_sources_json_replaces_yaml_list(
 
 
 def test_invalid_prefixed_value_is_not_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Filtering must not hide validation errors in supported environment keys."""
+    """过滤不得掩盖受支持环境变量键的校验错误。"""
     monkeypatch.setenv("MOYUREN_SERVER_PORT", "not-an-int")
 
     with pytest.raises(ValueError, match="int_parsing"):
@@ -240,7 +240,7 @@ def test_invalid_prefixed_value_is_not_ignored(monkeypatch: pytest.MonkeyPatch) 
 
 @pytest.mark.parametrize("nested", [False, True])
 def test_unknown_yaml_keys_remain_forbidden(nested: bool) -> None:
-    """Keep strict YAML validation independent of environment filtering."""
+    """YAML 严格校验不受环境变量过滤影响。"""
     path = Path("config.yaml")
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     target = data["server"] if nested else data

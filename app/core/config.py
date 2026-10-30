@@ -1,4 +1,4 @@
-"""Configuration management module."""
+"""配置管理模块。"""
 
 import logging
 import os
@@ -29,7 +29,7 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
-# Pattern for valid template names: alphanumeric, underscore, hyphen only
+# 合法模板名仅允许字母、数字、下划线和连字符
 _TEMPLATE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 _FUN_CONTENT_ENDPOINT_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _DAILY_TIME_PATTERN = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
@@ -49,7 +49,7 @@ def _normalize_hostname(value: str) -> str:
 
 
 class ServerConfig(BaseModel):
-    """Server configuration."""
+    """服务器配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -59,7 +59,7 @@ class ServerConfig(BaseModel):
 
 
 class PathsConfig(BaseModel):
-    """Path configuration."""
+    """路径配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -67,7 +67,7 @@ class PathsConfig(BaseModel):
 
 
 class SchedulerConfig(BaseModel):
-    """Scheduler configuration."""
+    """调度器配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -133,7 +133,7 @@ class SchedulerConfig(BaseModel):
 
 
 class CacheConfig(BaseModel):
-    """Output cache configuration."""
+    """输出缓存配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -178,7 +178,7 @@ class CacheConfig(BaseModel):
 
 
 class OpsConfig(BaseModel):
-    """Operations configuration."""
+    """运维配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -187,12 +187,12 @@ class OpsConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Data Sources — Discriminated Union
+# 数据源 — 可辨识联合类型
 # ---------------------------------------------------------------------------
 
 
 class NetworkConfig(BaseModel):
-    """Global network configuration."""
+    """全局网络配置。"""
 
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
@@ -234,7 +234,7 @@ class NetworkConfig(BaseModel):
     @field_validator("proxy_url")
     @classmethod
     def validate_proxy_url(cls, value: str | None) -> str | None:
-        """Validate optional outbound proxy URL."""
+        """校验可选的出站代理 URL。"""
         from app.core.network import normalize_proxy_url, playwright_proxy_config
 
         normalized_proxy_url = normalize_proxy_url(value)
@@ -289,7 +289,7 @@ class InstancesConfig(BaseModel):
 
 
 class DataSourceBase(BaseModel):
-    """Base model for all data sources."""
+    """所有数据源的基础模型。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -317,7 +317,7 @@ class DataSourceBase(BaseModel):
 
 
 class NewsSource(DataSourceBase):
-    """News data source configuration."""
+    """新闻数据源配置。"""
 
     type: Literal["news"] = "news"
     url: str
@@ -343,7 +343,7 @@ class NewsSource(DataSourceBase):
 
 
 class FunContentEndpoint(BaseModel):
-    """Fun content API endpoint configuration."""
+    """趣味内容 API 端点配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -390,7 +390,7 @@ class FunContentEndpoint(BaseModel):
 
 
 class FunContentSource(DataSourceBase):
-    """Fun content data source configuration."""
+    """趣味内容数据源配置。"""
 
     type: Literal["fun_content"] = "fun_content"
     endpoints: list[FunContentEndpoint]
@@ -417,7 +417,7 @@ class FunContentSource(DataSourceBase):
 
 
 class CrazyThursdaySource(DataSourceBase):
-    """KFC crazy Thursday data source configuration."""
+    """KFC 疯狂星期四数据源配置。"""
 
     type: Literal["crazy_thursday"] = "crazy_thursday"
     url: str
@@ -442,13 +442,13 @@ class CrazyThursdaySource(DataSourceBase):
 
 
 class HolidaySource(DataSourceBase):
-    """Holiday data source configuration."""
+    """节假日数据源配置。"""
 
     type: Literal["holiday"] = "holiday"
 
 
 class SQLiteBackendConfig(BaseModel):
-    """SQLite dictionary backend configuration."""
+    """SQLite 词典后端配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -473,7 +473,7 @@ class SQLiteBackendConfig(BaseModel):
 
 
 class DailyEnglishSource(DataSourceBase):
-    """Daily English word data source configuration."""
+    """每日英语单词数据源配置。"""
 
     type: Literal["daily_english"] = "daily_english"
     enabled: bool = True
@@ -559,7 +559,7 @@ class DailyEnglishSource(DataSourceBase):
 
 
 class StockIndexItem(BaseModel):
-    """Normalized stock index configuration item."""
+    """规范化的股票指数配置项。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -596,7 +596,7 @@ class StockIndexItem(BaseModel):
 
 
 class StockIndexSource(DataSourceBase):
-    """Stock index data source configuration."""
+    """股票指数数据源配置。"""
 
     type: Literal["stock_index"] = "stock_index"
     quote_url: str
@@ -682,7 +682,7 @@ class StockIndexSource(DataSourceBase):
 
 
 class GoldPriceSource(DataSourceBase):
-    """Gold price data source configuration."""
+    """金价数据源配置。"""
 
     type: Literal["gold_price"] = "gold_price"
     url: str
@@ -721,12 +721,12 @@ DataSource = Annotated[
 
 
 # ---------------------------------------------------------------------------
-# Templates
+# 模板
 # ---------------------------------------------------------------------------
 
 
 class ViewportConfig(BaseModel):
-    """Viewport configuration for template rendering."""
+    """模板渲染视口配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -753,7 +753,7 @@ class ViewportConfig(BaseModel):
 
 
 class TextLimitsConfig(BaseModel):
-    """External text limits applied before rendering and persisting data."""
+    """渲染和数据持久化前应用的外部文本长度限制。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -800,7 +800,7 @@ class ThemesConfig(BaseModel):
 
 
 class TemplateRenderConfig(BaseModel):
-    """Global template render configuration."""
+    """全局模板渲染配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -972,7 +972,7 @@ class TemplateRenderConfig(BaseModel):
 
 
 class TemplateItemConfig(BaseModel):
-    """Single template configuration."""
+    """单个模板配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1048,7 +1048,7 @@ class TemplateItemConfig(BaseModel):
 
 
 class TemplatesConfig(BaseModel):
-    """Multi-template configuration."""
+    """多模板配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1102,12 +1102,12 @@ class TemplatesConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Logging / Timezone
+# 日志 / 时区
 # ---------------------------------------------------------------------------
 
 
 class LoggingConfig(BaseModel):
-    """Logging configuration."""
+    """日志配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1135,7 +1135,7 @@ class LoggingConfig(BaseModel):
 
 
 class TimezoneConfig(BaseModel):
-    """Timezone configuration."""
+    """时区配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1169,7 +1169,7 @@ class TimezoneConfig(BaseModel):
         try:
             ZoneInfo(value)
             return value
-        except Exception:  # nosec B110 - intentional fallback to UTC offset parsing
+        except Exception:  # nosec B110 - 有意回退到 UTC 偏移量解析
             pass
 
         match = _UTC_OFFSET_PATTERN.match(value)
@@ -1186,7 +1186,7 @@ class TimezoneConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Top-level AppConfig
+# 顶层 AppConfig
 # ---------------------------------------------------------------------------
 
 T = TypeVar("T", bound=DataSourceBase)
@@ -1199,7 +1199,7 @@ def _default_notify_triggers() -> list[NotifyTrigger]:
 
 
 class _FilteredEnvSettingsSource(PydanticBaseSettingsSource):
-    """Filter environment names to known prefixed sections and direct fields."""
+    """仅保留带前缀且对应已知配置段或其直接字段的环境变量名。"""
 
     def __init__(self, source: EnvSettingsSource) -> None:
         super().__init__(source.settings_cls)
@@ -1353,7 +1353,7 @@ class NotifyConfig(BaseModel):
 
 
 class AppConfig(BaseSettings):
-    """Main application configuration."""
+    """应用主配置。"""
 
     model_config = SettingsConfigDict(
         extra="forbid",
@@ -1538,5 +1538,5 @@ class AppConfig(BaseSettings):
 
 
 def load_config(path: str = "config.yaml") -> AppConfig:
-    """Load and validate application configuration."""
+    """加载并校验应用配置。"""
     return AppConfig.from_yaml(path)

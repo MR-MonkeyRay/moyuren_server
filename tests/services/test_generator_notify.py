@@ -1,4 +1,4 @@
-"""Notification scheduling integration for image generation."""
+"""图片生成中的通知调度集成测试。"""
 
 import asyncio
 import logging
@@ -19,7 +19,7 @@ def _build_app(
     notifier: AsyncMock,
     triggers: list[str],
 ) -> FastAPI:
-    """Build a minimal application around the shared generator."""
+    """围绕共享生成器构建最小应用。"""
     app = FastAPI()
     app.state.config = SimpleNamespace(
         notify=SimpleNamespace(triggers=triggers),
@@ -49,7 +49,7 @@ def _generation_data() -> dict[str, Any]:
 async def test_notification_is_scheduled_without_delaying_generation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Webhook delivery runs in a retained task after generation returns."""
+    """生成返回后，由保留引用的任务发送 Webhook。"""
     generator = ImageGenerator()
     notify_started = asyncio.Event()
     release_notify = asyncio.Event()
@@ -87,7 +87,7 @@ async def test_notification_is_scheduled_without_delaying_generation(
 async def test_notification_respects_trigger_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A generation outside configured triggers does not schedule delivery."""
+    """生成的 trigger 不在配置范围内时，不调度通知发送。"""
     generator = ImageGenerator()
     notifier = AsyncMock()
     app = _build_app(generator, notifier, ["scheduled"])
@@ -111,7 +111,7 @@ async def test_notification_respects_trigger_filter(
 async def test_single_flight_joiner_does_not_duplicate_notification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Only the shared generation task schedules webhook delivery."""
+    """只有共享生成任务会调度 Webhook 发送。"""
     generator = ImageGenerator()
     notifier = AsyncMock()
     app = _build_app(generator, notifier, ["manual"])
@@ -144,7 +144,7 @@ async def test_single_flight_joiner_does_not_duplicate_notification(
 async def test_notification_failure_never_propagates(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """A notifier exception is contained in the retained background task."""
+    """通知器异常仅在保留引用的后台任务内处理，不向外传播。"""
     generator = ImageGenerator()
     notifier = AsyncMock()
     notifier.notify.side_effect = RuntimeError("delivery unavailable")
@@ -167,7 +167,7 @@ async def test_notification_failure_never_propagates(
 async def test_shutdown_cancels_retained_notification_task(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Generator shutdown drains notification work before shared clients close."""
+    """生成器关闭时，先排空通知任务，再关闭共享客户端。"""
     generator = ImageGenerator()
     notify_started = asyncio.Event()
     notify_cancelled = asyncio.Event()
@@ -203,7 +203,7 @@ async def test_shutdown_cancels_retained_notification_task(
 async def test_actual_pipeline_passes_persisted_metadata_to_notifier(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Rendered filenames and the exact saved business snapshot reach delivery."""
+    """通知接收渲染文件名及与保存内容完全一致的业务快照。"""
     import json
     from datetime import datetime
     from zoneinfo import ZoneInfo

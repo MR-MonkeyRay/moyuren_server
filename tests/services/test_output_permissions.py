@@ -1,4 +1,4 @@
-"""Published service artifacts follow the startup umask."""
+"""服务发布产物遵循启动时 umask。"""
 
 import json
 import logging

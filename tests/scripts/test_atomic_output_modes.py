@@ -1,4 +1,4 @@
-"""Permission tests for static publishing atomic writes."""
+"""静态发布原子写入的权限测试。"""
 
 import os
 import stat
@@ -16,7 +16,7 @@ pytestmark = pytest.mark.skipif(os.name != "posix", reason="POSIX file modes onl
 def test_static_text_output_uses_configured_output_mode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Static text artifacts should not retain NamedTemporaryFile mode 0600."""
+    """静态文本产物不应保留 NamedTemporaryFile 的 0600 权限。"""
     monkeypatch.setattr(fileutil, "_OUTPUT_MODE", 0o644)
     target = tmp_path / "nested" / "data.json"
 
@@ -29,7 +29,7 @@ def test_static_text_output_uses_configured_output_mode(
 def test_static_image_copy_uses_configured_output_mode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Copied static image artifacts should follow the output permission policy."""
+    """复制的静态图片产物应遵循输出权限策略。"""
     monkeypatch.setattr(fileutil, "_OUTPUT_MODE", 0o644)
     source = tmp_path / "source.jpg"
     source.write_bytes(b"jpeg payload")

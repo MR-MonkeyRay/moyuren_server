@@ -1,4 +1,4 @@
-"""Tests for data freshness computation and presentation."""
+"""测试数据新鲜度的计算与展示。"""
 
 import logging
 from datetime import datetime, timedelta, timezone
@@ -16,13 +16,13 @@ NOW = datetime(2026, 3, 12, 10, tzinfo=timezone(timedelta(hours=8)))
 
 
 def _raw_news(date_value: str) -> dict[str, object]:
-    """Build the minimal raw news payload."""
+    """构造最小新闻原始数据。"""
     return {"news": {"data": {"date": date_value, "news": []}}}
 
 
 @pytest.mark.parametrize("date_value", ["2026-03-12", "2026/03/12", "2026年3月12日"])
 def test_compute_marks_current_news_fresh(date_value: str) -> None:
-    """Recognize all supported current-date formats."""
+    """识别所有支持的当日日期格式。"""
     freshness = DataComputer().compute(_raw_news(date_value), now=NOW)["data_freshness"]
 
     assert freshness == {
@@ -34,7 +34,7 @@ def test_compute_marks_current_news_fresh(date_value: str) -> None:
 
 
 def test_compute_marks_old_news_stale() -> None:
-    """Mark news for another business date as stale."""
+    """将业务日期非当日的新闻标记为过期。"""
     freshness = DataComputer().compute(_raw_news("2026-03-11"), now=NOW)["data_freshness"]
 
     assert freshness["is_stale"] is True
@@ -44,7 +44,7 @@ def test_compute_marks_old_news_stale() -> None:
 
 @pytest.mark.parametrize("raw_data", [{}, {"news": []}, {"news": {"data": {"date": "bad"}}}])
 def test_compute_unknown_news_date_is_not_stale(raw_data: dict[str, object]) -> None:
-    """Do not infer staleness when the news date cannot be determined."""
+    """无法确定新闻日期时，不推断为过期。"""
     freshness = DataComputer().compute(raw_data, now=NOW)["data_freshness"]
 
     assert freshness == {
@@ -56,7 +56,7 @@ def test_compute_unknown_news_date_is_not_stale(raw_data: dict[str, object]) -> 
 
 
 def test_compute_propagates_stale_sources() -> None:
-    """Propagate cache fallback sources and deduplicate them."""
+    """透传使用缓存降级的数据源并去重。"""
     raw_data = _raw_news("2026-03-12")
     raw_data["stale_sources"] = ["news", "gold_price", "news"]
 
@@ -71,7 +71,7 @@ def test_compute_propagates_stale_sources() -> None:
 
 
 def test_daily_data_file_round_trip_freshness(tmp_path: Path) -> None:
-    """Persist freshness fields while keeping legacy files compatible."""
+    """持久化新鲜度字段，同时保持旧文件兼容。"""
     base = {
         "date": "2026-03-12",
         "updated": "2026/03/12 10:00:00",
@@ -98,7 +98,7 @@ def test_daily_data_file_round_trip_freshness(tmp_path: Path) -> None:
 
 
 def test_detail_response_includes_freshness_and_legacy_defaults() -> None:
-    """Expose stored freshness and default legacy data to fresh."""
+    """输出已存储的新鲜度，旧数据默认视为未过期。"""
     base = {
         "date": "2026-03-12",
         "updated": "2026/03/12 10:00:00",
@@ -122,7 +122,7 @@ def test_detail_response_includes_freshness_and_legacy_defaults() -> None:
 
 @pytest.mark.parametrize("template_name", ["moyuren.html", "moyuren_cute.html"])
 def test_template_freshness_marker(template_name: str, tmp_path: Path) -> None:
-    """Render a marker only for stale template contexts."""
+    """仅在模板上下文含过期数据时渲染标记。"""
     templates_dir = Path(__file__).resolve().parents[2] / "templates"
     renderer = ImageRenderer(
         templates_config=TemplatesConfig(),
@@ -169,7 +169,7 @@ def test_template_freshness_marker(template_name: str, tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("template_name", ["moyuren.html", "moyuren_cute.html"])
 def test_template_unknown_stale_date_marker(template_name: str, tmp_path: Path) -> None:
-    """Render the cache marker when a stale source date is unknown."""
+    """过期数据的来源日期未知时，渲染缓存标记。"""
     templates_dir = Path(__file__).resolve().parents[2] / "templates"
     renderer = ImageRenderer(
         templates_config=TemplatesConfig(),

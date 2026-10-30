@@ -22,15 +22,15 @@ from app.core.fileutil import set_output_permissions
 from app.core.metrics import record_notify
 from app.core.network import create_async_client, safe_exception_for_log
 
-# HTTPX logs complete request URLs, including bot tokens in their paths.
+# HTTPX 会记录完整请求 URL，包括路径中的机器人令牌。
 _webhook_request: ContextVar[bool] = ContextVar("webhook_request", default=False)
 
 
 class _WebhookLogFilter(logging.Filter):
-    """Keep HTTP library request diagnostics out of webhook delivery logs."""
+    """避免在 Webhook 发送日志中输出 HTTP 库的请求诊断信息。"""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        """Suppress only records produced within a webhook request context."""
+        """仅屏蔽 Webhook 请求上下文中产生的日志。"""
         return not _webhook_request.get()
 
 
@@ -43,7 +43,7 @@ for _logger_name in (
 
 
 class WebhookNotifier:
-    """Deliver generated images without exposing credentials or blocking generation."""
+    """推送生成的图片，不泄露凭据，也不阻塞生成流程。"""
 
     def __init__(
         self,
@@ -54,7 +54,7 @@ class WebhookNotifier:
         http_client: httpx.AsyncClient | None = None,
         proxy_url: str | None = None,
     ) -> None:
-        """Use the shared HTTP client or own a lazily created client."""
+        """使用共享 HTTP 客户端，或按需创建并自行管理客户端。"""
         self.config = config
         self._state_file = cache_dir / "notify_state.json"
         self._base_domain = base_domain.rstrip("/")
@@ -66,7 +66,7 @@ class WebhookNotifier:
         self._state = self._read_state()
 
     def _read_state(self) -> dict[str, Any]:
-        """Read sent state once; missing or invalid state starts empty."""
+        """仅读取一次发送记录；文件缺失或无效时从空记录开始。"""
         try:
             state = json.loads(self._state_file.read_text(encoding="utf-8"))
             if not isinstance(state, dict) or not isinstance(state.get("date"), str):
@@ -89,7 +89,7 @@ class WebhookNotifier:
             return {"date": "", "sent": {}}
 
     def _save_state(self) -> None:
-        """Atomically persist successful sends, retaining no secrets."""
+        """原子保存成功发送记录，不保留任何密钥。"""
         tmp_path: Path | None = None
         try:
             self._state_file.parent.mkdir(parents=True, exist_ok=True)
@@ -108,7 +108,7 @@ class WebhookNotifier:
                 tmp_path.unlink(missing_ok=True)
 
     async def close(self) -> None:
-        """Close only a client owned by this service."""
+        """仅关闭本服务自行管理的客户端。"""
         if self._owns_client and self._client is not None:
             await self._client.aclose()
             self._client = None
@@ -119,7 +119,7 @@ class WebhookNotifier:
         data: dict[str, Any],
         trigger: NotifyTrigger = "manual",
     ) -> None:
-        """Send one message per eligible pair; delivery failures never escape."""
+        """为每个符合条件的 Webhook 与模板组合发送一条消息，不向外抛出发送异常。"""
         try:
             await self._notify(images, data, trigger)
         except Exception as exc:
@@ -128,8 +128,8 @@ class WebhookNotifier:
     async def _notify(
         self, images: dict[str, str], data: dict[str, Any], trigger: NotifyTrigger,
     ) -> None:
-        """Check eligibility and record successful sends under the state lock."""
-        # Serialize state checks and sends so concurrent generations cannot duplicate a day.
+        """在状态锁内检查发送条件并记录发送成功的消息。"""
+        # 串行检查状态并发送，避免并发生成时在同一天重复推送。
         async with self._lock:
             date = str(data["date"])
             if self._state["date"] != date:
@@ -162,7 +162,7 @@ class WebhookNotifier:
                         )
 
     def _log_failure(self, webhook: WebhookConfig, exc: Exception) -> None:
-        """Log webhook identity and status with URL paths and secrets removed."""
+        """记录 Webhook 标识与状态，并移除 URL 路径及密钥。"""
         url = webhook.url.get_secret_value() if webhook.url else ""
         secret = webhook.secret.get_secret_value() if webhook.secret else ""
         status = (
@@ -186,7 +186,7 @@ class WebhookNotifier:
     def _payload(
         self, webhook: WebhookConfig, template: str, image_url: str, data: dict[str, Any],
     ) -> tuple[str, dict[str, Any], dict[str, str]]:
-        """Build provider payloads and timestamped signatures."""
+        """构建各平台的消息体及带时间戳的签名。"""
         url = webhook.url.get_secret_value() if webhook.url else ""
         secret = webhook.secret.get_secret_value() if webhook.secret else ""
         date = str(data["date"])
@@ -243,7 +243,7 @@ class WebhookNotifier:
     async def _deliver(
         self, webhook: WebhookConfig, template: str, image_url: str, data: dict[str, Any],
     ) -> None:
-        """Retry network/5xx failures once; reject provider failures without retry."""
+        """网络或 5xx 错误重试一次；平台返回业务失败时不重试。"""
         if self._client is None:
             self._client = create_async_client(proxy_url=self._proxy_url)
         for attempt in range(2):
@@ -282,7 +282,7 @@ class WebhookNotifier:
                     if (webhook.type == "telegram" and success is not True) or (
                         webhook.type != "telegram" and (type(success) is not int or success != 0)
                     ):
-                        # Provider error text may echo credentials; never include it in logs.
+                        # 平台错误文本可能回显凭据，禁止写入日志。
                         raise WebhookDeliveryError("Webhook provider rejected the message", response.status_code)
                 return
             except httpx.TransportError:

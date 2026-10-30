@@ -1,4 +1,4 @@
-"""Generation metrics and freshness propagation without browser or worker threads."""
+"""生成指标与新鲜度传播测试，不依赖浏览器或工作线程。"""
 
 import asyncio
 import logging
@@ -26,7 +26,7 @@ from app.services.generator import ImageGenerator, _fetch_all_data_parallel
 async def test_fetch_collects_stale_sources_without_mutating_cache(
     mock_services: AppServices,
 ) -> None:
-    """Capture each source fallback and stock staleness in the generation context."""
+    """在生成上下文中捕获各来源的缓存回退与股票过期标记。"""
     cached_news = {"news": {"data": {"date": "2026-03-11", "news": ["headline"]}}}
     mock_services.data_fetcher = cast(Any, SimpleNamespace(
         get=AsyncMock(return_value=cached_news), namespace="news", last_outcome="stale",
@@ -55,7 +55,7 @@ async def test_fetch_collects_stale_sources_without_mutating_cache(
 
 @pytest.mark.asyncio
 async def test_fetch_ignores_failed_stock_placeholder(mock_services: AppServices) -> None:
-    """A failed stock placeholder is shown as missing data, not as a cache fallback."""
+    """股票失败占位显示为数据缺失，而不是缓存回退。"""
     mock_services.data_fetcher = None
     mock_services.holiday_service = None
     mock_services.gold_price_service = None
@@ -85,7 +85,7 @@ async def test_generation_observes_render_attempts_and_persists_freshness(
     monkeypatch: pytest.MonkeyPatch,
     mock_services: AppServices,
 ) -> None:
-    """Measure whole runs and failed render attempts while saving the actual context."""
+    """度量整体运行与失败的渲染尝试，同时保存真实上下文。"""
     snapshot = datetime(2026, 3, 12, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
     templates = SimpleNamespace(items=[
         SimpleNamespace(name="moyuren"), SimpleNamespace(name="cute"),
@@ -151,7 +151,7 @@ async def test_generation_observes_render_attempts_and_persists_freshness(
 
 @pytest.mark.asyncio
 async def test_shared_generation_counts_one_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Concurrent waiters share a single recorded generation task."""
+    """并发等待方共享同一次记录的生成任务。"""
     generator = ImageGenerator()
     app = FastAPI()
     templates = SimpleNamespace(items=[SimpleNamespace(name="moyuren")])

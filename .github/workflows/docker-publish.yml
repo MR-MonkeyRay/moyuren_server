@@ -146,7 +146,7 @@ jobs:
           echo "  DOCKERHUB_IMAGE: ${DOCKERHUB_IMAGE}"
           echo "::endgroup::"
 
-          # Must match Docker namespace/image format (segments separated by . _ -)
+          # 必须符合 Docker namespace/image 格式（分段以 . _ - 分隔）
           if [[ ! "${DOCKERHUB_IMAGE}" =~ ^[a-z0-9]+([._-][a-z0-9]+)*/[a-z0-9]+([._-][a-z0-9]+)*$ ]]; then
             echo "::error::DOCKERHUB_IMAGE must match 'namespace/image' format (lowercase), got '${DOCKERHUB_IMAGE}'"
             exit 1

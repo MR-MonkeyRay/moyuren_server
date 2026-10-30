@@ -1,4 +1,4 @@
-"""Data fetching service module."""
+"""数据获取服务模块。"""
 
 import asyncio
 import logging
@@ -30,7 +30,7 @@ _NEWS_STATIC_CDN_URLS = (
 
 
 class DataFetcher:
-    """Asynchronous data fetcher for news API."""
+    """新闻 API 的异步数据获取器。"""
 
     def __init__(
         self,
@@ -68,7 +68,7 @@ class DataFetcher:
         )
 
     async def fetch(self) -> dict[str, Any] | None:
-        """Fetch data from the news source.
+        """从新闻源获取数据。
 
         依次尝试主源、公共实例（智能切换），最后回退到 60s 静态镜像，
         避免新闻长期停留在旧日期。

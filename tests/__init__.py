@@ -1,1 +1,1 @@
-"""Test package initialization."""
+"""测试包。"""

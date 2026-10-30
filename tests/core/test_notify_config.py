@@ -1,4 +1,4 @@
-"""Webhook notification configuration tests."""
+"""Webhook 通知配置测试。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from app.core.config import AppConfig, NotifyConfig, WebhookConfig
 
 
 def test_notify_defaults() -> None:
-    """Notification delivery is opt-in and scheduled-only by default."""
+    """通知默认关闭，启用后默认仅定时生成触发。"""
     config = NotifyConfig()
 
     assert config.enabled is False
@@ -39,13 +39,13 @@ def test_notify_defaults() -> None:
 def test_webhook_value_and_environment_sources_are_exclusive(
     values: dict[str, str], message: str
 ) -> None:
-    """URL requires one source; optional secret accepts at most one source."""
+    """URL 必须指定一个来源；可选密钥最多指定一个来源。"""
     with pytest.raises(ValidationError, match=message):
         WebhookConfig(name="test", type="generic", **values)
 
 
 def test_webhook_resolves_environment_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Environment-backed URL and secret become protected runtime values."""
+    """环境变量中的 URL 和密钥在运行时作为敏感值保护。"""
     monkeypatch.setenv("TEST_NOTIFY_URL", "https://example.com/hook/token-value")
     monkeypatch.setenv("TEST_NOTIFY_SECRET", "secret-value")
 
@@ -73,7 +73,7 @@ def test_webhook_resolves_environment_secrets(monkeypatch: pytest.MonkeyPatch) -
 def test_missing_environment_variable_names_variable_without_value(
     monkeypatch: pytest.MonkeyPatch, env_name: str
 ) -> None:
-    """Startup errors identify the missing variable without exposing another value."""
+    """启动错误指出缺失的变量名，不泄露其他值。"""
     monkeypatch.delenv(env_name, raising=False)
     values: dict[str, str] = {"url": "https://example.com/hook"}
     if env_name.endswith("URL"):
@@ -92,7 +92,7 @@ def test_missing_environment_variable_names_variable_without_value(
 def test_app_config_reports_missing_webhook_environment_variable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """YAML startup validation keeps secret values out of the parent error."""
+    """YAML 启动校验不在上层错误中泄露敏感值。"""
     env_name = "MISSING_T28_WEBHOOK_URL"
     monkeypatch.delenv(env_name, raising=False)
     source = Path(__file__).resolve().parents[2] / "config.yaml"
@@ -108,7 +108,7 @@ def test_app_config_reports_missing_webhook_environment_variable(
 
 
 def test_webhook_names_must_be_unique() -> None:
-    """Names are stable metric and log labels, so duplicates are rejected."""
+    """名称是稳定的指标和日志标签，因此不允许重复。"""
     with pytest.raises(ValidationError, match="webhook names must be unique"):
         NotifyConfig(
             webhooks=[
@@ -119,7 +119,7 @@ def test_webhook_names_must_be_unique() -> None:
 
 
 def test_telegram_requires_chat_id() -> None:
-    """Telegram sendPhoto cannot be addressed without a chat ID."""
+    """Telegram sendPhoto 需要聊天 ID 才能指定接收方。"""
     with pytest.raises(ValidationError, match="chat_id is required"):
         WebhookConfig(
             name="telegram", type="telegram", url="https://api.telegram.org/botTOKEN"
@@ -138,13 +138,13 @@ def test_telegram_requires_chat_id() -> None:
     ],
 )
 def test_webhook_rejects_non_http_url(url: str) -> None:
-    """Webhook targets must be absolute HTTP(S) URLs."""
+    """Webhook 目标必须是绝对 HTTP(S) URL。"""
     with pytest.raises(ValidationError, match=r"valid http\(s\)"):
         WebhookConfig(name="test", type="generic", url=url)
 
 
 def test_telegram_rejects_blank_chat_id() -> None:
-    """Whitespace does not satisfy Telegram's chat ID requirement."""
+    """纯空白不满足 Telegram 的聊天 ID 要求。"""
     with pytest.raises(ValidationError, match="chat_id is required"):
         WebhookConfig(
             name="telegram",
@@ -155,7 +155,7 @@ def test_telegram_rejects_blank_chat_id() -> None:
 
 
 def test_notify_timeout_must_be_positive() -> None:
-    """Request timeout cannot be zero or negative."""
+    """请求超时时间不能为零或负数。"""
     with pytest.raises(ValidationError):
         NotifyConfig(timeout_sec=0)
 

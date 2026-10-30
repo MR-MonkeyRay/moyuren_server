@@ -1,4 +1,4 @@
-"""RSS 2.0 feed of recent daily calendar images."""
+"""最近每日图片的 RSS 2.0 订阅源。"""
 
 import asyncio
 import html
@@ -29,7 +29,7 @@ ET.register_namespace("atom", _ATOM_NAMESPACE)
 
 @dataclass(frozen=True)
 class _FeedItem:
-    """Validated metadata and image size collected off the event loop."""
+    """已校验的元数据与图片大小，在事件循环外收集。"""
 
     data: DailyDataFile
     filename: str
@@ -38,14 +38,14 @@ class _FeedItem:
 
 
 def _clean_text(value: str) -> str:
-    """Remove characters forbidden by XML 1.0, including lone surrogates."""
+    """移除 XML 1.0 禁止的字符，包括孤立代理项。"""
     return _XML_INVALID.sub("", value)
 
 
 def _load_items(
     cache_dir: Path, template: str, limit: int, logger: logging.Logger
 ) -> list[_FeedItem]:
-    """Read dated files newest first until enough valid matching items exist."""
+    """按日期从新到旧读取数据文件，凑够足量有效且匹配模板的条目。"""
     try:
         paths = sorted((cache_dir / "data").glob("*.json"), reverse=True)
     except OSError as exc:
@@ -87,7 +87,7 @@ def _load_items(
 
 
 def _description(item: _FeedItem, image_url: str) -> str:
-    """Build HTML with escaped source text before XML applies its own escaping."""
+    """先对源文本做 HTML 转义，再由 XML 序列化处理外层转义。"""
     data = item.data
     parts = [
         f'<img src="{html.escape(_clean_text(image_url), quote=True)}" '
@@ -108,7 +108,7 @@ def _description(item: _FeedItem, image_url: str) -> str:
 
 
 def _ttl(scheduler: SchedulerConfig) -> int | None:
-    """Expose a simple scheduling interval in minutes when it is unambiguous."""
+    """调度间隔明确时，以分钟数输出 RSS ttl。"""
     if scheduler.mode == "hourly":
         return 60
     if scheduler.mode == "daily" and len(scheduler.daily_times) == 1:
@@ -119,7 +119,7 @@ def _ttl(scheduler: SchedulerConfig) -> int | None:
 def _build_feed(
     items: list[_FeedItem], config: AppConfig, template: str, default: str, self_url: str
 ) -> bytes:
-    """Serialize RSS using ElementTree for all XML text and attributes."""
+    """用 ElementTree 序列化 RSS，统一处理全部 XML 文本与属性。"""
     rss = ET.Element("rss", {"version": "2.0"})
     channel = ET.SubElement(rss, "channel")
     title = "摸鱼日历" if template == default else f"摸鱼日历 {template}"
@@ -163,7 +163,7 @@ def _build_feed(
 
 
 async def _require_enabled(request: Request) -> None:
-    """Hide the feed before query validation, just like an absent route."""
+    """feed 关闭时在查询参数校验之前就隐藏端点，表现如同路由不存在。"""
     config: AppConfig | None = getattr(request.app.state, "config", None)
     if config is None or not config.feed.enabled:
         raise HTTPException(status_code=404, detail="Not Found")
@@ -176,10 +176,10 @@ async def _require_enabled(request: Request) -> None:
 )
 async def get_feed(
     request: Request,
-    template: str | None = Query(None, description="Template name, defaults to configured default"),
-    limit: int | None = Query(None, ge=1, description="Number of items, up to feed.max_items"),
+    template: str | None = Query(None, description="模板名称，默认使用配置的默认模板"),
+    limit: int | None = Query(None, ge=1, description="条目数量，上限为 feed.max_items"),
 ) -> Response:
-    """Return recent images as RSS, with conditional GET and HEAD support."""
+    """以 RSS 返回最近图片，支持条件 GET 与 HEAD。"""
     config: AppConfig = request.app.state.config
     selected_limit = config.feed.max_items if limit is None else limit
     if selected_limit > config.feed.max_items:

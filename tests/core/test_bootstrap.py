@@ -1,4 +1,4 @@
-"""Tests for application bootstrap helpers."""
+"""应用启动辅助函数测试。"""
 
 import logging
 from pathlib import Path
@@ -17,7 +17,7 @@ from app.core.services import AppServices
 
 
 def test_register_scheduled_jobs_registers_each_daily_time() -> None:
-    """Daily scheduling registers one stable job ID per configured time."""
+    """每日调度为每个配置时间注册固定的任务 ID。"""
     scheduler = SimpleNamespace(add_daily_job=MagicMock(), add_hourly_job=MagicMock())
     config = SimpleNamespace(
         scheduler=SimpleNamespace(
@@ -46,7 +46,7 @@ def test_register_scheduled_jobs_registers_each_daily_time() -> None:
 
 
 def test_register_scheduled_jobs_skips_invalid_daily_time() -> None:
-    """Malformed daily times do not prevent valid jobs from registering."""
+    """格式错误的每日时间不影响有效任务注册。"""
     scheduler = SimpleNamespace(add_daily_job=MagicMock(), add_hourly_job=MagicMock())
     config = SimpleNamespace(
         scheduler=SimpleNamespace(
@@ -70,7 +70,7 @@ def test_register_scheduled_jobs_skips_invalid_daily_time() -> None:
 
 
 def test_register_scheduled_jobs_registers_hourly_job() -> None:
-    """Hourly scheduling preserves the configured minute and stable job ID."""
+    """每小时调度保留配置的分钟数和固定任务 ID。"""
     scheduler = SimpleNamespace(add_daily_job=MagicMock(), add_hourly_job=MagicMock())
     config = SimpleNamespace(
         scheduler=SimpleNamespace(
@@ -97,7 +97,7 @@ def test_register_scheduled_jobs_registers_hourly_job() -> None:
 def test_build_services_leaves_missing_or_disabled_optional_sources_disabled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Disabled holiday and missing optional sources produce disabled services."""
+    """禁用的节假日源和缺失的可选数据源不创建对应服务。"""
     data_sources = [HolidaySource(type="holiday", enabled=False)]
     config = SimpleNamespace(
         paths=SimpleNamespace(cache_dir=str(tmp_path)),
@@ -135,7 +135,7 @@ def test_build_services_leaves_missing_or_disabled_optional_sources_disabled(
 
 @pytest.mark.asyncio
 async def test_warmup_daily_cache_skips_missing_holiday_service() -> None:
-    """Disabled holiday data does not add a cache warmup task."""
+    """禁用节假日数据时不添加缓存预热任务。"""
     data_fetcher = SimpleNamespace(get=AsyncMock(return_value={}))
     services = SimpleNamespace(
         holiday_service=None,
@@ -159,7 +159,7 @@ async def test_warmup_daily_cache_skips_missing_holiday_service() -> None:
 def test_build_services_leaves_disabled_daily_english_unconstructed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A disabled daily English source does not build its backend or service."""
+    """禁用每日英语源时不创建其后端或服务。"""
     disabled_source = SimpleNamespace(enabled=False, backend=SimpleNamespace())
 
     def get_source(source_type: type[object]) -> object | None:
@@ -206,7 +206,7 @@ def test_build_services_leaves_disabled_daily_english_unconstructed(
 def test_build_services_passes_http_client_to_all_network_services(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, inject_client: bool
 ) -> None:
-    """Every network service receives the supplied client or the script default."""
+    """所有网络服务均接收传入的客户端或脚本默认值。"""
     source = SimpleNamespace(enabled=True, backend=SimpleNamespace(), timeout_sec=7)
     config = SimpleNamespace(
         paths=SimpleNamespace(cache_dir=str(tmp_path)),
@@ -260,7 +260,7 @@ def test_build_services_passes_http_client_to_all_network_services(
 def test_build_services_constructs_enabled_notifier_with_shared_client(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Enabled webhook configuration builds the notifier with shared dependencies."""
+    """启用 Webhook 配置时使用共享依赖创建通知器。"""
     notify = SimpleNamespace(enabled=True, webhooks=[SimpleNamespace(name="alerts")])
     config = SimpleNamespace(
         paths=SimpleNamespace(cache_dir=str(tmp_path)),
@@ -303,7 +303,7 @@ def test_build_services_constructs_enabled_notifier_with_shared_client(
 def test_build_services_leaves_unconfigured_notifier_disabled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, notify: object | None
 ) -> None:
-    """Missing, disabled, and empty notification configs do not build a notifier."""
+    """通知配置缺失、禁用或为空时不创建通知器。"""
     config = SimpleNamespace(
         paths=SimpleNamespace(cache_dir=str(tmp_path)),
         network=SimpleNamespace(proxy_url=None, ghproxy_urls=[]),

@@ -1,4 +1,4 @@
-"""Regression tests for standalone script business-time handling."""
+"""独立脚本业务时间处理的回归测试。"""
 
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -12,7 +12,7 @@ from scripts import publish_static, render_once
 def test_timestamp_fields_use_business_date_and_display_time(
     monkeypatch: pytest.MonkeyPatch, module: object
 ) -> None:
-    """Business weekday/date should not change when display timezone is UTC."""
+    """显示时区为 UTC 时，业务星期/日期不应改变。"""
     now = datetime(2026, 10, 29, 2, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     monkeypatch.setattr(module, "get_display_timezone", lambda: timezone.utc)
 
@@ -27,7 +27,7 @@ def test_timestamp_fields_use_business_date_and_display_time(
 
 
 def test_publish_artifacts_choose_dated_or_latest_image() -> None:
-    """Historical text artifacts should keep their matching dated image URL."""
+    """历史文本产物应保留其对应日期的图片 URL。"""
     data = {
         "date": "2026-10-29",
         "updated": "2026/10/28 18:00:00",

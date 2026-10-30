@@ -1,4 +1,4 @@
-"""Unit tests for atomic JPEG-derived image variants."""
+"""测试从 JPEG 原子生成图片变体。"""
 
 import logging
 from pathlib import Path
@@ -14,7 +14,7 @@ from app.services.variants import ensure_variant, generate_variants
 
 @pytest.fixture
 def source(tmp_path: Path) -> Path:
-    """Create a small source with metadata that variants must discard."""
+    """创建带元数据的小尺寸原图，变体必须剔除这些元数据。"""
     path = tmp_path / "moyuren_20261029_060000.jpg"
     image = Image.new("RGB", (120, 80), "red")
     exif = Image.Exif()
@@ -25,7 +25,7 @@ def source(tmp_path: Path) -> Path:
 
 
 def test_expected_files_dimensions_and_metadata(source: Path) -> None:
-    """Full WebP and downscaled JPEG/WebP have final pixel widths and no EXIF."""
+    """原尺寸 WebP 和缩小后的 JPEG/WebP 宽度正确且不含 EXIF。"""
     config = TemplateRenderConfig(output_formats=["jpeg", "webp"], output_widths=[60])
     variants = generate_variants(source, config, logging.getLogger("test"))
     assert {(v.filename, v.format, v.width) for v in variants} == {
@@ -41,7 +41,7 @@ def test_expected_files_dimensions_and_metadata(source: Path) -> None:
 
 
 def test_skips_equal_and_larger_widths(source: Path, caplog: pytest.LogCaptureFixture) -> None:
-    """Avoid upscaling or redundant full-width copies and explain skips in debug logs."""
+    """避免放大或重复生成原宽度副本，并在 debug 日志中说明跳过原因。"""
     with caplog.at_level(logging.DEBUG):
         variants = generate_variants(
             source, TemplateRenderConfig(output_widths=[120, 240]), logging.getLogger("test"),
@@ -53,7 +53,7 @@ def test_skips_equal_and_larger_widths(source: Path, caplog: pytest.LogCaptureFi
 
 
 def test_one_failure_does_not_stop_other_variants(source: Path, caplog: pytest.LogCaptureFixture) -> None:
-    """An atomic replace failure leaves no temporary file and later conversions succeed."""
+    """原子替换失败后不残留临时文件，且后续转换仍能成功。"""
     import os
 
     replace = os.replace
@@ -75,7 +75,7 @@ def test_one_failure_does_not_stop_other_variants(source: Path, caplog: pytest.L
 
 
 def test_ensure_is_idempotent(source: Path) -> None:
-    """Lazy requests reuse an existing successful representation."""
+    """按需请求复用已成功生成的变体。"""
     config = TemplateRenderConfig(output_formats=["jpeg", "webp"])
     first = ensure_variant(source, config, "webp", None)
     with patch("app.services.variants.os.replace", side_effect=AssertionError("unexpected rewrite")):
@@ -83,6 +83,6 @@ def test_ensure_is_idempotent(source: Path) -> None:
 
 
 def test_failed_source_uses_application_error(tmp_path: Path) -> None:
-    """Source read failures obey the application's error contract."""
+    """原图读取失败时遵循应用的异常约定。"""
     with pytest.raises(RenderError):
         generate_variants(tmp_path / "missing.jpg", TemplateRenderConfig(), logging.getLogger("test"))

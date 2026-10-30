@@ -15,7 +15,7 @@ updates:
         update-types:
           - "minor"
           - "patch"
-    # Major upgrades remain separate PRs for review.
+    # 主版本升级单独提交 PR 评审。
 
   - package-ecosystem: "github-actions"
     directory: "/"

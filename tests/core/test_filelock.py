@@ -1,4 +1,4 @@
-"""Tests for app.core.filelock module."""
+"""app.core.filelock 模块测试。"""
 
 import asyncio
 from pathlib import Path
@@ -9,7 +9,7 @@ from app.core.filelock import FileLockTimeout, async_file_lock
 
 
 class TestAsyncFileLock:
-    """Tests for async_file_lock context manager."""
+    """async_file_lock 上下文管理器测试。"""
 
     @pytest.mark.asyncio
     async def test_acquire_and_release(self, tmp_path: Path) -> None:

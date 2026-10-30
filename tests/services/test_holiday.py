@@ -1,4 +1,4 @@
-"""Tests for app/services/holiday.py - holiday service."""
+"""app/services/holiday.py 节假日服务测试。"""
 
 import json
 import logging
@@ -19,25 +19,25 @@ from app.services.holiday import CachedHolidayService, HolidayService
 
 
 class TestHolidayService:
-    """Tests for HolidayService class."""
+    """HolidayService 类测试。"""
 
     @pytest.fixture
     def cache_dir(self, tmp_path: Path) -> Path:
-        """Create a temporary cache directory."""
+        """创建临时缓存目录。"""
         cache_dir = tmp_path / "holidays"
         cache_dir.mkdir()
         return cache_dir
 
     @pytest.fixture
     def service(self, cache_dir: Path, logger: logging.Logger) -> HolidayService:
-        """Create a HolidayService instance."""
+        """创建 HolidayService 实例。"""
         return HolidayService(
             logger=logger, cache_dir=cache_dir, ghproxy_urls=["https://mirror.example.com/"], timeout_sec=5
         )
 
     @pytest.fixture
     def sample_holiday_data(self) -> dict[str, Any]:
-        """Sample holiday data for a year."""
+        """一年的节假日样例数据。"""
         return {
             "$schema": "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/schema.json",
             "$id": "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/2026.json",
@@ -61,7 +61,7 @@ class TestHolidayService:
         self, tmp_path: Path, cache_dir: Path, logger: logging.Logger,
         monkeypatch: pytest.MonkeyPatch,
     ) -> CachedHolidayService:
-        """Create a holiday service with a daily aggregate cache."""
+        """创建带日级聚合缓存的节假日服务。"""
         async def inline_io(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
             return func(*args, **kwargs)
 
@@ -75,7 +75,7 @@ class TestHolidayService:
         )
 
     def test_build_urls_with_mirrors(self, service: HolidayService) -> None:
-        """Test URL building with mirror URLs."""
+        """测试配置镜像 URL 时的 URL 构建。"""
         urls = service._build_urls(2026)
 
         assert len(urls) == 2
@@ -83,7 +83,7 @@ class TestHolidayService:
         assert "raw.githubusercontent.com" in urls[1]
 
     def test_build_urls_without_mirrors(self, cache_dir: Path, logger: logging.Logger) -> None:
-        """Test URL building without mirror URLs."""
+        """测试未配置镜像 URL 时的 URL 构建。"""
         service = HolidayService(logger=logger, cache_dir=cache_dir)
         urls = service._build_urls(2026)
 
@@ -91,7 +91,7 @@ class TestHolidayService:
         assert "raw.githubusercontent.com" in urls[0]
 
     def test_build_urls_skips_invalid_mirrors(self, cache_dir: Path, logger: logging.Logger) -> None:
-        """Test URL building skips invalid mirror URLs."""
+        """测试构建 URL 时跳过无效镜像 URL。"""
         service = HolidayService(
             logger=logger, cache_dir=cache_dir, ghproxy_urls=["invalid-no-protocol", "https://valid.com/"]
         )
@@ -102,31 +102,31 @@ class TestHolidayService:
         assert "raw.githubusercontent.com" in urls[1]
 
     def test_get_ttl_past_year(self, service: HolidayService) -> None:
-        """Test TTL for past year is None (permanent)."""
+        """测试往年数据的 TTL 为 None（永久有效）。"""
         with patch.object(service, "_get_today", return_value=date(2026, 2, 4)):
             ttl = service._get_ttl(2025)
             assert ttl is None
 
     def test_get_ttl_current_year(self, service: HolidayService) -> None:
-        """Test TTL for current year is 7 days."""
+        """测试当年数据的 TTL 为 7 天。"""
         with patch.object(service, "_get_today", return_value=date(2026, 2, 4)):
             ttl = service._get_ttl(2026)
             assert ttl == 7 * 24 * 3600
 
     def test_get_ttl_next_year(self, service: HolidayService) -> None:
-        """Test TTL for next year is 12 hours."""
+        """测试次年数据的 TTL 为 12 小时。"""
         with patch.object(service, "_get_today", return_value=date(2026, 2, 4)):
             ttl = service._get_ttl(2027)
             assert ttl == 12 * 3600
 
     def test_is_cache_valid_no_file(self, service: HolidayService) -> None:
-        """Test cache validity when file doesn't exist."""
+        """测试文件不存在时缓存无效。"""
         assert service._is_cache_valid(2026) is False
 
     def test_is_cache_valid_past_year(
         self, service: HolidayService, cache_dir: Path, sample_holiday_data: dict
     ) -> None:
-        """Test cache validity for past year (always valid if exists)."""
+        """测试往年缓存只要存在就始终有效。"""
         cache_file = cache_dir / "2025.json"
         cache_file.write_text(json.dumps(sample_holiday_data))
 
@@ -136,7 +136,7 @@ class TestHolidayService:
     def test_is_cache_valid_current_year_fresh(
         self, service: HolidayService, cache_dir: Path, sample_holiday_data: dict
     ) -> None:
-        """Test cache validity for current year with fresh cache."""
+        """测试当年未过期的缓存有效。"""
         cache_file = cache_dir / "2026.json"
         cache_file.write_text(json.dumps(sample_holiday_data))
 
@@ -146,11 +146,11 @@ class TestHolidayService:
     def test_is_cache_valid_current_year_expired(
         self, service: HolidayService, cache_dir: Path, sample_holiday_data: dict
     ) -> None:
-        """Test cache validity for current year with expired cache."""
+        """测试当年已过期的缓存无效。"""
         cache_file = cache_dir / "2026.json"
         cache_file.write_text(json.dumps(sample_holiday_data))
 
-        # Make file old (8 days ago)
+        # 将文件时间设为 8 天前
         old_time = time.time() - (8 * 24 * 3600)
         os.utime(cache_file, (old_time, old_time))
 
@@ -160,8 +160,8 @@ class TestHolidayService:
     @respx.mock
     @pytest.mark.asyncio
     async def test_fetch_holidays_success(self, service: HolidayService, sample_holiday_data: dict) -> None:
-        """Test successful holiday fetch."""
-        # Mock all year endpoints using regex pattern
+        """测试成功获取节假日数据。"""
+        # 使用正则表达式 mock 所有年份的接口
         for year in [2025, 2026, 2027]:
             data = sample_holiday_data.copy()
             data["year"] = year
@@ -179,7 +179,7 @@ class TestHolidayService:
         logger: logging.Logger,
         sample_holiday_data: dict[str, Any],
     ) -> None:
-        """Injected clients remain open and each request keeps the service timeout."""
+        """注入的客户端保持打开，每次请求仍使用服务配置的超时时间。"""
         response = MagicMock()
         response.json.return_value = sample_holiday_data
         response.raise_for_status.return_value = None
@@ -204,7 +204,7 @@ class TestHolidayService:
     def test_cached_service_forwards_injected_client(
         self, tmp_path: Path, cache_dir: Path, logger: logging.Logger
     ) -> None:
-        """Cached wrapper forwards the shared client to its network service."""
+        """缓存包装层将共享客户端传给内部网络服务。"""
         client = MagicMock(spec=httpx.AsyncClient)
 
         service = CachedHolidayService(
@@ -221,7 +221,7 @@ class TestHolidayService:
     async def test_get_preserves_stale_cache_when_all_years_fail(
         self, cached_service: CachedHolidayService, cache_dir: Path
     ) -> None:
-        """Test total fetch failure preserves the stale aggregate cache."""
+        """测试全部获取失败时保留过期的聚合缓存。"""
         cache_file = cached_service.cache_dir / "holidays.json"
         stale_data = [{"name": "春节", "start_date": "2026-02-15"}]
         original = json.dumps({
@@ -246,7 +246,7 @@ class TestHolidayService:
     async def test_fetch_holidays_returns_none_for_year_exceptions(
         self, service: HolidayService
     ) -> None:
-        """Test gathered year exceptions signal total failure."""
+        """测试汇总的各年份异常表示全部获取失败。"""
         with patch.object(
             service, "_fetch_year_data", new=AsyncMock(side_effect=RuntimeError("fetch failed"))
         ):
@@ -258,7 +258,7 @@ class TestHolidayService:
     async def test_get_caches_one_valid_year(
         self, cached_service: CachedHolidayService, holiday_date: str | None
     ) -> None:
-        """Test partial success caches lists, including legitimately empty results."""
+        """测试部分获取成功时缓存列表，包括正常的空结果。"""
         days = (
             [{"name": "假期", "date": holiday_date, "isOffDay": True}]
             if holiday_date is not None else []
@@ -296,7 +296,7 @@ class TestHolidayService:
     async def test_fetch_year_data_skips_invalid_mirror_payload(
         self, service: HolidayService, invalid_data: Any, sample_holiday_data: dict[str, Any]
     ) -> None:
-        """Test invalid mirror payloads are never cached and the next URL is tried."""
+        """测试无效镜像数据不会被缓存，并会尝试下一个 URL。"""
         mirror_url, raw_url = service._build_urls(2026)
         mirror = respx.get(mirror_url).mock(
             return_value=Response(200, content=json.dumps(invalid_data))
@@ -319,7 +319,7 @@ class TestHolidayService:
     def test_load_from_cache_rejects_invalid_shape(
         self, service: HolidayService, cache_dir: Path, invalid_data: Any
     ) -> None:
-        """Test raw cache loading rejects invalid year payloads."""
+        """测试读取原始缓存时拒绝无效的年度数据。"""
         (cache_dir / "2026.json").write_text(json.dumps(invalid_data), encoding="utf-8")
 
         assert service._load_from_cache(2026) is None
@@ -327,7 +327,7 @@ class TestHolidayService:
     def test_save_to_cache_atomic_success(
         self, service: HolidayService, cache_dir: Path, sample_holiday_data: dict[str, Any]
     ) -> None:
-        """Test a successful atomic write leaves only the destination file."""
+        """测试原子写入成功后只留下目标文件。"""
         cache_file = cache_dir / "2026.json"
         cache_file.write_text('{"days": []}', encoding="utf-8")
 
@@ -340,7 +340,7 @@ class TestHolidayService:
     def test_save_to_cache_preserves_original_on_dump_failure(
         self, service: HolidayService, cache_dir: Path, error: Exception
     ) -> None:
-        """Test failed JSON writes preserve the original and remove temporary files."""
+        """测试 JSON 写入失败时保留原文件并删除临时文件。"""
         cache_file = cache_dir / "2026.json"
         original = '{"days": []}'
         cache_file.write_text(original, encoding="utf-8")
@@ -356,8 +356,8 @@ class TestHolidayService:
     async def test_fetch_holidays_uses_cache(
         self, service: HolidayService, cache_dir: Path, sample_holiday_data: dict
     ) -> None:
-        """Test fetch uses valid cache."""
-        # Create cache files
+        """测试获取数据时使用有效缓存。"""
+        # 创建缓存文件
         for year in [2025, 2026, 2027]:
             data = sample_holiday_data.copy()
             data["year"] = year
@@ -367,7 +367,7 @@ class TestHolidayService:
         with patch.object(service, "_get_today", return_value=date(2026, 2, 4)):
             result = await service.fetch_holidays()
 
-        # Should not make any HTTP requests (cache is valid)
+        # 缓存有效，不应发起任何 HTTP 请求
         assert respx.calls.call_count == 0
         assert isinstance(result, list)
 
@@ -375,7 +375,7 @@ class TestHolidayService:
     def test_make_up_workdays_do_not_change_display_list(
         self, service: HolidayService, sample_holiday_data: dict[str, Any], today: date
     ) -> None:
-        """Keep future workdays separately, preserving groups and today's makeup row."""
+        """单独保存未来补班日，保留节假日分组和当天的补班行。"""
         sample_holiday_data["days"].extend([
             {"name": "元旦", "date": "2026-01-04", "isOffDay": False},
             {"name": "元旦", "date": "2027-01-03", "isOffDay": False},
@@ -407,7 +407,7 @@ class TestHolidayService:
     async def test_make_up_workdays_survive_daily_cache_round_trip(
         self, cached_service: CachedHolidayService, sample_holiday_data: dict[str, Any]
     ) -> None:
-        """Fresh and cached payloads carry the same future workdays alongside the list."""
+        """新获取和缓存的数据在节假日列表之外携带相同的未来补班日。"""
         with (
             patch.object(HolidayService, "_get_today", return_value=date(2026, 2, 4)),
             patch("app.services.daily_cache.today_business", return_value=date(2026, 2, 4)),
@@ -423,7 +423,7 @@ class TestHolidayService:
     async def test_obsolete_daily_cache_refreshes_make_up_workdays(
         self, cached_service: CachedHolidayService
     ) -> None:
-        """A list-only cache cannot supply make-up workdays and must be refreshed."""
+        """仅含列表的缓存无法提供补班日，必须刷新。"""
         holidays = [{"name": "春节", "start_date": "2026-02-15"}]
         (cached_service.cache_dir / "holidays.json").write_text(json.dumps({
             "date": cached_service.cache_key(), "data": holidays,
@@ -441,27 +441,27 @@ class TestHolidayService:
     async def test_fetch_holidays_fallback_to_cache_on_error(
         self, service: HolidayService, cache_dir: Path, sample_holiday_data: dict
     ) -> None:
-        """Test fallback to expired cache when network fails."""
-        # Create expired cache
+        """测试网络失败时回退到过期缓存。"""
+        # 创建过期缓存
         cache_file = cache_dir / "2026.json"
         cache_file.write_text(json.dumps(sample_holiday_data))
         old_time = time.time() - (8 * 24 * 3600)
         os.utime(cache_file, (old_time, old_time))
 
-        # Mock network failure using regex
+        # 使用正则表达式 mock 网络失败
         respx.get(url__regex=r".*\.json$").mock(return_value=Response(500))
 
         with patch.object(service, "_get_today", return_value=date(2026, 2, 4)):
             result = await service.fetch_holidays()
 
-        # Should still return data from expired cache
+        # 仍应返回过期缓存中的数据
         assert isinstance(result, list)
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_fetch_holidays_mirror_fallback(self, service: HolidayService, sample_holiday_data: dict) -> None:
-        """Test fallback to GitHub when mirror fails."""
-        # Mock mirror failure, GitHub success using regex
+        """测试镜像失败时回退到 GitHub。"""
+        # 使用正则表达式 mock 镜像失败、GitHub 成功
         respx.get(url__regex=r".*mirror\.example\.com.*").mock(return_value=Response(500))
         respx.get(url__regex=r".*raw\.githubusercontent\.com.*").mock(
             return_value=Response(200, json=sample_holiday_data)

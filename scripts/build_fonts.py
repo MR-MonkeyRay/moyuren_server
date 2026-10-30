@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build deterministic, subsetted WOFF2 fonts for local template rendering."""
+"""为本地模板渲染构建可复现的 WOFF2 字体子集。"""
 
 import argparse
 import ast
@@ -18,7 +18,7 @@ DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "templates" / "fonts"
 
 @dataclass(frozen=True)
 class FontSpec:
-    """Describe one source font and its generated CSS face."""
+    """描述源字体及其生成的 CSS 字体定义。"""
 
     source_name: str
     output_name: str
@@ -126,22 +126,22 @@ _CALENDAR_NAMES = """
 
 
 def _characters_in_ranges(ranges: Iterable[tuple[int, int]]) -> set[str]:
-    """Return every character in inclusive Unicode code-point ranges."""
+    """返回 Unicode 码点区间内的全部字符，包含两端。"""
     return {chr(codepoint) for start, end in ranges for codepoint in range(start, end + 1)}
 
 
 def gb2312_level_1_characters() -> set[str]:
-    """Return the 3,755 GB2312 level-1 Han characters."""
+    """返回 GB2312 的 3,755 个一级汉字。"""
     return _decode_gb2312_hanzi(range(0xB0, 0xD8))
 
 
 def gb2312_hanzi_characters() -> set[str]:
-    """Return all 6,763 level-1 and level-2 GB2312 Han characters."""
+    """返回 GB2312 的全部 6,763 个一级、二级汉字。"""
     return _decode_gb2312_hanzi(range(0xB0, 0xF8))
 
 
 def _decode_gb2312_hanzi(lead_bytes: Iterable[int]) -> set[str]:
-    """Decode the Han-character rows from the GB2312 code space."""
+    """解码 GB2312 编码空间中的汉字区。"""
     characters: set[str] = set()
     for lead_byte in lead_bytes:
         for trail_byte in range(0xA1, 0xFF):
@@ -155,7 +155,7 @@ def _decode_gb2312_hanzi(lead_bytes: Iterable[int]) -> set[str]:
 
 
 def extract_template_non_ascii_characters(template_dir: Path) -> set[str]:
-    """Extract every non-ASCII character appearing in HTML templates."""
+    """提取 HTML 模板中出现的全部非 ASCII 字符。"""
     characters: set[str] = set()
     for template_path in sorted(template_dir.glob("*.html")):
         characters.update(character for character in template_path.read_text(encoding="utf-8") if ord(character) > 127)
@@ -163,7 +163,7 @@ def extract_template_non_ascii_characters(template_dir: Path) -> set[str]:
 
 
 def extract_python_string_characters(source_path: Path) -> set[str]:
-    """Extract non-ASCII characters from Python string literals."""
+    """提取 Python 字符串字面量中的非 ASCII 字符。"""
     tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
     characters: set[str] = set()
     for node in ast.walk(tree):
@@ -173,7 +173,7 @@ def extract_python_string_characters(source_path: Path) -> set[str]:
 
 
 def base_characters() -> set[str]:
-    """Return shared ASCII, punctuation, and fullwidth characters."""
+    """返回共用的 ASCII 字符、标点和全角字符。"""
     return _characters_in_ranges(
         (
             (0x20, 0x7E),
@@ -193,7 +193,7 @@ def base_characters() -> set[str]:
 
 
 def build_charsets(project_root: Path) -> dict[str, set[str]]:
-    """Build the Latin and Chinese character sets used by each font face."""
+    """构建各字体使用的拉丁文和中文字符集。"""
     shared = base_characters()
     template_characters = extract_template_non_ascii_characters(project_root / "templates")
     calendar_characters = extract_python_string_characters(project_root / "app" / "services" / "calendar.py")
@@ -211,7 +211,7 @@ def build_charsets(project_root: Path) -> dict[str, set[str]]:
 
 
 def _subset_font(source_path: Path, output_path: Path, characters: set[str]) -> None:
-    """Subset one source font and save it as deterministic WOFF2."""
+    """提取源字体的子集并保存为输出可复现的 WOFF2 文件。"""
     options = subset.Options()
     options.flavor = "woff2"
     options.name_IDs = ["*"]
@@ -235,7 +235,7 @@ def _subset_font(source_path: Path, output_path: Path, characters: set[str]) -> 
 
 
 def _render_css() -> str:
-    """Render local @font-face declarations in a stable order."""
+    """按固定顺序生成本地 @font-face 声明。"""
     blocks = []
     for spec in FONT_SPECS:
         blocks.append(
@@ -255,7 +255,7 @@ def _render_css() -> str:
 
 
 def build_fonts(source_dir: Path, output_dir: Path, project_root: Path = PROJECT_ROOT) -> dict[str, set[str]]:
-    """Build every local font face, stylesheet, and OFL license file."""
+    """构建全部本地字体、样式表和 OFL 许可证文件。"""
     missing_sources = [name for name in (*[spec.source_name for spec in FONT_SPECS], *LICENSE_NAMES) if not (source_dir / name).is_file()]
     if missing_sources:
         names = ", ".join(missing_sources)
@@ -275,7 +275,7 @@ def build_fonts(source_dir: Path, output_dir: Path, project_root: Path = PROJECT
 
 
 def _format_size(size_bytes: int) -> str:
-    """Format a byte count as a compact binary size."""
+    """将字节数格式化为简洁的二进制单位大小。"""
     if size_bytes >= 1024 * 1024:
         return f"{size_bytes / (1024 * 1024):.2f} MiB"
     if size_bytes >= 1024:
@@ -284,7 +284,7 @@ def _format_size(size_bytes: int) -> str:
 
 
 def _print_summary(output_dir: Path, charsets: dict[str, set[str]]) -> None:
-    """Print generated character-set and file-size summaries."""
+    """输出生成的字符集和文件大小汇总。"""
     print("Character sets:")
     for name in ("latin", "level_1_cjk", "full_cjk"):
         print(f"  {name}: {len(charsets[name]):,} code points")
@@ -299,15 +299,15 @@ def _print_summary(output_dir: Path, charsets: dict[str, set[str]]) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse command-line arguments."""
+    """解析命令行参数。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--src", type=Path, required=True, help="Directory containing source TTF and OFL files")
-    parser.add_argument("--out", type=Path, default=DEFAULT_OUTPUT_DIR, help="Output directory (default: templates/fonts)")
+    parser.add_argument("--src", type=Path, required=True, help="存放源 TTF 与 OFL 文件的目录")
+    parser.add_argument("--out", type=Path, default=DEFAULT_OUTPUT_DIR, help="输出目录（默认：templates/fonts）")
     return parser.parse_args()
 
 
 def main() -> None:
-    """Run the local font bundle build."""
+    """执行本地字体包构建。"""
     args = parse_args()
     charsets = build_fonts(args.src.resolve(), args.out.resolve())
     _print_summary(args.out.resolve(), charsets)

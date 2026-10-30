@@ -1,4 +1,4 @@
-"""Tests for static image variant publishing helpers."""
+"""静态图片变体发布辅助函数测试。"""
 
 from pathlib import Path
 
@@ -15,7 +15,7 @@ from scripts.publish_static import (
 
 
 def test_published_variant_name_maps_cache_family() -> None:
-    """Cache variant names should map to dated and latest artifact families."""
+    """缓存中的变体名应映射到按日期与 latest 两组产物。"""
     stem = "moyuren_20261029_072232"
 
     assert _published_variant_name(stem, f"{stem}.jpg", "moyuren") == "moyuren.jpg"
@@ -31,7 +31,7 @@ def test_published_variant_name_maps_cache_family() -> None:
 
 
 def test_publish_discovers_lazy_unrecorded_variants(tmp_path: Path) -> None:
-    """Publishing should include every valid existing sibling, independent of config."""
+    """发布应包含每个有效的现存同级文件，与配置无关。"""
     source = tmp_path / "moyuren_20261029_072232.jpg"
     Image.new("RGB", (800, 400), "white").save(source, "JPEG")
     Image.new("RGB", (800, 400), "white").save(source.with_suffix(".webp"), "WEBP")
@@ -54,7 +54,7 @@ def test_publish_discovers_lazy_unrecorded_variants(tmp_path: Path) -> None:
 
 
 def test_latest_manifest_points_to_root_artifacts() -> None:
-    """The root JSON manifest should use the same latest prefix as copied files."""
+    """根目录 JSON 清单应使用与复制文件相同的 latest 前缀。"""
     dated = DailyDataFile.model_validate(
         {
             "date": "2026-10-29",
@@ -85,7 +85,7 @@ def test_latest_manifest_points_to_root_artifacts() -> None:
 
 
 def test_publish_image_family_copies_matching_manifest_names(tmp_path: Path) -> None:
-    """Dated and root artifact families should both contain every discovered variant."""
+    """按日期与根目录两组产物都应包含每个发现的变体。"""
     source = tmp_path / "cache" / "moyuren_20261029_072232.jpg"
     source.parent.mkdir()
     Image.new("RGB", (800, 400), "white").save(source, "JPEG")

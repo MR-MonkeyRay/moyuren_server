@@ -1,4 +1,4 @@
-"""Fun content fetching service module."""
+"""趣味内容获取服务模块。"""
 
 import logging
 import random
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class FunContentService:
-    """Service for fetching fun content from various APIs."""
+    """从多个 API 获取趣味内容的服务。"""
 
     _DEFAULT_CONTENT = {
         "title": "🐟 摸鱼小贴士",
@@ -35,13 +35,13 @@ class FunContentService:
         instances: InstancesConfig | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
-        """Initialize the service with configuration.
+        """用配置初始化服务。
 
         Args:
-            config: Fun content configuration.
-            proxy_url: Optional outbound proxy URL.
-            instances: Global 60s public instance configuration.
-            http_client: Optional external HTTP client managed by the caller.
+            config: 趣味内容配置。
+            proxy_url: 可选的出站代理 URL。
+            instances: 全局 60s 公共实例配置。
+            http_client: 可选的外部 HTTP 客户端，由调用方管理。
         """
         self.config = config
         self._http_client = http_client
@@ -56,7 +56,7 @@ class FunContentService:
 
     @asynccontextmanager
     async def _get_client(self) -> AsyncIterator[httpx.AsyncClient]:
-        """Yield the injected client or a temporary service-owned client."""
+        """复用注入的客户端，否则临时创建并管理客户端。"""
         if self._http_client is not None:
             yield self._http_client
         else:
@@ -66,16 +66,15 @@ class FunContentService:
                 yield client
 
     async def fetch_content(self, target_date: date) -> dict[str, str]:
-        """Fetch fun content with date-based random selection.
+        """按日期随机选择并获取趣味内容。
 
-        Uses the date as a seed to ensure consistent selection for the same day,
-        with fallback to other endpoints if the primary one fails.
+        以日期为随机种子，保证同一天选择一致；主端点失败时回退到其他端点。
 
         Args:
-            target_date: The date to use for random seed.
+            target_date: 用作随机种子的日期。
 
         Returns:
-            Dictionary with 'title', 'content', and 'type' keys.
+            含 'title'、'content'、'type' 键的字典。
         """
         endpoints = self._shuffle_by_date(target_date)
 
@@ -90,16 +89,16 @@ class FunContentService:
         return self._DEFAULT_CONTENT.copy()
 
     def _shuffle_by_date(self, target_date: date) -> list[FunContentEndpoint]:
-        """Shuffle endpoints using date as seed for consistent daily selection.
+        """以日期为种子打乱端点顺序，保证每日选择稳定。
 
         Args:
-            target_date: The date to use for random seed.
+            target_date: 用作随机种子的日期。
 
         Returns:
-            Shuffled list of endpoint configurations.
+            打乱后的端点配置列表。
         """
         seed = int(target_date.strftime("%Y%m%d"))
-        rng = random.Random(seed)  # nosec B311 - not used for security/crypto
+        rng = random.Random(seed)  # nosec B311 - 不用于安全/加密场景
         endpoints = list(self.config.endpoints)
         rng.shuffle(endpoints)
         return endpoints
@@ -107,17 +106,16 @@ class FunContentService:
     async def _fetch_endpoint(
         self, client: httpx.AsyncClient, endpoint: FunContentEndpoint
     ) -> dict[str, str] | None:
-        """Fetch content from a single endpoint.
+        """从单个端点获取内容。
 
         主源不可用时按健康度切换到 60s 公共实例的同一路径端点。
 
         Args:
-            client: The HTTP client to use for requests.
-            endpoint: The endpoint configuration.
+            client: 用于请求的 HTTP 客户端。
+            endpoint: 端点配置。
 
         Returns:
-            Dictionary with 'title', 'content', and 'type' if successful,
-            None otherwise.
+            成功返回含 'title'、'content'、'type' 的字典，否则 None。
         """
         result = await self._router.fetch_json(
             client,

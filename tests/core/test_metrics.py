@@ -1,4 +1,4 @@
-"""Metrics configuration and endpoint tests without startup dependencies."""
+"""指标配置与端点测试，不依赖启动流程。"""
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,12 +15,12 @@ from app.api.metrics import router as metrics_router
 
 
 def test_metrics_disabled_by_default() -> None:
-    """The endpoint is opt-in even when YAML omits the section."""
+    """即使 YAML 省略该段，端点也需显式开启。"""
     assert MetricsConfig().enabled is False
 
 
 def test_metrics_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Use the same nested environment convention as other sections."""
+    """使用与其他配置段相同的嵌套环境变量约定。"""
     monkeypatch.setenv("MOYUREN_METRICS_ENABLED", "true")
     config_path = Path(__file__).resolve().parents[2] / "config.yaml"
     assert load_config(str(config_path)).metrics.enabled is True
@@ -28,7 +28,7 @@ def test_metrics_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.asyncio
 async def test_metrics_endpoint_follows_config() -> None:
-    """Serve the dedicated registry only while metrics are enabled."""
+    """仅在启用指标时提供专用注册表的内容。"""
     app = FastAPI()
     app.include_router(metrics_router)
     async with httpx.AsyncClient(
@@ -51,6 +51,6 @@ async def test_metrics_endpoint_follows_config() -> None:
 
 
 def test_registry_is_dedicated() -> None:
-    """Application metrics do not pollute the default collector registry."""
+    """应用指标不污染默认的采集器注册表。"""
     assert registry is not REGISTRY
     assert REGISTRY.get_sample_value("moyuren_build_info", {"version": __version__}) is None

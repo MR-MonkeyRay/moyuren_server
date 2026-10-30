@@ -1,4 +1,4 @@
-"""Create image representations from a rendered JPEG without browser work."""
+"""从已渲染的 JPEG 生成图片变体，无需再启动浏览器。"""
 
 import logging
 import os
@@ -15,7 +15,7 @@ from app.models.schemas import ImageVariant
 
 
 def image_width(source: Path) -> int:
-    """Read the final image width, independent of browser device scale."""
+    """读取图片最终宽度，与浏览器 device scale 无关。"""
     try:
         with Image.open(source) as image:
             return image.width
@@ -29,7 +29,7 @@ def ensure_variant(
     format: Literal["jpeg", "webp"],
     width: int | None,
 ) -> ImageVariant:
-    """Write one missing representation atomically; concurrent writers are safe."""
+    """原子写入单个缺失的图片变体；并发写入安全。"""
     temporary: Path | None = None
     try:
         with Image.open(source) as original:
@@ -41,7 +41,7 @@ def ensure_variant(
             if target.is_file():
                 return variant
 
-            # A new RGB image drops EXIF, ICC profiles and other source metadata.
+            # 新建 RGB 图像会丢弃 EXIF、ICC profile 等原图元数据。
             image = original.convert("RGB")
             try:
                 if final_width != original.width:
@@ -79,7 +79,7 @@ def ensure_variant(
 def generate_variants(
     source: Path, config: TemplateRenderConfig, logger: logging.Logger,
 ) -> list[ImageVariant]:
-    """Return the base JPEG and successful variants, isolating individual failures."""
+    """返回原始 JPEG 与成功的变体；单个变体失败不影响其余。"""
     original_width = image_width(source)
     variants = [ImageVariant(filename=source.name, format="jpeg", width=original_width)]
     widths: list[int | None] = [None]

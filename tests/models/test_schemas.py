@@ -1,4 +1,4 @@
-"""Tests for app/models/schemas.py - Pydantic data models."""
+"""app/models/schemas.py 中 Pydantic 数据模型的测试。"""
 
 import json
 from pathlib import Path
@@ -22,18 +22,18 @@ from app.models.schemas import (
 
 
 class TestDailyDataFile:
-    """Tests for the versioned daily cache format."""
+    """带版本号的日级缓存格式测试。"""
 
     @pytest.fixture
     def payload(self) -> dict[str, object]:
-        """Return a minimal historical daily cache payload."""
+        """返回最简历史日级缓存数据。"""
         return {
             "date": "2026-02-04", "updated": "2026/02/04 10:00:00",
             "updated_at": 1738634400000, "images": {"moyuren": "moyuren.jpg"},
         }
 
     def test_round_trip(self, tmp_path: Path, payload: dict[str, object]) -> None:
-        """Preserve optional fields, nulls and unknown nested and top-level keys."""
+        """保留可选字段、空值及嵌套和顶层的未知键。"""
         payload.update({
             "future": {"enabled": True},
             "fun_content": {"title": "新标题", "text": "中文", "type": "dad_joke", "extra": 7},
@@ -48,7 +48,7 @@ class TestDailyDataFile:
         assert list(target.parent.iterdir()) == [target]
 
     def test_old_file_without_version(self, tmp_path: Path, payload: dict[str, object]) -> None:
-        """Load legacy data without adding absent optional fields."""
+        """加载旧数据，不补入缺失的可选字段。"""
         payload["fun_content"] = {"title": "一言", "content": "legacy"}
         target = tmp_path / "2026-02-04.json"
         target.write_text(json.dumps(payload), encoding="utf-8")
@@ -58,7 +58,7 @@ class TestDailyDataFile:
         assert model.image_variants is None
 
     def test_variant_round_trip(self, tmp_path: Path, payload: dict[str, object]) -> None:
-        """Persist typed variants while retaining the original base image mapping."""
+        """持久化有类型的图片变体，保留原始基础图片映射。"""
         payload["image_variants"] = {"moyuren": [
             {"filename": "moyuren.webp", "format": "webp", "width": 120},
             {"filename": "moyuren_w60.jpg", "format": "jpeg", "width": 60},
@@ -72,7 +72,7 @@ class TestDailyDataFile:
 
     @pytest.mark.parametrize("filename", ["", " ", "../bad.webp", "bad/file.webp", "bad\\file.webp", "a..webp", "\x00.webp"])
     def test_invalid_variant_filename(self, payload: dict[str, object], filename: str) -> None:
-        """Variants share the base mapping's filename validation rules."""
+        """变体沿用基础映射的文件名校验规则。"""
         payload["image_variants"] = {"moyuren": [
             {"filename": filename, "format": "webp", "width": 60},
         ]}
@@ -80,7 +80,7 @@ class TestDailyDataFile:
             DailyDataFile.model_validate(payload)
 
     def test_legacy_optional_shapes(self, payload: dict[str, object]) -> None:
-        """Accept historical optional payload shapes instead of failing the whole file."""
+        """接受历史可选字段格式，避免整个文件加载失败。"""
         payload.update({"weekend": False, "stock_indices": [], "fun_content": "legacy"})
         model = DailyDataFile.model_validate(payload)
         assert model.weekend is False
@@ -88,28 +88,28 @@ class TestDailyDataFile:
 
     @pytest.mark.parametrize("value", ["2026-02-30", "20260204", "2026-2-4", "2026-02-04T00:00:00", "bad"])
     def test_invalid_date(self, payload: dict[str, object], value: str) -> None:
-        """Reject invalid or non-canonical calendar dates."""
+        """拒绝无效或格式不规范的日历日期。"""
         payload["date"] = value
         with pytest.raises(ValidationError):
             DailyDataFile.model_validate(payload)
 
     @pytest.mark.parametrize("value", [-1, True, False, 1.5, "123", None])
     def test_invalid_timestamp(self, payload: dict[str, object], value: object) -> None:
-        """Reject negative timestamps, booleans and non-integer values."""
+        """拒绝负时间戳、布尔值和非整数值。"""
         payload["updated_at"] = value
         with pytest.raises(ValidationError):
             DailyDataFile.model_validate(payload)
 
     @pytest.mark.parametrize("filename", ["", " ", "../outside.jpg", "foo/bar.jpg", "foo\\bar.jpg", "a..jpg", "\x00.jpg", None])
     def test_invalid_image(self, payload: dict[str, object], filename: object) -> None:
-        """Reject empty filenames and path traversal in every mapping entry."""
+        """拒绝各映射项中的空文件名和路径穿越。"""
         payload["images"] = {"safe": "safe.jpg", "invalid": filename}
         with pytest.raises(ValidationError):
             DailyDataFile.model_validate(payload)
 
     @pytest.mark.parametrize("content", ["{", "[]", '{"date":"invalid"}', "\xff"])
     def test_load_wraps_invalid_data(self, tmp_path: Path, content: str) -> None:
-        """Expose malformed or invalid data through the storage error contract."""
+        """按存储错误约定报告格式错误或无效的数据。"""
         target = tmp_path / "invalid.json"
         target.write_bytes(content.encode("latin-1"))
         with pytest.raises(StorageError) as error:
@@ -118,13 +118,13 @@ class TestDailyDataFile:
         assert error.value.__cause__ is not None
 
     def test_load_missing_file(self, tmp_path: Path) -> None:
-        """Wrap file read failures consistently."""
+        """统一封装文件读取失败。"""
         with pytest.raises(StorageError) as error:
             DailyDataFile.load(tmp_path / "missing.json")
         assert error.value.code == ErrorCode.STORAGE_READ_FAILED
 
     def test_failed_save_preserves_original(self, tmp_path: Path, payload: dict[str, object]) -> None:
-        """Clean up temporary files and keep old contents when replace fails."""
+        """替换失败时清理临时文件并保留原内容。"""
         target = tmp_path / "2026-02-04.json"
         target.write_text("old contents", encoding="utf-8")
         with patch("app.models.schemas.os.replace", side_effect=OSError("disk full")):
@@ -136,10 +136,10 @@ class TestDailyDataFile:
 
 
 class TestMoyurenImageResponse:
-    """Tests for MoyurenImageResponse model."""
+    """MoyurenImageResponse 模型测试。"""
 
     def test_valid_moyuren_image_response(self) -> None:
-        """Test valid MoyurenImageResponse creation."""
+        """测试创建有效的 MoyurenImageResponse。"""
         response = MoyurenImageResponse(
             date="2026-02-04",
             updated="2026/02/04 10:00:00",
@@ -154,10 +154,10 @@ class TestMoyurenImageResponse:
 
 
 class TestFunContentSchema:
-    """Tests for FunContentSchema model."""
+    """FunContentSchema 模型测试。"""
 
     def test_valid_fun_content(self) -> None:
-        """Test valid FunContentSchema creation."""
+        """测试创建有效的 FunContentSchema。"""
         content = FunContentSchema(
             type="joke", title="🤣 冷笑话", text="为什么程序员总是分不清万圣节和圣诞节？因为 Oct 31 = Dec 25"
         )
@@ -168,10 +168,10 @@ class TestFunContentSchema:
 
 
 class TestDateInfoSchema:
-    """Tests for DateInfoSchema model."""
+    """DateInfoSchema 模型测试。"""
 
     def test_valid_date_info(self) -> None:
-        """Test valid DateInfoSchema creation."""
+        """测试创建有效的 DateInfoSchema。"""
         date_info = DateInfoSchema(
             year_month="2026.02",
             day="4",
@@ -191,7 +191,7 @@ class TestDateInfoSchema:
         assert date_info.is_holiday is False
 
     def test_date_info_with_optional_fields(self) -> None:
-        """Test DateInfoSchema with optional fields."""
+        """测试 DateInfoSchema 的可选字段。"""
         date_info = DateInfoSchema(
             year_month="2026.02",
             day="4",
@@ -213,17 +213,17 @@ class TestDateInfoSchema:
 
 
 class TestWeekendSchema:
-    """Tests for WeekendSchema model."""
+    """WeekendSchema 模型测试。"""
 
     def test_valid_weekend_schema(self) -> None:
-        """Test valid WeekendSchema creation."""
+        """测试创建有效的 WeekendSchema。"""
         weekend = WeekendSchema(days_left=2, is_weekend=False)
 
         assert weekend.days_left == 2
         assert weekend.is_weekend is False
 
     def test_weekend_on_saturday(self) -> None:
-        """Test WeekendSchema on weekend."""
+        """测试周末时的 WeekendSchema。"""
         weekend = WeekendSchema(days_left=0, is_weekend=True)
 
         assert weekend.days_left == 0
@@ -231,10 +231,10 @@ class TestWeekendSchema:
 
 
 class TestSolarTermSchema:
-    """Tests for SolarTermSchema model."""
+    """SolarTermSchema 模型测试。"""
 
     def test_valid_solar_term(self) -> None:
-        """Test valid SolarTermSchema creation."""
+        """测试创建有效的 SolarTermSchema。"""
         solar_term = SolarTermSchema(
             name="立春", name_en="Beginning of Spring", days_left=0, date="2026-02-04", is_today=True
         )
@@ -244,7 +244,7 @@ class TestSolarTermSchema:
         assert solar_term.is_today is True
 
     def test_solar_term_not_today(self) -> None:
-        """Test SolarTermSchema when not today."""
+        """测试节气不在当天的 SolarTermSchema。"""
         solar_term = SolarTermSchema(name="雨水", name_en="Rain Water", days_left=15, date="2026-02-19", is_today=False)
 
         assert solar_term.days_left == 15
@@ -252,10 +252,10 @@ class TestSolarTermSchema:
 
 
 class TestGuideSchema:
-    """Tests for GuideSchema model."""
+    """GuideSchema 模型测试。"""
 
     def test_valid_guide(self) -> None:
-        """Test valid GuideSchema creation."""
+        """测试创建有效的 GuideSchema。"""
         guide = GuideSchema(yi=["摸鱼", "喝茶", "休息"], ji=["加班", "开会", "焦虑"])
 
         assert len(guide.yi) == 3
@@ -264,7 +264,7 @@ class TestGuideSchema:
         assert "加班" in guide.ji
 
     def test_guide_with_empty_lists(self) -> None:
-        """Test GuideSchema with empty lists."""
+        """测试列表为空时的 GuideSchema。"""
         guide = GuideSchema(yi=[], ji=[])
 
         assert guide.yi == []
@@ -272,17 +272,17 @@ class TestGuideSchema:
 
 
 class TestNewsMetaSchema:
-    """Tests for NewsMetaSchema model."""
+    """NewsMetaSchema 模型测试。"""
 
     def test_valid_news_meta(self) -> None:
-        """Test valid NewsMetaSchema creation."""
+        """测试创建有效的 NewsMetaSchema。"""
         meta = NewsMetaSchema(date="2026年2月4日", updated="2026-02-04T06:00:00+08:00", updated_at=1738620000000)
 
         assert meta.date == "2026年2月4日"
         assert meta.updated == "2026-02-04T06:00:00+08:00"
 
     def test_news_meta_all_optional(self) -> None:
-        """Test NewsMetaSchema with all optional fields."""
+        """测试 NewsMetaSchema 的所有可选字段均未传入。"""
         meta = NewsMetaSchema()
 
         assert meta.date is None

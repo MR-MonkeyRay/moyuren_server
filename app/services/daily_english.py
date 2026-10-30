@@ -327,7 +327,7 @@ class SQLiteBackend:
 
     _COOLDOWN_SEC = 30 * 60
     _MAX_DB_SIZE_BYTES = 1024 * 1024 * 1024  # 1 GB
-    _MAX_DOWNLOAD_SIZE_BYTES = 1024 * 1024 * 1024  # 1GB archive limit
+    _MAX_DOWNLOAD_SIZE_BYTES = 1024 * 1024 * 1024  # 归档文件上限 1GB
 
     def __init__(
         self,
@@ -820,7 +820,7 @@ class DailyEnglishService:
                 yield client
 
     async def ensure_ready(self) -> None:
-        """Ensure the dictionary backend is ready (e.g., download DB if needed)."""
+        """确保词典后端就绪（必要时下载词典库）。"""
         await self._backend.ensure_ready()
 
     def _difficulty_range_tuple(self) -> tuple[int, int]:
@@ -902,7 +902,7 @@ class DailyEnglishService:
 
                 return info
 
-        # Level 2: only when API failed threshold+ times, fall back to local pick
+        # 第 2 级：仅在本次获取中 API 累计失败达到阈值后，回退到本地词典选词
         if api_failures >= self._config.api_failure_threshold:
             pick_random = getattr(self._backend, "pick_random", None)
             if callable(pick_random):
@@ -915,7 +915,7 @@ class DailyEnglishService:
                     if info is not None:
                         return info
 
-        # Level 3/4: return None, let DailyCache handle degradation
+        # 第 3/4 级：返回 None，由 DailyCache 负责降级
         return None
 
 

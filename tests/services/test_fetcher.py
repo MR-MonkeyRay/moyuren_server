@@ -1,4 +1,4 @@
-"""Tests for app/services/fetcher.py - data fetching service."""
+"""app/services/fetcher.py 数据获取服务测试。"""
 
 import asyncio
 import json
@@ -24,7 +24,7 @@ from app.services.fetcher import (
 
 
 def mock_mirrors_not_found() -> None:
-    """Mock every static news mirror URL (today and yesterday) as HTTP 404."""
+    """将今日和昨日的所有静态新闻镜像 URL 模拟为返回 HTTP 404。"""
     today = today_business()
     for target in (today, today - timedelta(days=1)):
         for template in _NEWS_STATIC_CDN_URLS:
@@ -34,16 +34,16 @@ def mock_mirrors_not_found() -> None:
 
 
 class TestDataFetcher:
-    """Tests for DataFetcher class."""
+    """DataFetcher 类测试。"""
 
     @pytest.fixture
     def sample_endpoint(self) -> NewsSource:
-        """Create a sample news source configuration."""
+        """创建新闻源配置样例。"""
         return NewsSource(url="https://api.example.com/news", timeout_sec=10, params={"force-update": "false"})
 
     @pytest.fixture
     def fetcher(self, sample_endpoint: NewsSource, logger: logging.Logger) -> DataFetcher:
-        """Create a DataFetcher instance."""
+        """创建 DataFetcher 实例。"""
         return DataFetcher(source=sample_endpoint, logger=logger)
 
     @pytest.mark.parametrize(
@@ -91,7 +91,7 @@ class TestDataFetcher:
     @respx.mock
     @pytest.mark.asyncio
     async def test_fetch_endpoint_success(self, fetcher: DataFetcher, sample_endpoint: NewsSource) -> None:
-        """Test successful endpoint fetch."""
+        """测试从端点成功获取数据。"""
         mock_data = {"code": 200, "data": {"news": ["Item 1", "Item 2"]}}
         respx.get(sample_endpoint.url).mock(return_value=Response(200, json=mock_data))
 
@@ -103,7 +103,7 @@ class TestDataFetcher:
     @respx.mock
     @pytest.mark.asyncio
     async def test_fetch_endpoint_timeout(self, fetcher: DataFetcher, sample_endpoint: NewsSource) -> None:
-        """Test endpoint fetch timeout returns None when mirrors also fail."""
+        """测试端点请求超时且镜像也失败时返回 None。"""
         respx.get(sample_endpoint.url).mock(side_effect=httpx.TimeoutException("Timeout"))
         mock_mirrors_not_found()
 
@@ -114,7 +114,7 @@ class TestDataFetcher:
     @respx.mock
     @pytest.mark.asyncio
     async def test_fetch_endpoint_http_error(self, fetcher: DataFetcher, sample_endpoint: NewsSource) -> None:
-        """Test endpoint fetch HTTP error returns None when mirrors also fail."""
+        """测试端点返回 HTTP 错误且镜像也失败时返回 None。"""
         respx.get(sample_endpoint.url).mock(return_value=Response(500))
         mock_mirrors_not_found()
 
@@ -125,7 +125,7 @@ class TestDataFetcher:
     @respx.mock
     @pytest.mark.asyncio
     async def test_fetch_endpoint_request_error(self, fetcher: DataFetcher, sample_endpoint: NewsSource) -> None:
-        """Test endpoint fetch request error returns None when mirrors also fail."""
+        """测试端点请求出错且镜像也失败时返回 None。"""
         respx.get(sample_endpoint.url).mock(side_effect=httpx.ConnectError("Connection failed"))
         mock_mirrors_not_found()
 
@@ -136,7 +136,7 @@ class TestDataFetcher:
     @respx.mock
     @pytest.mark.asyncio
     async def test_fetch_endpoint_invalid_json(self, fetcher: DataFetcher, sample_endpoint: NewsSource) -> None:
-        """Test endpoint fetch with invalid JSON returns None when mirrors also fail."""
+        """测试端点返回无效 JSON 且镜像也失败时返回 None。"""
         respx.get(sample_endpoint.url).mock(return_value=Response(200, content=b"not json"))
         mock_mirrors_not_found()
 
@@ -147,7 +147,7 @@ class TestDataFetcher:
     @respx.mock
     @pytest.mark.asyncio
     async def test_fetch_endpoint_with_params(self, logger: logging.Logger) -> None:
-        """Test endpoint fetch includes query parameters."""
+        """测试端点请求包含查询参数。"""
         source = NewsSource(url="https://api.example.com/news", params={"key": "value", "limit": "10"})
         fetcher = DataFetcher(source=source, logger=logger)
 
@@ -158,30 +158,30 @@ class TestDataFetcher:
         await fetcher.fetch()
 
         assert mock_route.called
-        # Verify params were included in the request
+        # 验证请求包含查询参数
         request = respx.calls.last.request
         assert "key=value" in str(request.url)
         assert "limit=10" in str(request.url)
 
 
 class TestCachedDataFetcher:
-    """Tests for CachedDataFetcher class."""
+    """CachedDataFetcher 类测试。"""
 
     @staticmethod
     def _make_news_data(date_str: str) -> dict:
-        """Helper function to construct standard API response data."""
+        """构造标准 API 响应数据的辅助函数。"""
         return {"news": {"code": 200, "data": {"date": date_str, "news": ["item1"]}}}
 
     @pytest.fixture
     def sample_source(self) -> NewsSource:
-        """Create a sample news source configuration."""
+        """创建新闻源配置样例。"""
         return NewsSource(url="https://api.example.com/news")
 
     @pytest.fixture
     def cached_fetcher(
         self, sample_source: NewsSource, logger: logging.Logger, tmp_path: Path
     ) -> CachedDataFetcher:
-        """Create a CachedDataFetcher instance with fixed date."""
+        """创建使用固定日期的 CachedDataFetcher 实例。"""
         return CachedDataFetcher(
             source=sample_source,
             logger=logger,
@@ -191,7 +191,7 @@ class TestCachedDataFetcher:
 
     @pytest.fixture(autouse=True)
     def run_to_thread_inline(self) -> Iterator[Mock]:
-        """Avoid sandbox thread hangs while preserving offload call semantics."""
+        """避免沙箱线程挂起，同时保留任务转交线程执行的调用语义。"""
 
         async def inline(func: Any, /, *args: Any, **kwargs: Any) -> Any:
             return func(*args, **kwargs)
@@ -199,12 +199,12 @@ class TestCachedDataFetcher:
         with patch("app.services.fetcher.asyncio.to_thread", side_effect=inline) as mock_to_thread:
             yield mock_to_thread
 
-    # Tests for _extract_news_date
+    # _extract_news_date 测试
 
     def test_extract_news_date_iso_format(
         self, cached_fetcher: CachedDataFetcher
     ) -> None:
-        """Test _extract_news_date parses ISO format (YYYY-MM-DD)."""
+        """测试 _extract_news_date 解析 ISO 日期格式（YYYY-MM-DD）。"""
         data = self._make_news_data("2026-02-23")
         result = cached_fetcher._extract_news_date(data)
         assert result == date(2026, 2, 23)
@@ -212,7 +212,7 @@ class TestCachedDataFetcher:
     def test_extract_news_date_slash_format(
         self, cached_fetcher: CachedDataFetcher
     ) -> None:
-        """Test _extract_news_date parses slash format (YYYY/MM/DD)."""
+        """测试 _extract_news_date 解析斜线日期格式（YYYY/MM/DD）。"""
         data = self._make_news_data("2026/02/23")
         result = cached_fetcher._extract_news_date(data)
         assert result == date(2026, 2, 23)
@@ -220,7 +220,7 @@ class TestCachedDataFetcher:
     def test_extract_news_date_chinese_format(
         self, cached_fetcher: CachedDataFetcher
     ) -> None:
-        """Test _extract_news_date parses Chinese format (YYYY年M月D日)."""
+        """测试 _extract_news_date 解析中文日期格式（YYYY年M月D日）。"""
         data = self._make_news_data("2026年2月4日")
         result = cached_fetcher._extract_news_date(data)
         assert result == date(2026, 2, 4)
@@ -228,52 +228,52 @@ class TestCachedDataFetcher:
     def test_extract_news_date_none_data(
         self, cached_fetcher: CachedDataFetcher
     ) -> None:
-        """Test _extract_news_date returns None for None input."""
+        """测试 _extract_news_date 在输入为 None 时返回 None。"""
         result = cached_fetcher._extract_news_date(None)
         assert result is None
 
     def test_extract_news_date_invalid_format(
         self, cached_fetcher: CachedDataFetcher
     ) -> None:
-        """Test _extract_news_date returns None for invalid format."""
+        """测试 _extract_news_date 在格式无效时返回 None。"""
         data = {"news": {"data": {"date": "invalid"}}}
         result = cached_fetcher._extract_news_date(data)
         assert result is None
 
-    # Tests for get() method
+    # get() 方法测试
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_get_cache_hit_today(
         self, cached_fetcher: CachedDataFetcher, sample_source: NewsSource
     ) -> None:
-        """Test get() returns cache when cached news date matches today."""
-        # Save cache with today's date
+        """测试缓存新闻日期为今日时，get() 返回缓存。"""
+        # 保存日期为今日的缓存
         today_data = self._make_news_data("2026-02-23")
         cached_fetcher.save_cache(today_data)
 
-        # Mock API (should not be called)
+        # 模拟 API（不应被调用）
         respx.get(sample_source.url).mock(return_value=Response(200, json={"should": "not be called"}))
 
         result = await cached_fetcher.get()
 
         assert result == today_data
-        assert respx.calls.call_count == 0  # No HTTP request
+        assert respx.calls.call_count == 0  # 不发起 HTTP 请求
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_get_api_date_matches_today(
         self, cached_fetcher: CachedDataFetcher, sample_source: NewsSource
     ) -> None:
-        """Test get() saves and returns API data when API date matches today."""
-        # No cache
+        """测试 API 日期为今日时，get() 保存并返回 API 数据。"""
+        # 无缓存
         today_data = self._make_news_data("2026-02-23")
         respx.get(sample_source.url).mock(return_value=Response(200, json=today_data["news"]))
 
         result = await cached_fetcher.get()
 
         assert result == today_data
-        # Verify cache was saved
+        # 验证缓存已保存
         cached_data = cached_fetcher.load_cache()
         assert cached_data == today_data
 
@@ -282,20 +282,20 @@ class TestCachedDataFetcher:
     async def test_get_api_not_updated_keep_cache(
         self, cached_fetcher: CachedDataFetcher, sample_source: NewsSource
     ) -> None:
-        """Test get() keeps local cache when API returns stale date."""
-        # Save cache with yesterday's date
+        """测试 API 返回过期日期时，get() 保留本地缓存。"""
+        # 保存日期为昨日的缓存
         yesterday_data = self._make_news_data("2026-02-22")
         cached_fetcher.save_cache(yesterday_data)
 
-        # Mock API returns yesterday's date (not updated yet)
+        # 模拟 API 返回昨日日期（尚未更新）
         api_response = {"code": 200, "data": {"date": "2026-02-22", "news": ["new item"]}}
         respx.get(sample_source.url).mock(return_value=Response(200, json=api_response))
 
         result = await cached_fetcher.get()
 
-        # Should return local cache, not API data
+        # 应返回本地缓存，而非 API 数据
         assert result == yesterday_data
-        assert result["news"]["data"]["news"] == ["item1"]  # Original cache
+        assert result["news"]["data"]["news"] == ["item1"]  # 原有缓存
 
     @respx.mock
     @pytest.mark.asyncio
@@ -335,14 +335,14 @@ class TestCachedDataFetcher:
     async def test_get_api_not_updated_no_cache(
         self, cached_fetcher: CachedDataFetcher, sample_source: NewsSource
     ) -> None:
-        """Test get() saves API data when no cache and API returns stale date."""
-        # No cache
+        """测试无缓存且 API 返回过期日期时，get() 保存 API 数据。"""
+        # 无缓存
         yesterday_data = self._make_news_data("2026-02-22")
         respx.get(sample_source.url).mock(return_value=Response(200, json=yesterday_data["news"]))
 
         result = await cached_fetcher.get()
 
-        # Should save and return API data (better than nothing)
+        # 应保存并返回 API 数据（总比没有好）
         assert result == yesterday_data
         cached_data = cached_fetcher.load_cache()
         assert cached_data == yesterday_data
@@ -352,18 +352,18 @@ class TestCachedDataFetcher:
     async def test_get_api_failure_fallback(
         self, cached_fetcher: CachedDataFetcher, sample_source: NewsSource
     ) -> None:
-        """Test get() returns stale cache when API and mirrors fail."""
-        # Save cache with yesterday's date
+        """测试 API 和镜像均失败时，get() 返回过期缓存。"""
+        # 保存日期为昨日的缓存
         yesterday_data = self._make_news_data("2026-02-22")
         cached_fetcher.save_cache(yesterday_data)
 
-        # Mock API returns 500 error and mirrors are unavailable
+        # 模拟 API 返回 500 错误且镜像不可用
         respx.get(sample_source.url).mock(return_value=Response(500))
         mock_mirrors_not_found()
 
         result = await cached_fetcher.get()
 
-        # Should return stale cache as fallback
+        # 应回退到过期缓存
         assert result == yesterday_data
 
     @respx.mock
@@ -371,21 +371,21 @@ class TestCachedDataFetcher:
     async def test_get_force_refresh(
         self, cached_fetcher: CachedDataFetcher, sample_source: NewsSource
     ) -> None:
-        """Test get(force_refresh=True) calls API and saves new data."""
-        # Save cache with yesterday's date
+        """测试 get(force_refresh=True) 调用 API 并保存新数据。"""
+        # 保存日期为昨日的缓存
         yesterday_data = self._make_news_data("2026-02-22")
         cached_fetcher.save_cache(yesterday_data)
 
-        # Mock API returns today's date
+        # 模拟 API 返回今日日期
         today_data = self._make_news_data("2026-02-23")
         respx.get(sample_source.url).mock(return_value=Response(200, json=today_data["news"]))
 
         result = await cached_fetcher.get(force_refresh=True)
 
-        # Should call API and return new data
+        # 应调用 API 并返回新数据
         assert result == today_data
         assert respx.calls.call_count == 1
-        # Verify cache was updated
+        # 验证缓存已更新
         cached_data = cached_fetcher.load_cache()
         assert cached_data == today_data
 
@@ -394,7 +394,7 @@ class TestCachedDataFetcher:
         self,
         cached_fetcher: CachedDataFetcher,
     ) -> None:
-        """Concurrent misses share one fetch and the waiter reads the saved cache."""
+        """并发缓存未命中时共用一次获取，等待方读取已保存的缓存。"""
         fetch_started = asyncio.Event()
         release_fetch = asyncio.Event()
         today_data = self._make_news_data("2026-02-23")
@@ -421,7 +421,7 @@ class TestCachedDataFetcher:
         cached_fetcher: CachedDataFetcher,
         run_to_thread_inline: Mock,
     ) -> None:
-        """The news-date-aware get dispatches cache loads and saves to a thread."""
+        """按新闻日期判断的 get 将缓存读写交给线程执行。"""
         today_data = self._make_news_data("2026-02-23")
         cached_fetcher.fetch_fresh = AsyncMock(return_value=today_data)
 
@@ -435,11 +435,11 @@ class TestCachedDataFetcher:
 
 
 class TestDataFetcherStaticFallback:
-    """Tests for the 60s static-mirror fallback in DataFetcher."""
+    """DataFetcher 的 60s 静态镜像回退测试。"""
 
     @staticmethod
     def _mirror_payload(date_str: str) -> dict:
-        """Build a raw 60s static mirror payload."""
+        """构造 60s 静态镜像的原始响应数据。"""
         return {
             "date": date_str,
             "news": ["镜像新闻1", "镜像新闻2"],
@@ -461,7 +461,7 @@ class TestDataFetcherStaticFallback:
         )
 
     def test_build_static_urls_prefers_cdn_then_ghproxy(self, fetcher: DataFetcher) -> None:
-        """Test static mirror URL ordering: CDN first, then ghproxy, then raw GitHub."""
+        """测试静态镜像 URL 顺序：CDN、ghproxy、GitHub 原始地址。"""
         urls = fetcher._build_static_urls(date(2026, 2, 23))
 
         assert urls[0] == _NEWS_STATIC_CDN_URLS[0].format(date="2026-02-23")
@@ -475,7 +475,7 @@ class TestDataFetcherStaticFallback:
     def test_build_static_urls_skips_prefix_without_scheme(
         self, source: NewsSource, logger: logging.Logger
     ) -> None:
-        """Test invalid ghproxy prefixes (missing scheme) are ignored."""
+        """测试忽略缺少协议的无效 ghproxy 前缀。"""
         fetcher = DataFetcher(
             source=source,
             logger=logger,
@@ -496,7 +496,7 @@ class TestDataFetcherStaticFallback:
     async def test_fetch_uses_static_mirror_when_primary_fails(
         self, fetcher: DataFetcher, source: NewsSource
     ) -> None:
-        """Test fetch() falls back to the static mirror and wraps the payload."""
+        """测试 fetch() 回退到静态镜像并封装响应数据。"""
         respx.get(source.url).mock(return_value=Response(403))
         respx.get(_NEWS_STATIC_CDN_URLS[0].format(date="2026-02-23")).mock(
             return_value=Response(200, json=self._mirror_payload("2026-02-23"))
@@ -515,7 +515,7 @@ class TestDataFetcherStaticFallback:
     async def test_fetch_falls_back_to_yesterday_when_today_missing(
         self, fetcher: DataFetcher, source: NewsSource
     ) -> None:
-        """Test fetch() tries yesterday's mirror file when today's is not published yet."""
+        """测试今日镜像文件尚未发布时，fetch() 尝试昨日文件。"""
         respx.get(source.url).mock(return_value=Response(403))
         for url_template in _NEWS_STATIC_CDN_URLS:
             respx.get(url_template.format(date="2026-02-23")).mock(
@@ -539,7 +539,7 @@ class TestDataFetcherStaticFallback:
     async def test_fetch_returns_none_when_primary_and_mirrors_fail(
         self, fetcher: DataFetcher, source: NewsSource
     ) -> None:
-        """Test fetch() returns None when the primary and every mirror fail."""
+        """测试主源和所有镜像均失败时，fetch() 返回 None。"""
         respx.get(source.url).mock(return_value=Response(403))
         for url_template in _NEWS_STATIC_CDN_URLS:
             respx.get(url_template.format(date="2026-02-23")).mock(
@@ -564,7 +564,7 @@ class TestDataFetcherStaticFallback:
     async def test_fetch_skips_mirror_when_primary_succeeds(
         self, fetcher: DataFetcher, source: NewsSource
     ) -> None:
-        """Test fetch() does not touch mirrors when the primary source works."""
+        """测试主源可用时，fetch() 不访问镜像。"""
         primary_payload = {"code": 200, "data": {"date": "2026-02-23", "news": ["x"]}}
         respx.get(source.url).mock(return_value=Response(200, json=primary_payload))
 
@@ -578,7 +578,7 @@ class TestDataFetcherStaticFallback:
     async def test_fetch_ignores_mirror_payload_without_news(
         self, fetcher: DataFetcher, source: NewsSource
     ) -> None:
-        """Test mirror responses lacking a non-empty news list are rejected."""
+        """测试拒绝不含非空新闻列表的镜像响应。"""
         respx.get(source.url).mock(return_value=Response(403))
         for url_template in _NEWS_STATIC_CDN_URLS:
             for date_str in ("2026-02-23", "2026-02-22"):
@@ -598,7 +598,7 @@ class TestDataFetcherStaticFallback:
     async def test_cached_fetcher_updates_news_via_mirror(
         self, source: NewsSource, logger: logging.Logger, tmp_path: Path
     ) -> None:
-        """Test CachedDataFetcher refreshes stale cache using the static mirror."""
+        """测试 CachedDataFetcher 使用静态镜像刷新过期缓存。"""
         cached_fetcher = CachedDataFetcher(
             source=source,
             logger=logger,
@@ -623,13 +623,13 @@ class TestDataFetcherStaticFallback:
 
 
 class TestDataFetcherInstanceSwitching:
-    """Tests for public 60s instance switching in DataFetcher."""
+    """DataFetcher 的 60s 公共实例切换测试。"""
 
     INSTANCE_LIST_URL = "https://docs.example.com/instances.md"
 
     @staticmethod
     def _instance_markdown(*domains: str) -> str:
-        """Build a docs-page-like markdown table for the given domains."""
+        """为给定域名构造与文档页面类似的 Markdown 表格。"""
         rows = "\n".join(
             f"| {domain} | ✅ | ✅ | tester | 2026-01-01 |" for domain in domains
         )
@@ -654,7 +654,7 @@ class TestDataFetcherInstanceSwitching:
     async def test_fetch_switches_to_available_instance(
         self, fetcher: DataFetcher, source: NewsSource
     ) -> None:
-        """A blocked primary source falls through to the first healthy instance."""
+        """主源被阻断时回退到首个可用实例。"""
         payload = {"code": 200, "data": {"date": "2026-02-23", "news": ["实例新闻"]}}
         respx.get(source.url).mock(return_value=Response(403))
         respx.get("https://inst1.example.com/v2/60s").mock(
@@ -721,7 +721,7 @@ class TestDataFetcherInstanceSwitching:
     async def test_preferred_instance_is_tried_first_next_time(
         self, fetcher: DataFetcher, source: NewsSource
     ) -> None:
-        """The last successful instance is preferred and the blocked primary is skipped."""
+        """优先使用上次成功的实例，并跳过被阻断的主源。"""
         payload = {"code": 200, "data": {"date": "2026-02-23", "news": ["实例新闻"]}}
         primary_route = respx.get(source.url).mock(return_value=Response(403))
         respx.get("https://inst1.example.com/v2/60s").mock(
@@ -739,7 +739,7 @@ class TestDataFetcherInstanceSwitching:
     async def test_discovered_instances_are_used(
         self, logger: logging.Logger
     ) -> None:
-        """Instances discovered from the docs page are used as fallbacks."""
+        """将文档页面中发现的实例用于回退。"""
         source = NewsSource(url="https://api.example.com/v2/60s", timeout_sec=5)
         fetcher = DataFetcher(
             source=source,
@@ -764,7 +764,7 @@ class TestDataFetcherInstanceSwitching:
     async def test_falls_back_to_mirror_when_all_instances_fail(
         self, fetcher: DataFetcher, source: NewsSource
     ) -> None:
-        """Static mirror is used when every API endpoint fails."""
+        """所有 API 端点均失败时使用静态镜像。"""
         for url in (
             source.url,
             "https://inst1.example.com/v2/60s",

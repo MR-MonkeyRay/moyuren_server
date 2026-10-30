@@ -1,4 +1,4 @@
-"""Unit tests for concurrent API generation without a threaded HTTP client."""
+"""不使用线程化 HTTP 客户端的 API 并发生成单元测试。"""
 
 import asyncio
 import json
@@ -20,7 +20,7 @@ from app.core.services import AppServices
 
 @pytest.fixture
 def generation_request(tmp_path: Path, mock_services: AppServices) -> Request:
-    """Create a request with configured services and an empty image cache."""
+    """创建已配置服务且图片缓存为空的请求。"""
     app = FastAPI()
     config = MagicMock()
     config.paths.cache_dir = str(tmp_path)
@@ -41,7 +41,7 @@ def generation_request(tmp_path: Path, mock_services: AppServices) -> Request:
 
 
 async def _generate_response(request: Request, endpoint: str) -> Response:
-    """Call the selected generation endpoint with concrete query defaults."""
+    """使用明确的查询参数默认值调用所选生成端点。"""
     if endpoint == "ops":
         return await ops_generate(request)
     with patch("app.api.v1.moyuren.image_width", return_value=1000):
@@ -55,7 +55,7 @@ async def _generate_response(request: Request, endpoint: str) -> Response:
 async def test_concurrent_generation_returns_success(
     generation_request: Request, endpoint: str
 ) -> None:
-    """Concurrent API requests wait for one generation and both return 200."""
+    """并发 API 请求等待同一次生成（single-flight），均返回 200。"""
     app = generation_request.app
     services: AppServices = app.state.services
     cache_dir = Path(app.state.config.paths.cache_dir)
@@ -100,7 +100,7 @@ async def test_concurrent_generation_returns_success(
 async def test_generation_wait_timeout_keeps_busy_response(
     generation_request: Request, endpoint: str, retry_after: str
 ) -> None:
-    """In-process wait timeouts keep each endpoint's 503 and Retry-After."""
+    """进程内等待超时保留各端点的 503 和 Retry-After 响应。"""
     services: AppServices = generation_request.app.state.services
     started = asyncio.Event()
     release = asyncio.Event()

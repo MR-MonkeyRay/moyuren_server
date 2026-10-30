@@ -106,6 +106,10 @@ sudo chown -R 1000:1000 cache logs
 
 ## 开发与测试
 
+注释、docstring、OpenAPI 说明与命令行帮助使用中文，保留技术术语、配置键和 `Args:`、`Returns:`、`Raises:`、`Side Effects:` 等结构化标题。仅修订文档时，不翻译日志、异常消息、HTTP 响应、测试断言文本或样例数据。
+
+字体构建目前也会收集 HTML 注释和 `app/services/calendar.py` docstring 中的字符；这些位置保留原文，避免纯文案翻译改变字体子集。
+
 CI 在运行测试前执行 Ruff 代码检查（含日志惰性格式化规则 G004）和 mypy 类型检查。本地安装运行依赖和开发依赖（`pip install -r requirements.txt -r requirements-dev.txt`）后可运行：
 
 ```bash

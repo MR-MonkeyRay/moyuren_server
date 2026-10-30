@@ -1,4 +1,4 @@
-"""Permission tests for the downloaded daily-English SQLite database."""
+"""下载的每日英语 SQLite 数据库权限测试。"""
 
 import asyncio
 import logging
@@ -21,14 +21,14 @@ pytestmark = pytest.mark.skipif(os.name != "posix", reason="POSIX file modes onl
 
 
 async def _run_inline(function: Callable[..., Any], *args: Any) -> Any:
-    """Run a to_thread target inline for this filesystem-only unit test."""
+    """本文件系统单元测试中内联执行 to_thread 目标。"""
     return function(*args)
 
 
 async def test_downloaded_sqlite_uses_configured_output_mode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The final dictionary database should be readable under a 0022-style mode."""
+    """最终词典数据库应使用 umask 为 0022 时对应的 0644 权限。"""
     archive_path = tmp_path / "ecdict.zip"
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.writestr("stardict.db", b"sqlite payload")

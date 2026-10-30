@@ -1,4 +1,4 @@
-"""Unit tests for local font bundle character-set helpers."""
+"""本地字体包字符集辅助函数的单元测试。"""
 
 from pathlib import Path
 
@@ -10,7 +10,7 @@ from scripts.build_fonts import (
 
 
 def test_gb2312_hanzi_level_counts() -> None:
-    """GB2312 helper sets should match the standard Han character counts."""
+    """GB2312 辅助集合应与标准汉字数量一致。"""
     level_1 = gb2312_level_1_characters()
     all_hanzi = gb2312_hanzi_characters()
 
@@ -20,7 +20,7 @@ def test_gb2312_hanzi_level_counts() -> None:
 
 
 def test_extract_template_non_ascii_characters(tmp_path: Path) -> None:
-    """Template extraction should collect non-ASCII literals from every HTML file."""
+    """模板提取应收集每个 HTML 文件中的非 ASCII 字面量。"""
     (tmp_path / "first.html").write_text("<p>摸鱼日历 · café</p>", encoding="utf-8")
     (tmp_path / "second.html").write_text("<span>温度 23° → 晴</span>", encoding="utf-8")
     (tmp_path / "ignored.txt").write_text("不应读取", encoding="utf-8")

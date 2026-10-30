@@ -1,4 +1,4 @@
-"""Webhook delivery, retry, state, and credential-safety tests."""
+"""Webhook 投递、重试、状态与凭证安全测试。"""
 
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ async def test_provider_payloads_and_signatures(
     monkeypatch: pytest.MonkeyPatch,
     webhook_type: str,
 ) -> None:
-    """Each provider receives its documented body, endpoint, and signature."""
+    """各平台收到的请求体、端点与签名符合文档约定。"""
     requests: list[httpx.Request] = []
 
     async def handle(request: httpx.Request) -> httpx.Response:
@@ -219,7 +219,7 @@ async def test_provider_error_body_is_failure_without_raising(
 
 @pytest.mark.asyncio
 async def test_stale_note_is_in_message_text(tmp_path: Path) -> None:
-    """User-facing provider messages identify stale source data."""
+    """面向用户的平台消息标明数据源已过期。"""
     bodies: list[dict[str, Any]] = []
 
     def handle(request: httpx.Request) -> httpx.Response:
@@ -403,7 +403,7 @@ async def test_client_ownership_close_behavior(
 async def test_transport_logs_hide_signed_urls_and_standalone_tokens(
     tmp_path: Path, caplog: pytest.LogCaptureFixture, webhook_type: str,
 ) -> None:
-    """Signed URL suffixes and Telegram path tokens never reach any log handler."""
+    """签名 URL 后缀和 Telegram 路径令牌不会传入任何日志处理器。"""
     token = "private-bot-token"
     secret = "private-signing-secret"
     url = (
@@ -435,7 +435,7 @@ async def test_transport_logs_hide_signed_urls_and_standalone_tokens(
 async def test_failed_pair_does_not_block_other_webhook_or_consume_daily_state(
     tmp_path: Path,
 ) -> None:
-    """Only successful pairs are persisted; failed delivery remains eligible."""
+    """仅持久化投递成功的组合；投递失败的组合仍可重试。"""
     calls: list[str] = []
     failing = True
 
@@ -463,7 +463,7 @@ async def test_failed_pair_does_not_block_other_webhook_or_consume_daily_state(
 
 @pytest.mark.asyncio
 async def test_next_date_sends_again_and_retry_can_succeed(tmp_path: Path) -> None:
-    """A recovered 5xx records one success and the next business day is eligible."""
+    """5xx 重试成功后只记录一次成功，下一业务日仍可投递。"""
     calls = 0
     name = "retry-success-next-day"
     before = _metric(name, "success")
@@ -491,7 +491,7 @@ async def test_next_date_sends_again_and_retry_can_succeed(tmp_path: Path) -> No
 async def test_malformed_provider_responses_fail_safely(
     tmp_path: Path, response_body: bytes,
 ) -> None:
-    """Provider success fields are required even when HTTP status is 200."""
+    """即使 HTTP 状态为 200，也必须包含平台要求的成功字段。"""
     before = _metric("malformed", "failure")
     notifier = _notifier(
         tmp_path, _config("feishu", name="malformed"),

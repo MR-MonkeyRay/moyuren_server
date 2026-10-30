@@ -1,4 +1,4 @@
-"""Private previews use isolated rendering and read-only data access."""
+"""私有预览使用隔离渲染与只读数据访问。"""
 
 import asyncio
 import json
@@ -25,7 +25,7 @@ AUTH = {"Authorization": "Bearer preview-secret"}
 
 @pytest.fixture
 def preview_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
-    """Build a minimal app without lifespan or browser startup."""
+    """构建不含 lifespan 与浏览器启动的最小应用。"""
     async def inline(function: Any, *args: Any, **kwargs: Any) -> Any:
         return function(*args, **kwargs)
 
@@ -107,7 +107,7 @@ async def test_sample_is_private_and_side_effect_free(
 
 
 class DiskCache(DailyCache[dict[str, Any]]):
-    """Exercise the actual existing disk-only loader."""
+    """使用现有的只读磁盘缓存加载逻辑。"""
 
     async def fetch_fresh(self) -> dict[str, Any] | None:
         raise AssertionError("Network data fetch attempted")

@@ -1,4 +1,4 @@
-"""API v1 endpoints."""
+"""API v1 端点。"""
 
 from fastapi import APIRouter
 

@@ -1,4 +1,4 @@
-"""Tests for app lifespan network configuration propagation."""
+"""测试 app lifespan 中网络配置的传递。"""
 
 import json
 import logging
@@ -110,7 +110,7 @@ def _record_factory(
 async def test_lifespan_passes_network_proxy_to_httpx_services(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """App startup should pass proxy settings without declaring trust_env."""
+    """应用启动时应传递代理设置，且不声明 trust_env。"""
     records: dict[str, dict[str, Any]] = {}
     close_order: list[str] = []
     config = _fake_config(tmp_path)

@@ -1,4 +1,4 @@
-"""Global test fixtures and configuration."""
+"""全局测试 fixture 与配置。"""
 
 import json
 import logging
@@ -16,7 +16,7 @@ from app.services.generator import ImageGenerator
 
 @pytest.fixture
 def mock_services() -> AppServices:
-    """Return a service container with isolated test doubles."""
+    """返回包含相互隔离的测试替身的服务容器。"""
     return AppServices(
         data_fetcher=None,
         holiday_service=MagicMock(),
@@ -32,18 +32,18 @@ def mock_services() -> AppServices:
     )
 
 
-# --- Basic Utilities ---
+# --- 基础工具 ---
 
 
 @pytest.fixture(scope="session")
 def test_data_dir() -> Path:
-    """Return the test data directory path."""
+    """返回测试数据目录的路径。"""
     return Path(__file__).parent / "data"
 
 
 @pytest.fixture
 def load_json(test_data_dir: Path) -> Callable[[str], dict[str, Any]]:
-    """Load JSON test data from file."""
+    """从文件加载 JSON 测试数据。"""
 
     def _loader(rel_path: str) -> dict[str, Any]:
         with open(test_data_dir / rel_path, encoding="utf-8") as f:
@@ -52,57 +52,57 @@ def load_json(test_data_dir: Path) -> Callable[[str], dict[str, Any]]:
     return _loader
 
 
-# --- Environment Configuration ---
+# --- 环境配置 ---
 
 
 @pytest.fixture(autouse=True)
 def mock_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Override environment variables to prevent pollution."""
+    """覆盖环境变量，避免环境污染。"""
     monkeypatch.setenv("ENV", "test")
     monkeypatch.setenv("TZ", "Asia/Shanghai")
 
 
-# --- Temporary Directories ---
+# --- 临时目录 ---
 
 
 @pytest.fixture
 def tmp_cache_dir(tmp_path: Path) -> Path:
-    """Create temporary cache and static directories."""
+    """创建临时缓存目录和静态文件目录。"""
     (tmp_path / "cache").mkdir(exist_ok=True)
     (tmp_path / "static").mkdir(exist_ok=True)
     return tmp_path
 
 
-# --- Logger ---
+# --- 日志记录器 ---
 
 
 @pytest.fixture
 def logger() -> logging.Logger:
-    """Return a test logger."""
+    """返回测试用日志记录器。"""
     return logging.getLogger("test")
 
 
-# --- Time Fixtures ---
+# --- 时间 fixture ---
 
 
 @pytest.fixture
 def fixed_datetime() -> datetime:
-    """Return a fixed datetime for testing (2026-02-04 10:00:00 CST)."""
+    """返回测试用固定时间（2026-02-04 10:00:00 CST）。"""
     return datetime(2026, 2, 4, 10, 0, 0, tzinfo=timezone(timedelta(hours=8)))
 
 
 @pytest.fixture
 def fixed_thursday() -> datetime:
-    """Return a fixed Thursday datetime for KFC testing (2026-02-05 is Thursday)."""
+    """返回 KFC 测试用的固定周四时间（2026-02-05 为周四）。"""
     return datetime(2026, 2, 5, 10, 0, 0, tzinfo=timezone(timedelta(hours=8)))
 
 
-# --- Mock Browser ---
+# --- 浏览器 mock ---
 
 
 @pytest.fixture
 def mock_browser_page() -> AsyncMock:
-    """Mock Playwright Page object."""
+    """创建 Playwright Page 对象的 mock。"""
     page = AsyncMock()
     page.set_content = AsyncMock()
     page.screenshot = AsyncMock(return_value=b"fake_image_bytes")
@@ -112,18 +112,18 @@ def mock_browser_page() -> AsyncMock:
 
 @pytest.fixture
 def mock_browser_manager(mock_browser_page: AsyncMock) -> MagicMock:
-    """Mock browser manager."""
+    """创建浏览器管理器的 mock。"""
     manager = MagicMock()
     manager.create_page = AsyncMock(return_value=mock_browser_page)
     return manager
 
 
-# --- Mock HTTP Client ---
+# --- HTTP 客户端 mock ---
 
 
 @pytest.fixture
 def mock_httpx_response() -> Callable[[dict[str, Any], int], MagicMock]:
-    """Create a mock httpx response."""
+    """创建 httpx 响应的 mock。"""
 
     def _create_response(json_data: dict[str, Any], status_code: int = 200) -> MagicMock:
         response = MagicMock()
@@ -141,12 +141,12 @@ def mock_httpx_response() -> Callable[[dict[str, Any], int], MagicMock]:
     return _create_response
 
 
-# --- Sample Data Fixtures ---
+# --- 样例数据 fixture ---
 
 
 @pytest.fixture
 def sample_news_response() -> dict[str, Any]:
-    """Sample 60s news API response."""
+    """60s 新闻 API 响应样例。"""
     return {
         "code": 200,
         "data": {
@@ -164,7 +164,7 @@ def sample_news_response() -> dict[str, Any]:
 
 @pytest.fixture
 def sample_stock_data() -> dict[str, Any]:
-    """Sample stock indices data."""
+    """股票指数数据样例。"""
     return {
         "items": [
             {
@@ -191,7 +191,7 @@ def sample_stock_data() -> dict[str, Any]:
 
 @pytest.fixture
 def sample_holiday_data() -> list[dict[str, Any]]:
-    """Sample holiday data."""
+    """节假日数据样例。"""
     return [
         {
             "name": "春节",

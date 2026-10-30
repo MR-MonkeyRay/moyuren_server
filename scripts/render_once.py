@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-time image rendering script for testing."""
+"""用于测试的单次图片渲染脚本。"""
 
 import asyncio
 import json
@@ -7,7 +7,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# Add project root to path
+# 将项目根目录加入模块搜索路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.core.config import (
@@ -38,7 +38,7 @@ from app.services.variants import generate_variants
 
 
 def _build_timestamp_fields(now: datetime) -> dict[str, str | int | bool]:
-    """Build output timestamps from one business-time snapshot."""
+    """根据同一业务时间快照构建输出时间戳。"""
     display_now = now.astimezone(get_display_timezone())
     business_date = now.date()
     return {
@@ -50,27 +50,27 @@ def _build_timestamp_fields(now: datetime) -> dict[str, str | int | bool]:
 
 
 async def main() -> None:
-    """Generate image once."""
-    # Load config
+    """生成一次图片。"""
+    # 加载配置
     config = load_config()
     logger = setup_logging(config.logging, logger_name="render_once")
     browser_manager.configure(logger, proxy_url=config.network.proxy_url)
     stock_index_service = None
     try:
-        # Initialize timezones
+        # 初始化时区
         init_timezones(
             business_tz=config.timezone.business, display_tz=config.timezone.display
         )
         now = now_business()
         business_date = now.date()
 
-        # Ensure directories exist
+        # 确保目录存在
         cache_dir = Path(config.paths.cache_dir)
         (cache_dir / "images").mkdir(parents=True, exist_ok=True)
         (cache_dir / "data").mkdir(parents=True, exist_ok=True)
         (cache_dir / "holidays").mkdir(parents=True, exist_ok=True)
 
-        # Initialize services
+        # 初始化服务
         news_source = config.get_source(NewsSource)
         data_fetcher = DataFetcher(
             source=news_source,
@@ -95,7 +95,7 @@ async def main() -> None:
             fun_content_source, proxy_url=config.network.proxy_url, instances=config.instances
         )
 
-        # Initialize KFC service if config exists
+        # 配置存在时初始化 KFC 服务
         kfc_service = None
         crazy_thursday_source = config.get_source(CrazyThursdaySource)
         if crazy_thursday_source:
@@ -103,7 +103,7 @@ async def main() -> None:
                 crazy_thursday_source, proxy_url=config.network.proxy_url, instances=config.instances
             )
 
-        # Initialize stock index service if config exists
+        # 配置存在时初始化股票指数服务
         stock_index_service = None
         stock_index_source = config.get_source(StockIndexSource)
         if stock_index_source:
@@ -111,7 +111,7 @@ async def main() -> None:
                 stock_index_source, proxy_url=config.network.proxy_url
             )
 
-        # Initialize gold price service if config exists
+        # 配置存在时初始化金价服务
         gold_price_service = None
         gold_price_source = config.get_source(GoldPriceSource)
         if gold_price_source:
@@ -119,7 +119,7 @@ async def main() -> None:
                 gold_price_source, proxy_url=config.network.proxy_url, instances=config.instances
             )
 
-        # Initialize daily english service if config exists
+        # 配置存在时初始化每日英语服务
         daily_english_service = None
         daily_english_source = config.get_source(DailyEnglishSource)
         if daily_english_source and daily_english_source.enabled:
@@ -143,7 +143,7 @@ async def main() -> None:
             themes=config.templates.config.themes,
         )
 
-        # Get templates configuration
+        # 获取模板配置
         templates_config = config.get_templates_config()
 
         image_renderer = ImageRenderer(
@@ -156,10 +156,10 @@ async def main() -> None:
 
         logger.info("Starting image generation...")
 
-        # 1. Fetch data
+        # 1. 获取数据
         raw_data = {"news": await data_fetcher.fetch()}
 
-        # 1.1 Fetch holiday data
+        # 1.1 获取节假日数据
         raw_data["holidays"] = []
         raw_data["make_up_workdays"] = []
         if holiday_service:
@@ -177,7 +177,7 @@ async def main() -> None:
                     safe_exception_for_log(e, config.network.proxy_url),
                 )
 
-        # 1.2 Fetch fun content
+        # 1.2 获取趣味内容
         try:
             fun_content = await fun_content_service.fetch_content(business_date)
             raw_data["fun_content"] = fun_content
@@ -189,7 +189,7 @@ async def main() -> None:
             )
             raw_data["fun_content"] = None
 
-        # 1.3 Fetch KFC Crazy Thursday content (Only on Thursday)
+        # 1.3 获取 KFC 疯狂星期四文案（仅周四）
         raw_data["kfc_copy"] = None
         if kfc_service and business_date.weekday() == 3:
             try:
@@ -203,7 +203,7 @@ async def main() -> None:
                     safe_exception_for_log(e, config.network.proxy_url),
                 )
 
-        # 1.4 Fetch stock index data
+        # 1.4 获取股票指数数据
         raw_data["stock_indices"] = None
         if stock_index_service:
             try:
@@ -216,7 +216,7 @@ async def main() -> None:
                     safe_exception_for_log(e, config.network.proxy_url),
                 )
 
-        # 1.5 Fetch gold price data
+        # 1.5 获取金价数据
         raw_data["gold_price"] = None
         if gold_price_service:
             try:
@@ -230,7 +230,7 @@ async def main() -> None:
                     safe_exception_for_log(e, config.network.proxy_url),
                 )
 
-        # 1.6 Fetch daily english
+        # 1.6 获取每日英语
         raw_data["daily_english"] = None
         if daily_english_service:
             try:
@@ -247,11 +247,11 @@ async def main() -> None:
                     safe_exception_for_log(e, config.network.proxy_url),
                 )
 
-        # 2. Compute template context
+        # 2. 计算模板上下文
         template_data = data_computer.compute(raw_data, now=now)
         logger.info("Template data computed")
 
-        # 3. Render all templates
+        # 3. 渲染所有模板
         all_filenames: dict[str, str] = {}
         all_variants: dict[str, list[dict[str, str | int]]] = {}
         for template_item in templates_config.items:
@@ -275,21 +275,21 @@ async def main() -> None:
             ]
             logger.info("Image rendered for '%s': %s", tname, filename)
 
-        # 4. Update data file
+        # 4. 更新数据文件
         data_dir = cache_dir / "data"
         timestamp_fields = _build_timestamp_fields(now)
         today_str = business_date.isoformat()
         data_file = data_dir / f"{today_str}.json"
 
-        # Extract data from template_data
+        # 从 template_data 中提取数据
         date_info = template_data.get("date", {})
         fun_content_raw = template_data.get("history", {})
         kfc_content_raw = template_data.get("kfc_content")
 
-        # Build fun_content
+        # 构建趣味内容
         fun_content = None
         if fun_content_raw:
-            # Determine type from title
+            # 根据标题确定类型
             title = fun_content_raw.get("title", "")
             content_type = "unknown"
             if "冷笑话" in title:
@@ -307,7 +307,7 @@ async def main() -> None:
                 "text": fun_content_raw.get("content", ""),
             }
 
-        # Build KFC content
+        # 构建 KFC 内容
         kfc_content = None
         if kfc_content_raw and isinstance(kfc_content_raw, dict):
             kfc_content = kfc_content_raw.get("content")
@@ -316,12 +316,11 @@ async def main() -> None:
             **timestamp_fields,
             "images": all_filenames,
             "image_variants": all_variants,
-            # New content fields
             "weekday": date_info.get("week_cn", ""),
             "lunar_date": date_info.get("lunar_date", ""),
             "fun_content": fun_content,
             "kfc_content": kfc_content,
-            # Full rendering data fields
+            # 完整渲染数据字段
             "date_info": template_data.get("date"),
             "weekend": template_data.get("weekend"),
             "solar_term": template_data.get("solar_term"),
@@ -347,7 +346,7 @@ async def main() -> None:
         write_atomic(data_file, json.dumps(data, ensure_ascii=False, indent=2))
         logger.info("Data file updated: %s", data_file)
 
-        # Print results
+        # 输出结果
         print(f"\n{'=' * 50}")
         print(f"Generated {len(all_filenames)} template(s):")
         for tname, fname in all_filenames.items():

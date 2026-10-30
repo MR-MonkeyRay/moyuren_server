@@ -1,4 +1,4 @@
-"""Tests for offline template preview data assembly."""
+"""离线模板预览数据组装测试。"""
 
 import logging
 from datetime import datetime
@@ -25,7 +25,7 @@ def _cache(value: Any) -> Any:
 
 
 def test_sample_raw_data_is_deterministic_and_complete() -> None:
-    """The offline sample covers all optional template data sources."""
+    """离线样例覆盖所有可选的模板数据源。"""
     first = sample_raw_data(_snapshot())
     second = sample_raw_data(_snapshot())
 
@@ -51,7 +51,7 @@ def test_sample_raw_data_is_deterministic_and_complete() -> None:
 def test_cached_raw_data_reads_only_disk_caches_and_falls_back_per_key(
     mock_services: AppServices,
 ) -> None:
-    """Valid cache values replace samples while missing or malformed values do not."""
+    """有效缓存值替换样例，缺失或格式错误的值不替换。"""
     news_service = _cache({
         "news": {"data": {"date": "2026-04-09", "news": ["缓存新闻"]}},
         "weather": {"temperature": 24},
@@ -91,7 +91,7 @@ def test_cached_raw_data_handles_invalid_news_and_unicode_cache_errors(
     mock_services: AppServices,
     caplog: Any,
 ) -> None:
-    """Unreadable cache files are isolated and replaced by source-specific samples."""
+    """不可读的缓存文件被隔离，并按来源替换为对应样例。"""
     unreadable = SimpleNamespace(
         load_cache=MagicMock(side_effect=UnicodeDecodeError("utf-8", b"x", 0, 1, "bad"))
     )
@@ -113,7 +113,7 @@ def test_cached_raw_data_handles_invalid_news_and_unicode_cache_errors(
 
 
 def test_samples_compute_and_render_both_bundled_templates(tmp_path: Path) -> None:
-    """Offline samples satisfy the real computer and both Jinja templates."""
+    """离线样例可由真实 DataComputer 计算并用于两套 Jinja 模板渲染。"""
     render_config = TemplateRenderConfig()
     items = TemplateDiscovery().discover("templates", render_config)
     renderer = ImageRenderer(

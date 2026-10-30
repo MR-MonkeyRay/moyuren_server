@@ -1,4 +1,4 @@
-"""Tests for throttled template discovery hot reload."""
+"""模板发现节流热加载测试。"""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -31,7 +31,7 @@ def _config(directory: Path, *, hot_reload: bool = True) -> AppConfig:
 def test_hot_reload_add_modify_delete_and_throttle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Changes appear after the interval while intermediate calls do no file scan."""
+    """间隔到期后更新模板，期间的调用不扫描文件。"""
     clock = [100.0]
     monkeypatch.setattr("app.core.config.time.monotonic", lambda: clock[0])
     first = tmp_path / "first.html"
@@ -64,7 +64,7 @@ def test_hot_reload_add_modify_delete_and_throttle(
 def test_hot_reload_discovery_error_keeps_previous_items(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """A failed changed-directory discovery preserves the previous good snapshot."""
+    """目录变更后发现失败时，保留上一份有效快照。"""
     clock = [100.0]
     monkeypatch.setattr("app.core.config.time.monotonic", lambda: clock[0])
     template = tmp_path / "first.html"
@@ -81,7 +81,7 @@ def test_hot_reload_discovery_error_keeps_previous_items(
 def test_hot_reload_invalid_changed_template_keeps_previous_items(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """One invalid edit cannot silently remove a template from a good snapshot."""
+    """单个无效修改不能悄悄移除有效快照中的模板。"""
     clock = [100.0]
     monkeypatch.setattr("app.core.config.time.monotonic", lambda: clock[0])
     first = tmp_path / "first.html"
@@ -103,7 +103,7 @@ def test_hot_reload_invalid_changed_template_keeps_previous_items(
 def test_hot_reload_removed_default_falls_back_to_first_template(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Removing the configured default keeps the refreshed list usable."""
+    """移除配置的默认模板后，回退到首个模板，刷新后的列表仍可用。"""
     clock = [100.0]
     monkeypatch.setattr("app.core.config.time.monotonic", lambda: clock[0])
     first = tmp_path / "first.html"
@@ -125,7 +125,7 @@ def test_hot_reload_removed_default_falls_back_to_first_template(
 def test_disabled_hot_reload_never_rescans(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Disabled hot reload keeps the initially discovered snapshot."""
+    """禁用热加载时，保留最初发现的快照。"""
     clock = [100.0]
     monkeypatch.setattr("app.core.config.time.monotonic", lambda: clock[0])
     _write_template(tmp_path / "first.html", "first")
@@ -140,7 +140,7 @@ def test_disabled_hot_reload_never_rescans(
 
 
 def test_hot_reload_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Nested environment variables configure both hot reload settings."""
+    """通过嵌套环境变量配置两项热加载设置。"""
     monkeypatch.setenv("MOYUREN_TEMPLATES_HOT_RELOAD", "false")
     monkeypatch.setenv("MOYUREN_TEMPLATES_HOT_RELOAD_INTERVAL_SEC", "1.25")
 

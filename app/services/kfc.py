@@ -1,4 +1,4 @@
-"""KFC Crazy Thursday service module."""
+"""KFC 疯狂星期四服务模块。"""
 
 import logging
 from collections.abc import AsyncIterator
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class KfcService:
-    """Service for fetching KFC Crazy Thursday content."""
+    """获取 KFC 疯狂星期四文案的服务。"""
 
     def __init__(
         self,
@@ -27,13 +27,13 @@ class KfcService:
         instances: InstancesConfig | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
-        """Initialize the service with configuration.
+        """用配置初始化服务。
 
         Args:
-            config: Crazy Thursday configuration.
-            proxy_url: Optional outbound proxy URL.
-            instances: Global 60s public instance configuration.
-            http_client: Optional external HTTP client managed by the caller.
+            config: 疯狂星期四配置。
+            proxy_url: 可选的出站代理 URL。
+            instances: 全局 60s 公共实例配置。
+            http_client: 可选的外部 HTTP 客户端，由调用方管理。
         """
         self.config = config
         self._http_client = http_client
@@ -48,7 +48,7 @@ class KfcService:
 
     @asynccontextmanager
     async def _get_client(self) -> AsyncIterator[httpx.AsyncClient]:
-        """Yield the injected client or a temporary service-owned client."""
+        """复用注入的客户端，否则临时创建并管理客户端。"""
         if self._http_client is not None:
             yield self._http_client
         else:
@@ -58,12 +58,12 @@ class KfcService:
                 yield client
 
     async def fetch_kfc_copy(self) -> str | None:
-        """Fetch KFC crazy thursday copy.
+        """获取 KFC 疯狂星期四文案。
 
         主源不可用时按健康度切换到 60s 公共实例。
 
         Returns:
-            The content string if successful, None otherwise.
+            成功返回文案字符串，失败返回 None。
         """
         if not self.config.enabled:
             return None
@@ -111,7 +111,7 @@ class KfcService:
 
         if not isinstance(content, str) or not content.strip():
             return None
-        # Handle escaped newlines in the text
+        # 处理文案中的转义换行符
         return content.strip().replace("\\n", "\n")
 
 

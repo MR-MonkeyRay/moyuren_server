@@ -1,1 +1,1 @@
-"""Core configuration and utilities."""
+"""核心配置与工具。"""

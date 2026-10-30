@@ -1,4 +1,4 @@
-"""Moyuren API application entry point."""
+"""摸鱼日历 API 服务入口。"""
 
 import asyncio
 import contextlib
@@ -37,7 +37,7 @@ from app.services.generator import generate_and_save_image
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Start and stop application services."""
+    """启动与停止应用服务。"""
     app.state.startup_state = "starting"
     app.state.startup_started_at = datetime.now(timezone.utc)
     app.state.startup_completed_at = None
@@ -88,7 +88,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     scheduler = TaskScheduler(config.scheduler, logger, timezone=get_business_timezone())
 
     async def generate_image_task() -> None:
-        """Generate the scheduled calendar image."""
+        """定时生成摸鱼日历图片。"""
         try:
             await generate_and_save_image(app, trigger="scheduled")
         except Exception as exc:
@@ -103,7 +103,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Scheduler started")
 
     async def startup() -> None:
-        """Warm daily caches before validating the initial image cache."""
+        """预热日级缓存，再校验并补建当天图片缓存。"""
         try:
             await warmup_daily_cache(services, config, logger)
             await ensure_today_data(app)
@@ -124,7 +124,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.startup_task = asyncio.create_task(startup())
 
     async def browser_warmup() -> None:
-        """Pre-initialize the browser in the background."""
+        """后台预初始化浏览器。"""
         try:
             await browser_manager.warmup()
         except asyncio.CancelledError:
@@ -198,7 +198,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 async def app_error_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Handle application errors with the standard API response."""
+    """以标准 API 错误响应处理应用异常。"""
     if not isinstance(exc, AppError):
         raise exc
     return JSONResponse(
@@ -218,13 +218,13 @@ app.add_exception_handler(AppError, app_error_handler)
 
 @app.api_route("/healthz", methods=["GET", "HEAD"])
 async def healthz() -> dict[str, str]:
-    """Return basic liveness status."""
+    """返回存活检查状态。"""
     return {"status": "ok"}
 
 
 @app.api_route("/readyz", methods=["GET", "HEAD"])
 async def readyz(request: Request) -> JSONResponse:
-    """Check whether the service can process requests."""
+    """检查服务是否可处理请求。"""
     config = getattr(request.app.state, "config", None)
     startup_state = getattr(request.app.state, "startup_state", "starting")
     manager = getattr(request.app.state, "browser_manager", None)
@@ -242,7 +242,7 @@ async def readyz(request: Request) -> JSONResponse:
             checks["today_data"] = (
                 cache_dir / "data" / f"{today_business().isoformat()}.json"
             ).is_file()
-        except Exception:  # nosec B110 - readyz checks remain false on failure
+        except Exception:  # nosec B110 - 检查失败时 readyz 各项保持 False
             pass
 
     can_serve = checks["config"] and checks["cache_dir"] and startup_state != "starting"

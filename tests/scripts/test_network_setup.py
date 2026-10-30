@@ -1,4 +1,4 @@
-"""Tests for standalone script network and browser lifecycle wiring."""
+"""测试独立脚本的网络配置与浏览器生命周期管理。"""
 
 import importlib
 import logging
@@ -12,7 +12,7 @@ from app.core.config import TextLimitsConfig, ThemesConfig
 
 
 class _FailingDataFetcher:
-    """DataFetcher double that fails after all services are constructed."""
+    """在所有服务构建完成后触发失败的 DataFetcher 替身。"""
 
     def __init__(self, *args, **kwargs):
         self.kwargs = kwargs
@@ -176,7 +176,7 @@ def _install_common_fakes(
 async def test_scripts_configure_browser_pass_proxy_and_cleanup(
     monkeypatch, tmp_path, module_name, raises_system_exit
 ):
-    """Standalone scripts should pass proxy settings without declaring trust_env and cleanup browser resources."""
+    """独立脚本应传递代理配置，不显式指定 trust_env，并清理浏览器资源。"""
     module = importlib.import_module(module_name)
     config, logger, browser_manager, records, order = _install_common_fakes(
         monkeypatch, module, tmp_path
@@ -246,7 +246,7 @@ async def test_scripts_skip_holiday_service_when_source_disabled(
     module_name: str,
     raises_system_exit: bool,
 ) -> None:
-    """Disabled holiday configuration should not construct or call the service."""
+    """禁用节假日配置时，不应构建或调用该服务。"""
     module = importlib.import_module(module_name)
     _, _, _, records, _ = _install_common_fakes(
         monkeypatch, module, tmp_path, holiday_enabled=False
@@ -277,7 +277,7 @@ async def test_scripts_skip_holiday_service_when_source_disabled(
 async def test_render_once_generates_with_empty_holidays_when_source_disabled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Disabled holidays should flow through generation as an empty list."""
+    """禁用节假日时，应以空列表参与生成。"""
     module = importlib.import_module("scripts.render_once")
     _install_common_fakes(monkeypatch, module, tmp_path, holiday_enabled=False)
     data_computer = _DataComputer()
@@ -296,7 +296,7 @@ async def test_render_once_generates_with_empty_holidays_when_source_disabled(
 async def test_publish_static_generates_with_empty_holidays_when_source_disabled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Static publishing should complete with an empty holiday list when disabled."""
+    """禁用节假日时，静态发布应使用空节假日列表完成。"""
     module = importlib.import_module("scripts.publish_static")
     _, _, _, records, _ = _install_common_fakes(
         monkeypatch, module, tmp_path, holiday_enabled=False
@@ -324,7 +324,7 @@ async def test_publish_static_generates_with_empty_holidays_when_source_disabled
 
 
 class _PassthroughDailyDataFile:
-    """Minimal DailyDataFile double for exercising the script artifact flow."""
+    """用于测试脚本产物流程的最简 DailyDataFile 替身。"""
 
     def __init__(self, payload: dict[str, Any]) -> None:
         self.payload = payload

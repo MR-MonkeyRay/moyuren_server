@@ -112,6 +112,8 @@ Docker：`docker compose up -d`，配置覆盖统一使用 `MOYUREN_` 前缀
 - 通过 `config.py` 读取配置，禁止硬编码
 - 使用注入的 logger，禁止 print
 - 日志使用 % 惰性格式化（ruff G004）
+- 注释与 docstring 统一中文；`Args:`/`Returns:`/`Raises:`/`Side Effects:` 小节标题保留英文，其下描述用中文。运行时字符串（logger、raise、HTTP 响应、断言文本）不随文档翻译改动；面向用户的文档字符串（OpenAPI `description`、argparse `help`）用中文
+- 字体构建会收集 HTML 注释及 `app/services/calendar.py` docstring 的字符；这些位置的纯翻译保留原文，避免无关字体子集变化
 - 修改完成后更新 README.md
 - 提交代码后根据内容更新系统版本号
 

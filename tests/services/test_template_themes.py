@@ -1,4 +1,4 @@
-"""Template theme rendering and palette accessibility tests."""
+"""模板主题渲染与配色可访问性测试。"""
 
 import re
 from pathlib import Path
@@ -49,7 +49,7 @@ CONTRAST_PAIRS = {
 
 
 def _relative_luminance(color: str) -> float:
-    """Return WCAG relative luminance for a six-digit hexadecimal color."""
+    """返回六位十六进制颜色的 WCAG 相对亮度。"""
     channels = [int(color[index : index + 2], 16) / 255 for index in (1, 3, 5)]
     linear = [
         value / 12.92
@@ -61,7 +61,7 @@ def _relative_luminance(color: str) -> float:
 
 
 def _contrast_ratio(foreground: str, background: str) -> float:
-    """Return the WCAG contrast ratio between two hexadecimal colors."""
+    """返回两个十六进制颜色之间的 WCAG 对比度。"""
     lighter, darker = sorted(
         (_relative_luminance(foreground), _relative_luminance(background)), reverse=True
     )
@@ -69,7 +69,7 @@ def _contrast_ratio(foreground: str, background: str) -> float:
 
 
 def _render(template_name: str, *, include_theme: bool, theme_name: str = "spring") -> str:
-    """Render a production template with its normal computed fallback context."""
+    """使用正常计算得到的兜底上下文渲染正式模板。"""
     env = Environment(loader=FileSystemLoader(TEMPLATES_DIR), autoescape=True)
     env.filters["format_datetime"] = format_datetime
     context = DataComputer().compute({})
@@ -82,7 +82,7 @@ def _render(template_name: str, *, include_theme: bool, theme_name: str = "sprin
 
 @pytest.mark.parametrize("template_name", ["moyuren.html", "moyuren_cute.html"])
 def test_template_body_uses_selected_theme(template_name: str) -> None:
-    """Put the computed theme name on each template body."""
+    """将计算得到的主题名传到各模板的 body 上。"""
     html = _render(template_name, include_theme=True, theme_name="mid_autumn")
 
     assert '<body class="theme-mid_autumn">' in html
@@ -90,7 +90,7 @@ def test_template_body_uses_selected_theme(template_name: str) -> None:
 
 @pytest.mark.parametrize("template_name", ["moyuren.html", "moyuren_cute.html"])
 def test_template_body_defaults_when_theme_is_missing(template_name: str) -> None:
-    """Keep legacy contexts renderable with the default palette."""
+    """缺少主题的旧上下文仍能使用默认配色渲染。"""
     html = _render(template_name, include_theme=False)
 
     assert '<body class="theme-default">' in html
@@ -98,7 +98,7 @@ def test_template_body_defaults_when_theme_is_missing(template_name: str) -> Non
 
 @pytest.mark.parametrize("template_name", ["moyuren.html", "moyuren_cute.html"])
 def test_unknown_theme_uses_default_tokens(template_name: str) -> None:
-    """Emit a valid unknown class without inventing a matching CSS palette."""
+    """输出合法的未知主题类名，不额外定义对应的 CSS 配色。"""
     html = _render(template_name, include_theme=True, theme_name="custom_brand")
     css = (TEMPLATES_DIR / template_name).read_text(encoding="utf-8")
 
@@ -108,7 +108,7 @@ def test_unknown_theme_uses_default_tokens(template_name: str) -> None:
 
 @pytest.mark.parametrize("template_name", ["moyuren.html", "moyuren_cute.html"])
 def test_theme_palette_text_contrast_is_wcag_aa(template_name: str) -> None:
-    """Require normal and semantic text pairs to meet WCAG AA in every palette."""
+    """要求每套配色中的普通及语义文本组合均达到 WCAG AA。"""
     css = (TEMPLATES_DIR / template_name).read_text(encoding="utf-8")
     root_match = re.search(r":root\s*\{([^}]+)\}", css, re.DOTALL)
     assert root_match is not None
@@ -129,7 +129,7 @@ def test_theme_palette_text_contrast_is_wcag_aa(template_name: str) -> None:
 
 
 def test_default_palette_text_contrast_is_wcag_aa() -> None:
-    """Keep each template's default palette at WCAG AA."""
+    """确保各模板的默认配色达到 WCAG AA。"""
     root_pattern = re.compile(r":root\s*\{([^}]+)\}", re.DOTALL)
 
     for template_name, pairs in CONTRAST_PAIRS.items():
@@ -146,7 +146,7 @@ def test_default_palette_text_contrast_is_wcag_aa() -> None:
 
 
 def test_main_secondary_labels_and_fallback_banner_are_wcag_aa() -> None:
-    """Check text on actual holiday gradients and the orange fallback banner."""
+    """检查实际节假日渐变背景和橙色兜底横幅上的文本对比度。"""
     css = (TEMPLATES_DIR / "moyuren.html").read_text(encoding="utf-8")
     root_match = re.search(r":root\s*\{([^}]+)\}", css, re.DOTALL)
     assert root_match is not None
@@ -170,7 +170,7 @@ def test_main_secondary_labels_and_fallback_banner_are_wcag_aa() -> None:
 
 @pytest.mark.parametrize("template_name", ["moyuren.html", "moyuren_cute.html"])
 def test_theme_palettes_keep_chinese_market_colors(template_name: str) -> None:
-    """Keep rising prices red and falling prices green in every theme."""
+    """确保所有主题保持涨红跌绿。"""
     css = (TEMPLATES_DIR / template_name).read_text(encoding="utf-8")
     blocks = {
         name: dict(TOKEN_PATTERN.findall(content))

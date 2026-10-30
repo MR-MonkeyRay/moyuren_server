@@ -1,4 +1,4 @@
-"""Real-browser regression tests for stalled web font requests."""
+"""使用真实浏览器回归测试 Web 字体请求阻塞的情况。"""
 
 import asyncio
 import logging
@@ -21,7 +21,7 @@ pytestmark = pytest.mark.e2e
 
 
 async def _chromium_is_installed() -> bool:
-    """Return whether Playwright's configured Chromium executable exists."""
+    """检查 Playwright 配置的 Chromium 可执行文件是否存在。"""
     playwright = await async_playwright().start()
     try:
         return Path(playwright.chromium.executable_path).is_file()
@@ -33,7 +33,7 @@ async def _chromium_is_installed() -> bool:
 async def test_render_aborts_stalled_font_after_readiness_timeout(
     tmp_path: Path,
 ) -> None:
-    """Render a JPEG after a requested font stalls indefinitely."""
+    """请求的字体一直阻塞时，仍能渲染 JPEG。"""
     if not await _chromium_is_installed():
         pytest.skip("Playwright Chromium is not installed")
 
@@ -46,7 +46,7 @@ async def test_render_aborts_stalled_font_after_readiness_timeout(
     async def handle_request(
         reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
-        """Serve CSS immediately while holding the font response open."""
+        """立即返回 CSS，同时保持字体响应挂起。"""
         task = cast(asyncio.Task[None], asyncio.current_task())
         handler_tasks.add(task)
         connections.add(writer)
@@ -120,7 +120,7 @@ async def test_render_aborts_stalled_font_after_readiness_timeout(
             jpeg_quality=80,
             use_china_cdn=False,
             remote_resource_cache_enabled=False,
-            # Only the font-readiness timeout is under test; allow slow page loads.
+            # 只测试字体就绪超时，允许页面加载较慢。
             page_load_timeout_sec=30.0,
             font_ready_timeout_sec=1.0,
             allowed_resource_hosts=["127.0.0.1"],
@@ -132,16 +132,16 @@ async def test_render_aborts_stalled_font_after_readiness_timeout(
             logger=logging.getLogger(__name__),
         )
         await asyncio.wait_for(browser_manager.warmup(), timeout=60.0)
-        # This timeout only bounds a regression hang; slow browser operations
-        # must not determine whether stalled-font handling works.
+        # 此超时仅用于防止回归导致挂起；浏览器操作较慢
+        # 不应影响对字体阻塞处理是否有效的判断。
         filename = await asyncio.wait_for(
             renderer.render({}, "font-timeout"), timeout=60.0
         )
         image = (renderer.images_dir / filename).read_bytes()
 
         assert font_requested.is_set()
-        # Rendering completed while every requested font response was still
-        # withheld. Only cleanup below can release these server handlers.
+        # 渲染完成时，所有请求的字体响应仍处于挂起状态。
+        # 只有下方的清理操作才能释放这些服务端处理任务。
         assert not release_font.is_set()
         assert font_handler_tasks
         assert all(not task.done() for task in font_handler_tasks)

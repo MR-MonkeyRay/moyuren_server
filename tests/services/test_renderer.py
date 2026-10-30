@@ -1,4 +1,4 @@
-"""Tests for app/services/renderer.py - image rendering service."""
+"""app/services/renderer.py 图片渲染服务测试。"""
 
 import asyncio
 import hashlib
@@ -32,105 +32,105 @@ def _resource_cache_key(url: str) -> str:
 
 
 class TestFormatDatetime:
-    """Tests for format_datetime function."""
+    """format_datetime 函数测试。"""
 
     def test_new_format_string(self) -> None:
-        """Test new format string (YYYY/MM/DD HH:MM:SS)."""
+        """测试新格式日期字符串（YYYY/MM/DD HH:MM:SS）。"""
         result = format_datetime("2026/02/04 10:30:00")
         assert result == "2026-02-04 10:30"
 
     def test_rfc3339_string(self) -> None:
-        """Test RFC3339 string formatting."""
+        """测试 RFC3339 字符串格式化。"""
         result = format_datetime("2026-02-04T10:30:00+08:00")
         assert result == "2026-02-04 10:30"
 
     def test_rfc3339_with_z_suffix(self) -> None:
-        """Test RFC3339 string with Z suffix."""
+        """测试带 Z 后缀的 RFC3339 字符串。"""
         result = format_datetime("2026-02-04T02:30:00Z")
         assert result == "2026-02-04 02:30"
 
     def test_datetime_object(self) -> None:
-        """Test datetime object formatting."""
+        """测试 datetime 对象格式化。"""
         dt = datetime(2026, 2, 4, 10, 30, 0)
         result = format_datetime(dt)
         assert result == "2026-02-04 10:30"
 
     def test_unix_timestamp_int(self) -> None:
-        """Test Unix timestamp (int) formatting."""
+        """测试整数 Unix 时间戳格式化。"""
         # 2026-02-04 10:30:00 UTC+8 = 1738635000
         timestamp = 1738635000
         result = format_datetime(timestamp)
-        # Result depends on local timezone, just check format
-        assert len(result) == 16  # "YYYY-MM-DD HH:MM"
+        # 结果取决于本地时区，仅检查格式
+        assert len(result) == 16  # 格式为 "YYYY-MM-DD HH:MM"
 
     def test_unix_timestamp_float(self) -> None:
-        """Test Unix timestamp (float) formatting."""
+        """测试浮点数 Unix 时间戳格式化。"""
         timestamp = 1738635000.5
         result = format_datetime(timestamp)
         assert len(result) == 16
 
     def test_none_returns_placeholder(self) -> None:
-        """Test None returns placeholder."""
+        """测试 None 返回占位符。"""
         result = format_datetime(None)
         assert result == "--"
 
     def test_empty_string_returns_placeholder(self) -> None:
-        """Test empty string returns placeholder."""
+        """测试空字符串返回占位符。"""
         result = format_datetime("")
         assert result == "--"
 
     def test_whitespace_string_returns_placeholder(self) -> None:
-        """Test whitespace string returns placeholder."""
+        """测试纯空白字符串返回占位符。"""
         result = format_datetime("   ")
         assert result == "--"
 
     def test_invalid_string_returns_placeholder(self) -> None:
-        """Test invalid string returns placeholder."""
+        """测试无效字符串返回占位符。"""
         result = format_datetime("not a date")
         assert result == "--"
 
     def test_bool_returns_placeholder(self) -> None:
-        """Test bool (subclass of int) returns placeholder."""
+        """测试 bool（int 的子类）返回占位符。"""
         result = format_datetime(True)
         assert result == "--"
 
     def test_invalid_timestamp_returns_placeholder(self) -> None:
-        """Test invalid timestamp returns placeholder."""
-        result = format_datetime(99999999999999)  # Too large
+        """测试无效时间戳返回占位符。"""
+        result = format_datetime(99999999999999)  # 数值过大
         assert result == "--"
 
 
 class TestNl2br:
-    """Tests for nl2br function."""
+    """nl2br 函数测试。"""
 
     def test_converts_newlines(self) -> None:
-        """Test converts newlines to br tags."""
+        """测试将换行符转换为 br 标签。"""
         result = nl2br("Line1\nLine2")
         assert "<br>" in str(result)
         assert isinstance(result, Markup)
 
     def test_escapes_html(self) -> None:
-        """Test escapes HTML special characters."""
+        """测试转义 HTML 特殊字符。"""
         result = nl2br("<script>alert('xss')</script>")
         assert "<script>" not in str(result)
         assert "&lt;script&gt;" in str(result)
 
     def test_none_returns_empty(self) -> None:
-        """Test None returns empty Markup."""
+        """测试 None 返回空 Markup。"""
         result = nl2br(None)
         assert str(result) == ""
 
     def test_empty_string_returns_empty(self) -> None:
-        """Test empty string returns empty Markup."""
+        """测试空字符串返回空 Markup。"""
         result = nl2br("")
         assert str(result) == ""
 
 
 class TestImageRenderer:
-    """Tests for ImageRenderer class."""
+    """ImageRenderer 类测试。"""
 
     def test_filename_defaults_to_business_time(self, renderer: ImageRenderer) -> None:
-        """Test that filenames use the business date when UTC is still yesterday."""
+        """测试 UTC 仍为前一天时，文件名使用业务日期。"""
         with (
             freeze_time("2026-02-04T18:00:00+00:00"),
             patch("app.services.calendar._business_timezone", ZoneInfo("Asia/Shanghai")),
@@ -139,7 +139,7 @@ class TestImageRenderer:
 
     @pytest.mark.asyncio
     async def test_render_filename_uses_snapshot(self, renderer: ImageRenderer) -> None:
-        """Test that rendering preserves the provided timestamp in the filename."""
+        """测试渲染文件名保留传入的时间戳。"""
         snapshot = datetime(2026, 2, 5, 2, tzinfo=ZoneInfo("Asia/Shanghai"))
         with (
             freeze_time("2026-02-06T00:00:00+00:00"),
@@ -160,7 +160,7 @@ class TestImageRenderer:
         tmp_path: Path,
         logger,
     ) -> None:
-        """Preview rendering returns JPEG bytes without creating output directories."""
+        """预览渲染返回 JPEG 字节，不创建输出目录。"""
         images_dir = tmp_path / "missing" / "images"
         renderer = ImageRenderer(
             templates_config=templates_config,
@@ -193,8 +193,8 @@ class TestImageRenderer:
 
     @pytest.fixture
     def templates_config(self, tmp_path: Path) -> TemplatesConfig:
-        """Create a templates configuration."""
-        # Create a simple template file
+        """创建模板配置。"""
+        # 创建简单的模板文件
         template_dir = tmp_path / "templates"
         template_dir.mkdir()
         template_file = template_dir / "test.html"
@@ -213,7 +213,7 @@ class TestImageRenderer:
 
     @pytest.fixture
     def render_config(self) -> TemplateRenderConfig:
-        """Create a render configuration."""
+        """创建渲染配置。"""
         return TemplateRenderConfig(
             device_scale_factor=2, jpeg_quality=90, use_china_cdn=False
         )
@@ -226,7 +226,7 @@ class TestImageRenderer:
         tmp_path: Path,
         logger,
     ) -> ImageRenderer:
-        """Create an ImageRenderer instance."""
+        """创建 ImageRenderer 实例。"""
         images_dir = tmp_path / "static"
         images_dir.mkdir()
         return ImageRenderer(
@@ -244,7 +244,7 @@ class TestImageRenderer:
         tmp_path: Path,
         logger,
     ) -> None:
-        """Test renderer creates static directory if not exists."""
+        """测试渲染器在静态目录不存在时创建目录。"""
         images_dir = tmp_path / "new_static"
         renderer = ImageRenderer(
             templates_config=templates_config,
@@ -262,19 +262,19 @@ class TestImageRenderer:
     def test_get_jinja_env(
         self, renderer: ImageRenderer, templates_config: TemplatesConfig
     ) -> None:
-        """Test _get_jinja_env returns Environment."""
+        """测试 _get_jinja_env 返回 Environment。"""
         template_item = templates_config.get_template("test")
         env = renderer._get_jinja_env(template_item.path)
 
         assert env is not None
-        # Check custom filters are registered
+        # 检查自定义过滤器已注册
         assert "format_datetime" in env.filters
         assert "nl2br" in env.filters
 
     def test_get_jinja_env_caches_environment(
         self, renderer: ImageRenderer, templates_config: TemplatesConfig
     ) -> None:
-        """Test _get_jinja_env caches Environment."""
+        """测试 _get_jinja_env 缓存 Environment。"""
         template_item = templates_config.get_template("test")
 
         env1 = renderer._get_jinja_env(template_item.path)
@@ -285,7 +285,7 @@ class TestImageRenderer:
     def test_jinja_environment_auto_reloads_template_changes(
         self, renderer: ImageRenderer, templates_config: TemplatesConfig
     ) -> None:
-        """Cached Jinja environments reload template contents after an edit."""
+        """缓存的 Jinja 环境在模板修改后重新加载其内容。"""
         template_item = templates_config.get_template("test")
         template_path = Path(template_item.path)
 
@@ -306,7 +306,7 @@ class TestImageRenderer:
     async def test_fit_viewport_shrinks_to_content(
         self, renderer: ImageRenderer
     ) -> None:
-        """Content shorter than the declared viewport removes the trailing blank band."""
+        """内容短于声明的视口时，移除底部空白区域。"""
         page = AsyncMock()
         page.evaluate.side_effect = [420, 420]
         viewport = ViewportConfig(width=800, height=600)
@@ -321,7 +321,7 @@ class TestImageRenderer:
     async def test_fit_viewport_grows_and_uses_remeasured_height(
         self, renderer: ImageRenderer
     ) -> None:
-        """Content growth and layout reflow both contribute to the final height."""
+        """内容增长和布局重排均影响最终高度。"""
         page = AsyncMock()
         page.evaluate.side_effect = [900, 940]
         viewport = ViewportConfig(width=800, height=600)
@@ -338,7 +338,7 @@ class TestImageRenderer:
     async def test_fit_viewport_clips_content_at_maximum(
         self, renderer: ImageRenderer
     ) -> None:
-        """Oversized content uses the maximum viewport and disables full-page capture."""
+        """内容过高时使用最大视口高度，并禁用整页截图。"""
         page = AsyncMock()
         page.evaluate.side_effect = [5000, 5000]
         viewport = ViewportConfig(width=800, height=600)
@@ -354,7 +354,7 @@ class TestImageRenderer:
     async def test_fit_viewport_keeps_declared_height_for_zero_measurement(
         self, renderer: ImageRenderer
     ) -> None:
-        """An empty or failed measurement keeps the configured viewport height."""
+        """测量为空或失败时，保留配置的视口高度。"""
         page = AsyncMock()
         page.evaluate.return_value = 0
         viewport = ViewportConfig(width=800, height=600)
@@ -366,10 +366,10 @@ class TestImageRenderer:
 
     @pytest.mark.asyncio
     async def test_render_success(self, renderer: ImageRenderer) -> None:
-        """Test successful render."""
+        """测试渲染成功。"""
         template_data = {"title": "Test Title"}
 
-        # Mock browser_manager
+        # mock 浏览器管理器
         mock_page = AsyncMock()
         mock_page.set_content = AsyncMock()
         mock_page.screenshot = AsyncMock(return_value=b"fake image bytes")
@@ -390,7 +390,7 @@ class TestImageRenderer:
                 filename = await renderer.render(template_data)
 
         assert filename.endswith(".jpg")
-        # Template name is "test", so filename starts with "test_"
+        # 模板名为 "test"，因此文件名以 "test_" 开头
         assert "test_" in filename
         mock_page.route.assert_awaited_once()
         mock_page.set_content.assert_awaited_once_with(
@@ -401,7 +401,7 @@ class TestImageRenderer:
 
     @pytest.mark.asyncio
     async def test_render_with_template_name(self, renderer: ImageRenderer) -> None:
-        """Test render with specific template name."""
+        """测试使用指定模板名称渲染。"""
         template_data = {"title": "Test"}
 
         mock_page = AsyncMock()
@@ -429,7 +429,7 @@ class TestImageRenderer:
     async def test_wait_for_render_ready_timeout_continues(
         self, renderer: ImageRenderer
     ) -> None:
-        """Test render readiness timeout is degraded instead of failing the render."""
+        """测试渲染就绪等待超时后降级，而非导致渲染失败。"""
         page = AsyncMock()
         page.evaluate = AsyncMock(side_effect=TimeoutError("font wait"))
 
@@ -445,7 +445,7 @@ class TestImageRenderer:
     async def test_wait_for_render_ready_reports_status(
         self, renderer: ImageRenderer, status: str, ready: bool
     ) -> None:
-        """Test readiness reports when pending fonts need to be aborted."""
+        """测试就绪状态能指示何时需要中止尚未完成的字体请求。"""
         page = AsyncMock()
         page.evaluate.return_value = status
 
@@ -463,7 +463,7 @@ class TestImageRenderer:
     async def test_render_aborts_pending_and_late_fonts_before_screenshot(
         self, renderer: ImageRenderer, cache_enabled: bool, font_url: str
     ) -> None:
-        """Test readiness expiry cancels font fetches before capturing fallbacks."""
+        """测试就绪等待超时后，先取消字体获取，再使用回退字体截图。"""
         renderer.render_config.remote_resource_cache_enabled = cache_enabled
         renderer.render_config.page_load_timeout_sec = 3.25
         page = AsyncMock()
@@ -524,7 +524,7 @@ class TestImageRenderer:
     async def test_font_cleanup_failure_preserves_render_error(
         self, renderer: ImageRenderer, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Test abort failures during cleanup preserve the original render failure."""
+        """测试清理时中止请求失败不会覆盖原始渲染错误。"""
         renderer.render_config.remote_resource_cache_enabled = False
         page = AsyncMock()
         page.on = MagicMock()
@@ -565,7 +565,7 @@ class TestImageRenderer:
     def test_log_pending_render_resources_includes_resource_url(
         self, renderer: ImageRenderer, caplog
     ) -> None:
-        """Test pending render resource logs include enough URL detail to diagnose timeouts."""
+        """测试未完成渲染资源的日志包含足够的 URL 细节以诊断超时。"""
         page = MagicMock()
         callbacks = {}
         page.on.side_effect = lambda event, callback: callbacks.__setitem__(
@@ -590,7 +590,7 @@ class TestImageRenderer:
     def test_track_page_requests_logs_failed_resource(
         self, renderer: ImageRenderer, caplog
     ) -> None:
-        """Test failed Playwright resource requests are logged with the resource URL."""
+        """测试 Playwright 资源请求失败时记录资源 URL。"""
         page = MagicMock()
         callbacks = {}
         page.on.side_effect = lambda event, callback: callbacks.__setitem__(
@@ -613,7 +613,7 @@ class TestImageRenderer:
         )
 
     def test_should_cache_google_font_resources(self, renderer: ImageRenderer) -> None:
-        """Test remote font resources are selected for caching."""
+        """测试远程字体资源被选中缓存。"""
         assert renderer._should_cache_resource(
             "https://fonts.googleapis.cn/css2?family=Test", "stylesheet"
         )
@@ -631,7 +631,7 @@ class TestImageRenderer:
     async def test_get_remote_resource_uses_fresh_cache(
         self, renderer: ImageRenderer
     ) -> None:
-        """Test fresh cached render resources are served without refetching."""
+        """测试未过期的渲染资源缓存无需重新获取即可使用。"""
         url = "https://fonts.googleapis.cn/css2?family=Test"
         cache_key = _resource_cache_key(url)
         body_path = renderer.resource_cache_dir / f"{cache_key}.body"
@@ -661,7 +661,7 @@ class TestImageRenderer:
     async def test_browser_headers_do_not_reuse_legacy_css_cache(
         self, renderer: ImageRenderer
     ) -> None:
-        """A negotiated browser response must not reuse old non-browser CSS."""
+        """浏览器内容协商响应不得复用旧的非浏览器 CSS 缓存。"""
         url = "https://fonts.googleapis.cn/css2?family=Noto+Sans+SC"
         legacy_cache_key = _resource_cache_key(url)
         (renderer.resource_cache_dir / f"{legacy_cache_key}.body").write_bytes(
@@ -701,7 +701,7 @@ class TestImageRenderer:
     async def test_get_remote_resource_uses_stale_cache_on_fetch_failure(
         self, renderer: ImageRenderer
     ) -> None:
-        """Test stale render resources are used when refresh fails."""
+        """测试刷新失败时使用过期的渲染资源缓存。"""
         url = "https://fonts.gstatic.cn/s/font.woff2"
         cache_key = _resource_cache_key(url)
         body_path = renderer.resource_cache_dir / f"{cache_key}.body"
@@ -734,7 +734,7 @@ class TestImageRenderer:
     async def test_get_remote_resource_uses_stale_cache_when_refresh_is_oversized(
         self, renderer: ImageRenderer
     ) -> None:
-        """Test an oversized refresh cannot displace an existing stale font."""
+        """测试刷新响应过大时不会替换已有的过期字体缓存。"""
         url = "https://fonts.gstatic.cn/s/font.woff2"
         cache_key = _resource_cache_key(url)
         body_path = renderer.resource_cache_dir / f"{cache_key}.body"
@@ -767,7 +767,7 @@ class TestImageRenderer:
     async def test_install_resource_cache_routes_disabled(
         self, renderer: ImageRenderer
     ) -> None:
-        """Test fonts remain abortable while other requests bypass a disabled cache."""
+        """测试禁用缓存后其他请求绕过缓存，字体请求仍可中止。"""
         renderer.render_config.remote_resource_cache_enabled = False
         page = AsyncMock()
 
@@ -814,7 +814,7 @@ class TestImageRenderer:
     async def test_resource_route_allows_configured_host_and_subdomains(
         self, renderer: ImageRenderer
     ) -> None:
-        """Configured hosts and their subdomains remain available to Chromium."""
+        """Chromium 仍可访问配置的主机及其子域名。"""
         renderer.render_config.remote_resource_cache_enabled = False
         renderer.render_config.allowed_resource_hosts = ["assets.example"]
         page = AsyncMock()
@@ -854,7 +854,7 @@ class TestImageRenderer:
         url: str,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Disallowed hosts and schemes are aborted without fetching or leaking queries."""
+        """中止不允许的主机和协议请求，不发起获取，也不泄露查询参数。"""
         page = AsyncMock()
         await renderer._install_resource_cache_routes(page)
         handle_route = page.route.call_args.args[1]
@@ -879,7 +879,7 @@ class TestImageRenderer:
     async def test_resource_route_preserves_inline_schemes(
         self, renderer: ImageRenderer, url: str
     ) -> None:
-        """Inline data and browser-managed blob URLs remain usable if routed."""
+        """内联 data 和浏览器管理的 blob URL 在被路由拦截时仍可用。"""
         page = AsyncMock()
         await renderer._install_resource_cache_routes(page)
         route = AsyncMock()
@@ -895,7 +895,7 @@ class TestImageRenderer:
     async def test_resource_route_allows_bounded_cross_host_redirects(
         self, renderer: ImageRenderer
     ) -> None:
-        """Allowed cross-host and HTTP-to-HTTPS redirects are fetched explicitly."""
+        """显式获取允许的跨主机及 HTTP 到 HTTPS 重定向目标。"""
         renderer.render_config.remote_resource_cache_enabled = False
         page = AsyncMock()
         await renderer._install_resource_cache_routes(page)
@@ -938,7 +938,7 @@ class TestImageRenderer:
     async def test_resource_route_allows_same_scheme_cross_host_redirect(
         self, renderer: ImageRenderer
     ) -> None:
-        """Allowed cross-host redirects remain on Playwright when schemes match."""
+        """协议相同时，允许的跨主机重定向仍由 Playwright 处理。"""
         renderer.render_config.remote_resource_cache_enabled = False
         page = AsyncMock()
         await renderer._install_resource_cache_routes(page)
@@ -966,7 +966,7 @@ class TestImageRenderer:
     async def test_resource_route_carries_remaining_budget_across_scheme_change(
         self, renderer: ImageRenderer
     ) -> None:
-        """Playwright and HTTPX redirects share one global hop budget."""
+        """Playwright 和 HTTPX 重定向共用一个全局跳转次数上限。"""
         renderer.render_config.remote_resource_cache_enabled = False
         page = AsyncMock()
         await renderer._install_resource_cache_routes(page)
@@ -1003,7 +1003,7 @@ class TestImageRenderer:
     async def test_resource_route_does_not_follow_not_modified_location(
         self, renderer: ImageRenderer
     ) -> None:
-        """A 304 Location header is a final response, not a redirect hop."""
+        """带 Location 头的 304 响应是最终响应，不算重定向跳转。"""
         renderer.render_config.remote_resource_cache_enabled = False
         page = AsyncMock()
         await renderer._install_resource_cache_routes(page)
@@ -1027,7 +1027,7 @@ class TestImageRenderer:
     async def test_resource_route_blocks_redirect_before_target_fetch(
         self, renderer: ImageRenderer, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """A redirect to a disallowed host is aborted before requesting that target."""
+        """重定向至不允许的主机时，在请求目标前中止。"""
         renderer.render_config.remote_resource_cache_enabled = False
         page = AsyncMock()
         await renderer._install_resource_cache_routes(page)
@@ -1061,7 +1061,7 @@ class TestImageRenderer:
     async def test_resource_route_caps_redirect_chain(
         self, renderer: ImageRenderer, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Redirect loops stop at the configured hop limit."""
+        """重定向循环在达到配置的跳转次数上限时停止。"""
         renderer.render_config.remote_resource_cache_enabled = False
         renderer.render_config.remote_resource_max_redirects = 2
         page = AsyncMock()
@@ -1087,7 +1087,7 @@ class TestImageRenderer:
     async def test_cached_resource_route_aborts_blocked_redirect(
         self, renderer: ImageRenderer, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """A cache refresh redirect to a blocked host aborts instead of falling back."""
+        """缓存刷新重定向到被拦截的主机时中止，而非回退。"""
         page = AsyncMock()
         await renderer._install_resource_cache_routes(page)
         route = AsyncMock()
@@ -1122,7 +1122,7 @@ class TestImageRenderer:
     async def test_cached_resource_route_aborts_redirect_over_limit(
         self, renderer: ImageRenderer, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """A cache refresh redirect loop aborts instead of using stylesheet fallback."""
+        """缓存刷新遇到重定向循环时中止，而非使用样式表回退。"""
         renderer.render_config.remote_resource_max_redirects = 2
         page = AsyncMock()
         await renderer._install_resource_cache_routes(page)
@@ -1161,7 +1161,7 @@ class TestImageRenderer:
     async def test_uncached_font_fetch_failure_aborts_route(
         self, renderer: ImageRenderer
     ) -> None:
-        """Test failed font fetches settle the browser request with fallback fonts."""
+        """测试字体获取失败时结束浏览器请求，改用回退字体。"""
         renderer.render_config.remote_resource_cache_enabled = False
         page = AsyncMock()
         fonts = await renderer._install_resource_cache_routes(page)
@@ -1181,28 +1181,28 @@ class TestImageRenderer:
     def test_rewrite_css_urls_matches_standard_syntax(
         self, renderer: ImageRenderer
     ) -> None:
-        """Test CSS URL rewrite regex correctly handles standard CSS syntax."""
+        """测试 CSS URL 重写正则正确处理标准 CSS 语法。"""
         base_url = "https://fonts.googleapis.cn/css2?family=Test"
 
-        # url(path) - unquoted relative path should be rewritten
+        # url(path)：应重写无引号的相对路径
         result = renderer._rewrite_css_urls(
             b"body { src: url(font.woff2) }", base_url, "text/css; charset=utf-8"
         )
         assert "url(https://fonts.googleapis.cn/font.woff2)" in result.decode()
 
-        # url('path') - single-quoted relative path should be rewritten
+        # url('path')：应重写单引号包裹的相对路径
         result = renderer._rewrite_css_urls(
             b"body { src: url('font.woff2') }", base_url, "text/css; charset=utf-8"
         )
         assert "url('https://fonts.googleapis.cn/font.woff2')" in result.decode()
 
-        # url("path") - double-quoted relative path should be rewritten
+        # url("path")：应重写双引号包裹的相对路径
         result = renderer._rewrite_css_urls(
             b'body { src: url("font.woff2") }', base_url, "text/css; charset=utf-8"
         )
         assert "font.woff2" not in result.decode() or "https://" in result.decode()
 
-        # url(data:...) - data URI should NOT be rewritten
+        # url(data:...)：不应重写 data URI
         result = renderer._rewrite_css_urls(
             b"body { src: url(data:image/svg+xml;base64,abc) }",
             base_url,
@@ -1210,7 +1210,7 @@ class TestImageRenderer:
         )
         assert "data:image/svg+xml" in result.decode()
 
-        # url(https://...) - absolute URL should NOT be rewritten
+        # url(https://...)：不应重写绝对 URL
         result = renderer._rewrite_css_urls(
             b"body { src: url(https://example.com/font.woff2) }",
             base_url,
@@ -1222,10 +1222,10 @@ class TestImageRenderer:
     async def test_fetch_remote_resource_rejects_oversized_response(
         self, renderer: ImageRenderer
     ) -> None:
-        """Test oversized remote resource responses are rejected via content-length."""
+        """测试根据 content-length 拒绝过大的远程资源响应。"""
         url = "https://fonts.googleapis.cn/css2?family=Test"
 
-        # Test content-length exceeding limit
+        # 测试 content-length 超出限制的情况
         mock_response = MagicMock()
         mock_response.headers = {
             "content-type": "text/css",
@@ -1238,7 +1238,7 @@ class TestImageRenderer:
             mock_client = AsyncMock()
             mock_client.stream = MagicMock()
 
-            # Mock stream context manager
+            # mock 流式上下文管理器
             stream_cm = MagicMock()
             stream_cm.__aenter__ = AsyncMock(return_value=mock_response)
             stream_cm.__aexit__ = AsyncMock(return_value=None)
@@ -1256,7 +1256,7 @@ class TestImageRenderer:
     async def test_fetch_remote_resource_reads_async_stream(
         self, renderer: ImageRenderer
     ) -> None:
-        """Test remote resources are read from httpx async byte streams."""
+        """测试从 httpx 异步字节流读取远程资源。"""
         url = "https://fonts.googleapis.cn/css2?family=Test"
 
         async def chunks() -> AsyncIterator[bytes]:
@@ -1300,7 +1300,7 @@ class TestImageRenderer:
     async def test_fetch_remote_resource_allows_cross_host_redirect(
         self, renderer: ImageRenderer
     ) -> None:
-        """HTTPX cache refresh validates and follows allowed redirect targets."""
+        """HTTPX 缓存刷新会校验并跟随允许的重定向目标。"""
         redirect = MagicMock()
         redirect.headers = {"location": "https://fonts.gstatic.cn/font.css"}
         redirect.is_redirect = True
@@ -1341,7 +1341,7 @@ class TestImageRenderer:
     async def test_fetch_remote_resource_blocks_redirect_target(
         self, renderer: ImageRenderer, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """HTTPX cache refresh never requests a disallowed redirect target."""
+        """HTTPX 缓存刷新绝不请求不允许的重定向目标。"""
         redirect = MagicMock()
         redirect.headers = {"location": "https://evil.example/font.css?key=hidden"}
         redirect.is_redirect = True
@@ -1372,7 +1372,7 @@ class TestImageRenderer:
     async def test_fetch_remote_resource_rejects_disallowed_initial_url(
         self, renderer: ImageRenderer, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """The HTTPX helper rejects disallowed initial URLs before opening a client."""
+        """HTTPX 辅助方法在创建客户端前拒绝不允许的初始 URL。"""
         with patch("app.services.renderer.create_async_client") as client_cls:
             with caplog.at_level(logging.WARNING):
                 with pytest.raises(RenderError, match="not allowed"):
@@ -1389,7 +1389,7 @@ class TestImageRenderer:
     async def test_fetch_remote_resource_caps_redirect_chain(
         self, renderer: ImageRenderer, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """HTTPX cache refresh stops redirect loops at the configured limit."""
+        """HTTPX 缓存刷新在达到配置上限时停止重定向循环。"""
         renderer.render_config.remote_resource_max_redirects = 2
         redirects = []
         for location in ("/b.css", "/c.css", "/d.css"):
@@ -1420,7 +1420,7 @@ class TestImageRenderer:
     async def test_resource_route_forwards_browser_content_negotiation_headers(
         self, renderer: ImageRenderer
     ) -> None:
-        """Google Fonts must see Chromium headers so it returns modern font formats."""
+        """Google Fonts 必须收到 Chromium 请求头才能返回现代字体格式。"""
         page = AsyncMock()
         await renderer._install_resource_cache_routes(page)
 
@@ -1456,7 +1456,7 @@ class TestImageRenderer:
     async def test_fetch_remote_resource_uses_browser_headers(
         self, renderer: ImageRenderer
     ) -> None:
-        """Test the remote fetch preserves the selected browser headers."""
+        """测试远程获取保留选定的浏览器请求头。"""
         url = "https://fonts.googleapis.cn/css2?family=Noto+Sans+SC"
         request_headers = {
             "user-agent": "Mozilla/5.0 HeadlessChrome/140.0.0.0",
@@ -1492,7 +1492,7 @@ class TestImageRenderer:
     async def test_install_resource_cache_routes_adds_cors_for_cached_fonts(
         self, renderer: ImageRenderer
     ) -> None:
-        """Test cached font responses include CORS headers required by Chromium."""
+        """测试缓存字体响应包含 Chromium 所需的 CORS 头。"""
         page = AsyncMock()
         await renderer._install_resource_cache_routes(page)
 
@@ -1517,7 +1517,7 @@ class TestImageRenderer:
         assert headers["Access-Control-Allow-Origin"] == "*"
 
     def test_write_cached_resource_atomic(self, renderer: ImageRenderer) -> None:
-        """Test cached resource writes use atomic approach and JSON metadata."""
+        """测试缓存资源以原子方式写入，并使用 JSON 元数据。"""
         url = "https://fonts.googleapis.cn/css2?family=Test"
         body = b"body { font-family: Test; }"
         fetched_at = time.time()
@@ -1544,10 +1544,10 @@ class TestImageRenderer:
     def test_read_cached_resource_meta_handles_old_format(
         self, renderer: ImageRenderer
     ) -> None:
-        """Test old newline-separated meta format is handled gracefully."""
+        """测试妥善处理以换行分隔的旧版元数据格式。"""
         cache_key = "old_format_test"
         meta_path = renderer.resource_cache_dir / f"{cache_key}.meta"
-        # Write old-format (newline-separated) meta file
+        # 写入旧格式（以换行分隔）的元数据文件
         meta_path.write_text(
             "https://example.com\ntext/css\n1234567890.0\n", encoding="utf-8"
         )
@@ -1559,28 +1559,28 @@ class TestImageRenderer:
     async def test_render_degraded_flag_set_on_empty_stylesheet(
         self, renderer: ImageRenderer
     ) -> None:
-        """Test _render_degraded is set when empty stylesheet fallback is used."""
+        """测试使用空样式表回退时设置 _render_degraded。"""
         renderer._render_degraded = False
 
         with patch.object(renderer, "_get_remote_resource", return_value=None):
             page = AsyncMock()
             await renderer._install_resource_cache_routes(page)
 
-            # Simulate a stylesheet request hitting the fallback
+            # 模拟样式表请求触发回退
             route = AsyncMock()
             request = MagicMock()
             request.url = "https://fonts.googleapis.cn/css2?family=Test"
             request.resource_type = "stylesheet"
             route.request = request
 
-            # Find the handle_route callback from page.route call
+            # 从 page.route 调用中获取 handle_route 回调
             handle_route = page.route.call_args[0][1]
             await handle_route(route)
 
         assert renderer._render_degraded is True
 
     def test_sanitize_url_for_log(self, renderer: ImageRenderer) -> None:
-        """Test URL sanitization strips query parameters."""
+        """测试日志 URL 脱敏时移除查询参数。"""
         url = "https://fonts.googleapis.cn/css2?family=Test&display=swap"
         sanitized = renderer._sanitize_url_for_log(url)
         assert "family=Test" not in sanitized

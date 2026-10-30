@@ -1,4 +1,4 @@
-"""Tests for app/services/daily_english.py - daily English word service."""
+"""app/services/daily_english.py 每日英语单词服务的测试。"""
 
 import asyncio
 import logging
@@ -29,19 +29,19 @@ from app.services.daily_english import (
 
 
 # =============================================================================
-# Fixtures
+# 测试 fixture
 # =============================================================================
 
 
 @pytest.fixture
 def logger() -> logging.Logger:
-    """Return a test logger."""
+    """返回测试用日志记录器。"""
     return logging.getLogger("test_daily_english")
 
 
 @pytest.fixture
 def test_db(tmp_path: Path) -> Path:
-    """Create a test SQLite database with stardict table."""
+    """创建含 stardict 表的测试 SQLite 数据库。"""
     db_path = tmp_path / "stardict.db"
     conn = sqlite3.connect(str(db_path))
     conn.execute("""
@@ -78,7 +78,7 @@ def test_db(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def sqlite_backend(test_db: Path, logger: logging.Logger) -> SQLiteBackend:
-    """Create a SQLiteBackend instance with a test database."""
+    """使用测试数据库创建 SQLiteBackend 实例。"""
     return SQLiteBackend(
         db_path=str(test_db),
         download_url="https://example.com/stardict.zip",
@@ -90,7 +90,7 @@ def sqlite_backend(test_db: Path, logger: logging.Logger) -> SQLiteBackend:
 
 @pytest.fixture
 def sqlite_backend_config() -> SQLiteBackendConfig:
-    """Create a SQLiteBackendConfig instance."""
+    """创建 SQLiteBackendConfig 实例。"""
     return SQLiteBackendConfig(
         type="sqlite",
         db_path="/tmp/test_stardict.db",
@@ -101,7 +101,7 @@ def sqlite_backend_config() -> SQLiteBackendConfig:
 
 @pytest.fixture
 def daily_english_config() -> DailyEnglishSource:
-    """Create a DailyEnglishSource configuration."""
+    """创建 DailyEnglishSource 配置。"""
     return DailyEnglishSource(
         enabled=True,
         word_api_url="https://api.example.com/word",
@@ -119,7 +119,7 @@ def daily_english_config() -> DailyEnglishSource:
 
 @pytest.fixture
 def mock_backend() -> MagicMock:
-    """Create a mock DictBackend."""
+    """创建 DictBackend 的 mock 对象。"""
     backend = MagicMock(spec=["ensure_ready", "lookup", "close"])
     backend.ensure_ready = AsyncMock()
     backend.lookup = AsyncMock()
@@ -128,133 +128,133 @@ def mock_backend() -> MagicMock:
 
 
 # =============================================================================
-# Test Utility Functions
+# 工具函数测试
 # =============================================================================
 
 
 class TestSplitLines:
-    """Tests for _split_lines function."""
+    """_split_lines 函数测试。"""
 
     def test_none_input(self) -> None:
-        """Test None input returns None."""
+        """验证输入 None 时返回 None。"""
         assert _split_lines(None, 3) is None
 
     def test_empty_string(self) -> None:
-        """Test empty string returns None."""
+        """验证空字符串返回 None。"""
         assert _split_lines("", 3) is None
 
     def test_whitespace_only(self) -> None:
-        """Test whitespace-only string returns None."""
+        """验证纯空白字符串返回 None。"""
         assert _split_lines("   \n  \n  ", 3) is None
 
     def test_single_line(self) -> None:
-        """Test single line."""
+        """验证单行文本。"""
         assert _split_lines("hello world", 3) == "hello world"
 
     def test_multiple_lines(self) -> None:
-        """Test multiple lines within limit."""
+        """验证未超出行数限制的多行文本。"""
         result = _split_lines("line1\nline2\nline3", 5)
         assert result == "line1\nline2\nline3"
 
     def test_truncation(self) -> None:
-        """Test truncation when exceeding max_lines."""
+        """验证超出 max_lines 时截断文本。"""
         result = _split_lines("line1\nline2\nline3\nline4\nline5", 3)
         assert result == "line1\nline2\nline3"
 
     def test_empty_lines_filtered(self) -> None:
-        """Test empty lines are filtered out."""
+        """验证过滤空行。"""
         result = _split_lines("line1\n\nline2\n   \nline3", 5)
         assert result == "line1\nline2\nline3"
 
     def test_trailing_whitespace_stripped(self) -> None:
-        """Test trailing whitespace is stripped from each line."""
+        """验证去除每行末尾的空白字符。"""
         result = _split_lines("line1   \nline2\t\nline3", 5)
         assert result == "line1\nline2\nline3"
 
 
 class TestParseInt:
-    """Tests for _parse_int function."""
+    """_parse_int 函数测试。"""
 
     def test_none_input(self) -> None:
-        """Test None input returns None."""
+        """验证输入 None 时返回 None。"""
         assert _parse_int(None) is None
 
     def test_bool_true(self) -> None:
-        """Test bool True returns None (bool is subclass of int)."""
+        """验证布尔值 True 返回 None（bool 是 int 的子类）。"""
         assert _parse_int(True) is None
 
     def test_bool_false(self) -> None:
-        """Test bool False returns None."""
+        """验证布尔值 False 返回 None。"""
         assert _parse_int(False) is None
 
     def test_int_input(self) -> None:
-        """Test integer input returns the same value."""
+        """验证整数输入原样返回。"""
         assert _parse_int(42) == 42
 
     def test_negative_int(self) -> None:
-        """Test negative integer."""
+        """验证负整数。"""
         assert _parse_int(-5) == -5
 
     def test_string_int(self) -> None:
-        """Test string with integer."""
+        """验证整数字符串。"""
         assert _parse_int("123") == 123
 
     def test_string_with_whitespace(self) -> None:
-        """Test string with whitespace."""
+        """验证带空白字符的字符串。"""
         assert _parse_int("  42  ") == 42
 
     def test_empty_string(self) -> None:
-        """Test empty string returns None."""
+        """验证空字符串返回 None。"""
         assert _parse_int("") is None
 
     def test_whitespace_only_string(self) -> None:
-        """Test whitespace-only string returns None."""
+        """验证纯空白字符串返回 None。"""
         assert _parse_int("   ") is None
 
     def test_non_numeric_string(self) -> None:
-        """Test non-numeric string returns None."""
+        """验证非数字字符串返回 None。"""
         assert _parse_int("abc") is None
 
     def test_float_string(self) -> None:
-        """Test float string returns None (not an int)."""
+        """验证浮点数字符串返回 None（不是整数）。"""
         assert _parse_int("3.14") is None
 
     def test_other_types(self) -> None:
-        """Test other types return None."""
+        """验证其他类型返回 None。"""
         assert _parse_int([1, 2, 3]) is None
         assert _parse_int({"key": "value"}) is None
         assert _parse_int(3.14) is None
 
 
 class TestParseBoolOxford:
-    """Tests for _parse_bool_oxford function."""
+    """_parse_bool_oxford 函数测试。"""
 
     def test_true_returns_true(self) -> None:
-        """Test True returns True."""
+        """验证 True 返回 True。"""
         assert _parse_bool_oxford(True) is True
 
     def test_int_one_returns_true(self) -> None:
-        """Test integer 1 returns True."""
+        """验证整数 1 返回 True。"""
         assert _parse_bool_oxford(1) is True
 
     def test_string_one_returns_true(self) -> None:
-        """Test string '1' returns True."""
+        """验证字符串 '1' 返回 True。"""
         assert _parse_bool_oxford("1") is True
 
     def test_false_returns_false(self) -> None:
-        """Test False returns False."""
+        """验证 False 返回 False。"""
         assert _parse_bool_oxford(False) is False
 
     def test_zero_returns_false(self) -> None:
-        """Test 0 returns False."""
+        """验证 0 返回 False。"""
         assert _parse_bool_oxford(0) is False
 
     def test_string_zero_returns_false(self) -> None:
-        """Test '0' returns False."""
+        """验证 '0' 返回 False。"""
         assert _parse_bool_oxford("0") is False
 
     def test_other_values_return_false(self) -> None:
-        """Test other values return False."""
+        """验证其他值返回 False。"""
         assert _parse_bool_oxford("true") is False
         assert _parse_bool_oxford("yes") is False
         assert _parse_bool_oxford(2) is False
@@ -262,67 +262,66 @@ class TestParseBoolOxford:
 
 
 class TestSafePathFromArchiveName:
-    """Tests for _safe_path_from_archive_name function."""
+    """_safe_path_from_archive_name 函数测试。"""
 
     def test_normal_relative_path(self) -> None:
-        """Test normal relative path."""
+        """验证普通相对路径。"""
         from pathlib import PurePosixPath
 
         result = _safe_path_from_archive_name("folder/file.txt")
         assert result == PurePosixPath("folder/file.txt")
 
     def test_simple_filename(self) -> None:
-        """Test simple filename."""
+        """验证简单文件名。"""
         from pathlib import PurePosixPath
 
         result = _safe_path_from_archive_name("stardict.db")
         assert result == PurePosixPath("stardict.db")
 
     def test_nested_path(self) -> None:
-        """Test nested path."""
+        """验证嵌套路径。"""
         from pathlib import PurePosixPath
 
         result = _safe_path_from_archive_name("a/b/c/stardict.db")
         assert result == PurePosixPath("a/b/c/stardict.db")
 
     def test_absolute_path_returns_none(self) -> None:
-        """Test absolute path returns None."""
+        """验证绝对路径返回 None。"""
         assert _safe_path_from_archive_name("/etc/passwd") is None
-        # Note: Windows-style paths are not recognized as absolute by PurePosixPath
-        # They are treated as relative paths with a drive letter component
+        # 注意：PurePosixPath 不会将 Windows 风格路径识别为绝对路径
+        # 而是将其视为包含盘符部分的相对路径
 
     def test_parent_traversal_returns_none(self) -> None:
-        """Test path with .. returns None."""
+        """验证含 .. 的路径返回 None。"""
         assert _safe_path_from_archive_name("../etc/passwd") is None
         assert _safe_path_from_archive_name("foo/../bar") is None
 
     def test_empty_part_returns_none(self) -> None:
-        """Test path with empty part (e.g., leading slash) returns None."""
-        # Path with empty string in parts (e.g., from leading /)
-        # Note: "foo//bar" gets normalized by PurePosixPath, but "/" has "" as first part
-        assert _safe_path_from_archive_name("/foo/bar") is None  # absolute, also has empty part
+        """验证以斜杠开头的绝对路径返回 None。"""
+        # PurePosixPath 会规范化重复斜杠；此处测试的是绝对路径。
+        assert _safe_path_from_archive_name("/foo/bar") is None
 
 
 class TestGetEnsureReadyLock:
-    """Tests for _get_ensure_ready_lock function."""
+    """_get_ensure_ready_lock 函数测试。"""
 
     def test_returns_lock(self) -> None:
-        """Test returns an asyncio.Lock."""
+        """验证返回 asyncio.Lock。"""
         lock = _get_ensure_ready_lock()
         assert isinstance(lock, asyncio.Lock)
 
     def test_returns_same_lock(self) -> None:
-        """Test returns the same lock on subsequent calls."""
+        """验证后续调用返回同一把锁。"""
         lock1 = _get_ensure_ready_lock()
         lock2 = _get_ensure_ready_lock()
         assert lock1 is lock2
 
 
 class TestSha256sum:
-    """Tests for _sha256sum function."""
+    """_sha256sum 函数测试。"""
 
     def test_sha256sum(self, tmp_path: Path) -> None:
-        """Test SHA256 hash calculation."""
+        """验证 SHA256 哈希计算。"""
         import hashlib
 
         test_file = tmp_path / "test.txt"
@@ -335,11 +334,11 @@ class TestSha256sum:
         assert result == expected
 
     def test_sha256sum_large_file(self, tmp_path: Path) -> None:
-        """Test SHA256 with file larger than chunk size."""
+        """验证文件大于分块大小时的 SHA256 计算。"""
         import hashlib
 
         test_file = tmp_path / "large.bin"
-        # Create content larger than 1MB chunk
+        # 创建超过 1MB 分块大小的内容
         content = b"x" * (1024 * 1024 + 100)
         test_file.write_bytes(content)
 
@@ -350,26 +349,26 @@ class TestSha256sum:
 
 
 # =============================================================================
-# Test _extract_stardict_db_from_zip
+# _extract_stardict_db_from_zip 测试
 # =============================================================================
 
 
 class TestExtractStardictDbFromZip:
-    """Tests for _extract_stardict_db_from_zip function."""
+    """_extract_stardict_db_from_zip 函数测试。"""
 
     def test_extract_success(self, tmp_path: Path) -> None:
-        """Test successful extraction of stardict.db from zip."""
-        # Create a mock stardict.db file
+        """验证成功从 zip 中提取 stardict.db。"""
+        # 创建模拟的 stardict.db 文件
         db_content = b"mock sqlite database content"
         db_file = tmp_path / "stardict.db"
         db_file.write_bytes(db_content)
 
-        # Create a zip archive containing stardict.db
+        # 创建包含 stardict.db 的 zip 压缩包
         archive_path = tmp_path / "archive.zip"
         with zipfile.ZipFile(archive_path, "w") as zf:
             zf.write(db_file, "stardict.db")
 
-        # Extract
+        # 提取文件
         out_path = tmp_path / "extracted" / "stardict.db"
         size = _extract_stardict_db_from_zip(archive_path, out_path, 1024 * 1024)
 
@@ -378,7 +377,7 @@ class TestExtractStardictDbFromZip:
         assert out_path.read_bytes() == db_content
 
     def test_extract_from_nested_path(self, tmp_path: Path) -> None:
-        """Test extraction from nested path in zip."""
+        """验证从 zip 内的嵌套路径提取文件。"""
         db_content = b"nested db content"
         db_file = tmp_path / "stardict.db"
         db_file.write_bytes(db_content)
@@ -394,7 +393,7 @@ class TestExtractStardictDbFromZip:
         assert out_path.read_bytes() == db_content
 
     def test_not_found_in_archive(self, tmp_path: Path) -> None:
-        """Test raises FileNotFoundError when stardict.db not in archive."""
+        """验证压缩包中没有 stardict.db 时抛出 FileNotFoundError。"""
         archive_path = tmp_path / "archive.zip"
         with zipfile.ZipFile(archive_path, "w") as zf:
             zf.writestr("other.txt", "content")
@@ -405,7 +404,7 @@ class TestExtractStardictDbFromZip:
             _extract_stardict_db_from_zip(archive_path, out_path, 1024 * 1024)
 
     def test_file_too_large(self, tmp_path: Path) -> None:
-        """Test raises ValueError when file exceeds max size."""
+        """验证文件超过大小上限时抛出 ValueError。"""
         db_content = b"x" * 100
         db_file = tmp_path / "stardict.db"
         db_file.write_bytes(db_content)
@@ -417,10 +416,10 @@ class TestExtractStardictDbFromZip:
         out_path = tmp_path / "extracted" / "stardict.db"
 
         with pytest.raises(ValueError, match="too large"):
-            _extract_stardict_db_from_zip(archive_path, out_path, 50)  # max_size smaller than content
+            _extract_stardict_db_from_zip(archive_path, out_path, 50)  # max_size 小于内容大小
 
     def test_skip_directories(self, tmp_path: Path) -> None:
-        """Test that directories in archive are skipped."""
+        """验证跳过压缩包中的目录。"""
         archive_path = tmp_path / "archive.zip"
         db_content = b"db content"
         db_file = tmp_path / "stardict.db"
@@ -435,16 +434,16 @@ class TestExtractStardictDbFromZip:
         assert out_path.exists()
 
     def test_skip_unsafe_paths(self, tmp_path: Path) -> None:
-        """Test that unsafe paths (absolute, ..) are skipped."""
+        """验证跳过不安全路径（绝对路径、..）。"""
         db_content = b"safe content"
         safe_db = tmp_path / "stardict.db"
         safe_db.write_bytes(db_content)
 
         archive_path = tmp_path / "archive.zip"
         with zipfile.ZipFile(archive_path, "w") as zf:
-            # Add safe file
+            # 添加安全文件
             zf.write(safe_db, "stardict.db")
-            # Add unsafe files (should be skipped)
+            # 添加应被跳过的不安全文件
             zf.writestr("/etc/passwd", "malicious")
             zf.writestr("../escape.txt", "malicious")
 
@@ -454,8 +453,8 @@ class TestExtractStardictDbFromZip:
         assert size == len(db_content)
 
     def test_actual_size_check_after_extraction(self, tmp_path: Path) -> None:
-        """Test that actual extracted size is checked (not just reported size)."""
-        # Create a file and compress it - the uncompressed size will be known
+        """验证检查实际提取大小，而非仅检查声明的大小。"""
+        # 创建并压缩文件，以确定其未压缩大小
         db_content = b"x" * 50
         db_file = tmp_path / "stardict.db"
         db_file.write_bytes(db_content)
@@ -466,15 +465,15 @@ class TestExtractStardictDbFromZip:
 
         out_path = tmp_path / "extracted" / "stardict.db"
 
-        # The file_size in zip header equals actual size for stored files
-        # Test with a max_size that's smaller than actual content
+        # 对于未压缩存储的文件，zip 头中的 file_size 等于实际大小
+        # 使用小于实际内容大小的 max_size 进行测试
         with pytest.raises(ValueError, match="too large"):
-            _extract_stardict_db_from_zip(archive_path, out_path, 30)  # Smaller than actual content
+            _extract_stardict_db_from_zip(archive_path, out_path, 30)  # 小于实际内容大小
 
     def test_post_extraction_size_check(self, tmp_path: Path) -> None:
-        """Test size check after extraction (line 128-130)."""
-        # This test specifically targets the post-extraction size check
-        # which verifies the actual file size after copyfileobj
+        """验证提取后的大小检查（第 128–130 行）。"""
+        # 此测试专门针对提取后的大小检查
+        # 即在 copyfileobj 后验证实际文件大小
         db_content = b"x" * 100
         db_file = tmp_path / "stardict.db"
         db_file.write_bytes(db_content)
@@ -485,22 +484,22 @@ class TestExtractStardictDbFromZip:
 
         out_path = tmp_path / "extracted" / "stardict.db"
 
-        # The check at line 121 (file_size > max_size_bytes) catches this first
-        # But we want to test line 129 (size > max_size_bytes) after extraction
-        # Both checks use the same limit, so either one will trigger
+        # 第 121 行的检查（file_size > max_size_bytes）会先触发
+        # 但这里想测试提取后第 129 行的检查（size > max_size_bytes）
+        # 两次检查使用相同上限，因此任一检查都会触发
         with pytest.raises(ValueError, match="too large"):
-            _extract_stardict_db_from_zip(archive_path, out_path, 50)  # max_size < content
+            _extract_stardict_db_from_zip(archive_path, out_path, 50)  # max_size 小于内容大小
 
     def test_skips_directory_entries(self, tmp_path: Path) -> None:
-        """Test that directory entries in zip are properly skipped."""
+        """验证正确跳过 zip 中的目录条目。"""
         db_content = b"db content"
         db_file = tmp_path / "stardict.db"
         db_file.write_bytes(db_content)
 
         archive_path = tmp_path / "archive.zip"
         with zipfile.ZipFile(archive_path, "w") as zf:
-            # Add directory entry first
-            zf.writestr("folder/", "")  # Directory entry
+            # 先添加目录条目
+            zf.writestr("folder/", "")  # 目录条目
             zf.write(db_file, "folder/stardict.db")
 
         out_path = tmp_path / "extracted" / "stardict.db"
@@ -509,18 +508,18 @@ class TestExtractStardictDbFromZip:
         assert size == len(db_content)
 
     def test_skips_other_files_and_finds_stardict(self, tmp_path: Path) -> None:
-        """Test that non-stardict.db files are skipped."""
+        """验证跳过 stardict.db 以外的文件。"""
         db_content = b"db content"
         db_file = tmp_path / "stardict.db"
         db_file.write_bytes(db_content)
 
         archive_path = tmp_path / "archive.zip"
         with zipfile.ZipFile(archive_path, "w") as zf:
-            # Add various other files first
+            # 先添加各种其他文件
             zf.writestr("readme.txt", "readme content")
             zf.writestr("data/other.db", "other db")
             zf.writestr("data/config.json", "{}")
-            # Add stardict.db last
+            # 最后添加 stardict.db
             zf.write(db_file, "stardict.db")
 
         out_path = tmp_path / "extracted" / "stardict.db"
@@ -530,15 +529,15 @@ class TestExtractStardictDbFromZip:
 
 
 # =============================================================================
-# Test SQLiteBackend
+# SQLiteBackend 测试
 # =============================================================================
 
 
 class TestSQLiteBackendBuildDownloadUrls:
-    """Tests for SQLiteBackend._build_download_urls method."""
+    """SQLiteBackend._build_download_urls 方法测试。"""
 
     def test_with_ghproxy_urls(self, logger: logging.Logger) -> None:
-        """Test URLs are built with ghproxy prefixes."""
+        """验证使用 ghproxy 前缀构建 URL。"""
         backend = SQLiteBackend(
             db_path="/tmp/test.db",
             download_url="https://github.com/example/file.zip",
@@ -555,7 +554,7 @@ class TestSQLiteBackendBuildDownloadUrls:
         assert urls[2] == "https://github.com/example/file.zip"
 
     def test_empty_ghproxy_urls(self, logger: logging.Logger) -> None:
-        """Test with empty ghproxy list returns only original URL."""
+        """验证 ghproxy 列表为空时只返回原始 URL。"""
         backend = SQLiteBackend(
             db_path="/tmp/test.db",
             download_url="https://example.com/file.zip",
@@ -569,16 +568,16 @@ class TestSQLiteBackendBuildDownloadUrls:
         assert urls == ["https://example.com/file.zip"]
 
     def test_filters_invalid_prefixes(self, logger: logging.Logger) -> None:
-        """Test invalid prefixes are filtered out."""
+        """验证过滤无效前缀。"""
         backend = SQLiteBackend(
             db_path="/tmp/test.db",
             download_url="https://example.com/file.zip",
             checksum_sha256="",
             ghproxy_urls=[
                 "https://valid.com/",
-                "invalid-url",  # no protocol
-                "",  # empty
-                "ftp://unsupported.com/",  # wrong protocol
+                "invalid-url",  # 缺少协议
+                "",  # 空字符串
+                "ftp://unsupported.com/",  # 协议不支持
                 None,  # type: ignore
             ],
             logger=logger,
@@ -592,10 +591,10 @@ class TestSQLiteBackendBuildDownloadUrls:
 
 
 class TestSQLiteBackendArchiveExt:
-    """Tests for SQLiteBackend._archive_ext method."""
+    """SQLiteBackend._archive_ext 方法测试。"""
 
     def test_zip_extension(self, logger: logging.Logger) -> None:
-        """Test .zip URL returns .zip extension."""
+        """验证 .zip URL 返回 .zip 扩展名。"""
         backend = SQLiteBackend(
             db_path="/tmp/test.db",
             download_url="https://example.com/file.zip",
@@ -606,7 +605,7 @@ class TestSQLiteBackendArchiveExt:
         assert backend._archive_ext() == ".zip"
 
     def test_7z_extension(self, logger: logging.Logger) -> None:
-        """Test .7z URL returns .7z extension."""
+        """验证 .7z URL 返回 .7z 扩展名。"""
         backend = SQLiteBackend(
             db_path="/tmp/test.db",
             download_url="https://example.com/file.7z",
@@ -617,7 +616,7 @@ class TestSQLiteBackendArchiveExt:
         assert backend._archive_ext() == ".7z"
 
     def test_uppercase_extension(self, logger: logging.Logger) -> None:
-        """Test uppercase extension is recognized."""
+        """验证可识别大写扩展名。"""
         backend = SQLiteBackend(
             db_path="/tmp/test.db",
             download_url="https://example.com/file.ZIP",
@@ -628,7 +627,7 @@ class TestSQLiteBackendArchiveExt:
         assert backend._archive_ext() == ".zip"
 
     def test_unknown_extension(self, logger: logging.Logger) -> None:
-        """Test unknown extension returns empty string."""
+        """验证未知扩展名返回空字符串。"""
         backend = SQLiteBackend(
             db_path="/tmp/test.db",
             download_url="https://example.com/file.tar",
@@ -639,7 +638,7 @@ class TestSQLiteBackendArchiveExt:
         assert backend._archive_ext() == ""
 
     def test_no_extension(self, logger: logging.Logger) -> None:
-        """Test URL without extension returns empty string."""
+        """验证不含扩展名的 URL 返回空字符串。"""
         backend = SQLiteBackend(
             db_path="/tmp/test.db",
             download_url="https://example.com/file",
@@ -651,10 +650,10 @@ class TestSQLiteBackendArchiveExt:
 
 
 class TestSQLiteBackendSyncLookup:
-    """Tests for SQLiteBackend._sync_lookup method."""
+    """SQLiteBackend._sync_lookup 方法测试。"""
 
     def test_lookup_found(self, sqlite_backend: SQLiteBackend) -> None:
-        """Test successful word lookup."""
+        """验证成功查询单词。"""
         result = sqlite_backend._sync_lookup("hello")
 
         assert result is not None
@@ -666,20 +665,20 @@ class TestSQLiteBackendSyncLookup:
         assert "cet4" in result["tag"]
 
     def test_lookup_case_insensitive(self, sqlite_backend: SQLiteBackend) -> None:
-        """Test lookup is case insensitive."""
+        """验证查询不区分大小写。"""
         result = sqlite_backend._sync_lookup("HELLO")
 
         assert result is not None
         assert result["word"] == "hello"
 
     def test_lookup_not_found(self, sqlite_backend: SQLiteBackend) -> None:
-        """Test lookup returns None when word not found."""
+        """验证找不到单词时返回 None。"""
         result = sqlite_backend._sync_lookup("nonexistent")
 
         assert result is None
 
     def test_lookup_db_not_exists(self, logger: logging.Logger) -> None:
-        """Test lookup returns None when database doesn't exist."""
+        """验证数据库不存在时查询返回 None。"""
         backend = SQLiteBackend(
             db_path="/nonexistent/path/test.db",
             download_url="https://example.com/file.zip",
@@ -694,10 +693,10 @@ class TestSQLiteBackendSyncLookup:
 
 
 class TestSQLiteBackendLookup:
-    """Tests for SQLiteBackend.lookup async method."""
+    """SQLiteBackend.lookup 异步方法测试。"""
 
     async def test_lookup_success(self, sqlite_backend: SQLiteBackend) -> None:
-        """Test async lookup returns word info."""
+        """验证异步查询返回单词信息。"""
         result = await sqlite_backend.lookup("world")
 
         assert result is not None
@@ -705,27 +704,27 @@ class TestSQLiteBackendLookup:
         assert result["collins"] == 3
 
     async def test_lookup_empty_string(self, sqlite_backend: SQLiteBackend) -> None:
-        """Test lookup with empty string returns None."""
+        """验证查询空字符串时返回 None。"""
         result = await sqlite_backend.lookup("")
 
         assert result is None
 
     async def test_lookup_whitespace_only(self, sqlite_backend: SQLiteBackend) -> None:
-        """Test lookup with whitespace returns None."""
+        """验证查询纯空白字符串时返回 None。"""
         result = await sqlite_backend.lookup("   ")
 
         assert result is None
 
     async def test_lookup_strips_whitespace(self, sqlite_backend: SQLiteBackend) -> None:
-        """Test lookup strips whitespace from word."""
+        """验证查询时去除单词两端的空白字符。"""
         result = await sqlite_backend.lookup("  hello  ")
 
         assert result is not None
         assert result["word"] == "hello"
 
     async def test_lookup_exception_returns_none(self, test_db: Path, logger: logging.Logger) -> None:
-        """Test lookup returns None on exception."""
-        # Create backend with invalid db_path but mock _sync_lookup to raise
+        """验证查询发生异常时返回 None。"""
+        # 创建使用无效 db_path 的后端，并通过 mock 让 _sync_lookup 抛出异常
         backend = SQLiteBackend(
             db_path=str(test_db),
             download_url="https://example.com/file.zip",
@@ -741,10 +740,10 @@ class TestSQLiteBackendLookup:
 
 
 class TestSQLiteBackendSyncPickRandom:
-    """Tests for SQLiteBackend._sync_pick_random method."""
+    """SQLiteBackend._sync_pick_random 方法测试。"""
 
     def test_pick_random_success(self, sqlite_backend: SQLiteBackend) -> None:
-        """Test successful random word pick."""
+        """验证成功随机选取单词。"""
         result = sqlite_backend._sync_pick_random(12345, (3, 5))
 
         assert result is not None
@@ -752,14 +751,14 @@ class TestSQLiteBackendSyncPickRandom:
         assert len(result) > 0
 
     def test_pick_random_deterministic(self, sqlite_backend: SQLiteBackend) -> None:
-        """Test same seed produces same result."""
+        """验证相同种子产生相同结果。"""
         result1 = sqlite_backend._sync_pick_random(42, (3, 5))
         result2 = sqlite_backend._sync_pick_random(42, (3, 5))
 
         assert result1 == result2
 
     def test_pick_random_db_not_exists(self, logger: logging.Logger) -> None:
-        """Test returns None when database doesn't exist."""
+        """验证数据库不存在时返回 None。"""
         backend = SQLiteBackend(
             db_path="/nonexistent/path/test.db",
             download_url="https://example.com/file.zip",
@@ -773,19 +772,19 @@ class TestSQLiteBackendSyncPickRandom:
         assert result is None
 
     def test_pick_random_swaps_min_max(self, sqlite_backend: SQLiteBackend) -> None:
-        """Test automatically swaps when min > max."""
-        # Should work even with reversed range
+        """验证 min > max 时自动交换。"""
+        # 范围颠倒时也应正常工作
         result = sqlite_backend._sync_pick_random(12345, (5, 3))
 
-        # Should still return a word (or None if no match found)
-        # The important thing is it doesn't raise an error
+        # 仍应返回单词，找不到匹配项时返回 None
+        # 关键是不能抛出异常
         assert result is None or isinstance(result, str)
 
     def test_pick_random_no_matching_difficulty(
         self, tmp_path: Path, logger: logging.Logger
     ) -> None:
-        """Test returns None when no words match difficulty range."""
-        # Create db with only low difficulty words
+        """验证没有符合难度范围的单词时返回 None。"""
+        # 创建只含低难度单词的数据库
         db_path = tmp_path / "stardict.db"
         conn = sqlite3.connect(str(db_path))
         conn.execute("""
@@ -806,7 +805,7 @@ class TestSQLiteBackendSyncPickRandom:
             logger=logger,
         )
 
-        # Request high difficulty words (none exist)
+        # 请求数据库中不存在的高难度单词
         result = backend._sync_pick_random(12345, (4, 5))
 
         assert result is None
@@ -814,8 +813,8 @@ class TestSQLiteBackendSyncPickRandom:
     def test_pick_random_returns_none_when_no_match_after_retries(
         self, tmp_path: Path, logger: logging.Logger
     ) -> None:
-        """Test returns None when random rowid doesn't find matching words after 10 tries."""
-        # Create db with words at difficulty 5, but rowids far apart
+        """验证随机 rowid 尝试 10 次仍找不到匹配单词时返回 None。"""
+        # 创建单词难度均为 5、但 rowid 相距较远的数据库
         db_path = tmp_path / "stardict.db"
         conn = sqlite3.connect(str(db_path))
         conn.execute("""
@@ -824,8 +823,8 @@ class TestSQLiteBackendSyncPickRandom:
                 definition TEXT, collins INTEGER, oxford INTEGER, tag TEXT
             )
         """)
-        # Insert words with very high rowid to make random selection miss
-        # This tests the case where random rowid >= word's rowid doesn't match
+        # 插入 rowid 很大的单词，让随机选择无法命中
+        # 测试随机 rowid >= 单词 rowid 时无法匹配的情况
         for i in range(100):
             conn.execute(f"INSERT INTO stardict VALUES ('word{i}', '', '词{i}', '', 5, 0, '')")
         conn.commit()
@@ -839,17 +838,17 @@ class TestSQLiteBackendSyncPickRandom:
             logger=logger,
         )
 
-        # Use a specific seed that might result in no matches
-        result = backend._sync_pick_random(999999, (1, 2))  # Request difficulty 1-2, but we only have 5
+        # 使用可能导致无匹配结果的特定种子
+        result = backend._sync_pick_random(999999, (1, 2))  # 请求难度 1–2，但库中只有难度 5
 
-        assert result is None  # No words with collins 1-2
+        assert result is None  # 没有 collins 为 1–2 的单词
 
 
 class TestSQLiteBackendPickRandom:
-    """Tests for SQLiteBackend.pick_random async method."""
+    """SQLiteBackend.pick_random 异步方法测试。"""
 
     async def test_pick_random_success(self, sqlite_backend: SQLiteBackend) -> None:
-        """Test async pick_random returns a word."""
+        """验证异步 pick_random 返回单词。"""
         result = await sqlite_backend.pick_random(12345, (3, 5))
 
         assert result is not None
@@ -858,7 +857,7 @@ class TestSQLiteBackendPickRandom:
     async def test_pick_random_exception_returns_none(
         self, test_db: Path, logger: logging.Logger
     ) -> None:
-        """Test pick_random returns None on exception."""
+        """验证 pick_random 发生异常时返回 None。"""
         backend = SQLiteBackend(
             db_path=str(test_db),
             download_url="https://example.com/file.zip",
@@ -874,86 +873,86 @@ class TestSQLiteBackendPickRandom:
 
 
 class TestSQLiteBackendClose:
-    """Tests for SQLiteBackend.close method."""
+    """SQLiteBackend.close 方法测试。"""
 
     async def test_close_no_error(self, sqlite_backend: SQLiteBackend) -> None:
-        """Test close method doesn't raise error."""
-        # Should not raise
+        """验证 close 方法不抛出异常。"""
+        # 不应抛出异常
         await sqlite_backend.close()
 
 
 # =============================================================================
-# Test build_dict_backend
+# build_dict_backend 测试
 # =============================================================================
 
 
 class TestBuildDictBackend:
-    """Tests for build_dict_backend factory function."""
+    """build_dict_backend 工厂函数测试。"""
 
     def test_build_sqlite_backend(
         self, sqlite_backend_config: SQLiteBackendConfig, logger: logging.Logger
     ) -> None:
-        """Test building SQLiteBackend from config."""
+        """验证根据配置构建 SQLiteBackend。"""
         backend = build_dict_backend(sqlite_backend_config, [], logger)
 
         assert isinstance(backend, SQLiteBackend)
 
 
 # =============================================================================
-# Test DailyEnglishService
+# DailyEnglishService 测试
 # =============================================================================
 
 
 class TestDailyEnglishServiceDifficultyRangeTuple:
-    """Tests for DailyEnglishService._difficulty_range_tuple method."""
+    """DailyEnglishService._difficulty_range_tuple 方法测试。"""
 
     def test_normal_range(self, daily_english_config: DailyEnglishSource, mock_backend: MagicMock, logger: logging.Logger) -> None:
-        """Test normal difficulty range."""
+        """验证正常难度范围。"""
         service = DailyEnglishService(daily_english_config, mock_backend, logger)
         result = service._difficulty_range_tuple()
 
         assert result == (3, 5)
 
     def test_wrong_length_returns_default(self, mock_backend: MagicMock, logger: logging.Logger) -> None:
-        """Test wrong length returns default."""
+        """验证长度错误时返回默认值。"""
         config = DailyEnglishSource(
             enabled=True,
             word_api_url="https://api.example.com/word",
-            difficulty_range=[3, 5],  # Valid length
+            difficulty_range=[3, 5],  # 有效长度
             max_retries=5,
             api_failure_threshold=2,
         )
-        # Manually override the config's difficulty_range to simulate wrong length
-        # This tests the defensive code in _difficulty_range_tuple
-        object.__setattr__(config, "difficulty_range", [3])  # Bypass validator
+        # 手动覆盖配置的 difficulty_range，模拟长度错误
+        # 测试 _difficulty_range_tuple 中的防御性代码
+        object.__setattr__(config, "difficulty_range", [3])  # 绕过校验器
         service = DailyEnglishService(config, mock_backend, logger)
         result = service._difficulty_range_tuple()
 
-        assert result == (3, 5)  # Default
+        assert result == (3, 5)  # 默认值
 
     def test_reversed_range_is_sorted(self, mock_backend: MagicMock, logger: logging.Logger) -> None:
-        """Test reversed range is automatically sorted."""
+        """验证自动排序颠倒的范围。"""
         config = DailyEnglishSource(
             enabled=True,
             word_api_url="https://api.example.com/word",
-            difficulty_range=[3, 5],  # Valid range (validator enforces min <= max)
+            difficulty_range=[3, 5],  # 有效范围（校验器要求 min <= max）
             max_retries=5,
             api_failure_threshold=2,
         )
-        # Manually override to test the defensive sorting in _difficulty_range_tuple
-        object.__setattr__(config, "difficulty_range", [5, 3])  # Bypass validator
+        # 手动覆盖配置，测试 _difficulty_range_tuple 中的防御性排序
+        object.__setattr__(config, "difficulty_range", [5, 3])  # 绕过校验器
         service = DailyEnglishService(config, mock_backend, logger)
         result = service._difficulty_range_tuple()
 
-        assert result == (3, 5)  # Sorted
+        assert result == (3, 5)  # 已排序
 
 
 class TestDailyEnglishServiceFetchWordFromApi:
-    """Tests for DailyEnglishService._fetch_word_from_api method."""
+    """DailyEnglishService._fetch_word_from_api 方法测试。"""
 
     @respx.mock
     async def test_fetch_success(self, daily_english_config: DailyEnglishSource, mock_backend: MagicMock, logger: logging.Logger) -> None:
-        """Test successful word fetch from API."""
+        """验证成功从 API 获取单词。"""
         respx.get("https://api.example.com/word").mock(
             return_value=Response(200, json=["hello"])
         )
@@ -967,7 +966,7 @@ class TestDailyEnglishServiceFetchWordFromApi:
 
     @respx.mock
     async def test_empty_list_response(self, daily_english_config: DailyEnglishSource, mock_backend: MagicMock, logger: logging.Logger) -> None:
-        """Test empty list returns None."""
+        """验证空列表返回 None。"""
         respx.get("https://api.example.com/word").mock(
             return_value=Response(200, json=[])
         )
@@ -981,7 +980,7 @@ class TestDailyEnglishServiceFetchWordFromApi:
 
     @respx.mock
     async def test_non_list_response(self, daily_english_config: DailyEnglishSource, mock_backend: MagicMock, logger: logging.Logger) -> None:
-        """Test non-list response returns None."""
+        """验证非列表响应返回 None。"""
         respx.get("https://api.example.com/word").mock(
             return_value=Response(200, json={"word": "hello"})
         )
@@ -995,7 +994,7 @@ class TestDailyEnglishServiceFetchWordFromApi:
 
     @respx.mock
     async def test_non_string_element(self, daily_english_config: DailyEnglishSource, mock_backend: MagicMock, logger: logging.Logger) -> None:
-        """Test non-string first element returns None."""
+        """验证首个元素不是字符串时返回 None。"""
         respx.get("https://api.example.com/word").mock(
             return_value=Response(200, json=[123])
         )
@@ -1009,7 +1008,7 @@ class TestDailyEnglishServiceFetchWordFromApi:
 
     @respx.mock
     async def test_empty_string_returns_none(self, daily_english_config: DailyEnglishSource, mock_backend: MagicMock, logger: logging.Logger) -> None:
-        """Test empty string returns None."""
+        """验证空字符串返回 None。"""
         respx.get("https://api.example.com/word").mock(
             return_value=Response(200, json=[""])
         )
@@ -1023,7 +1022,7 @@ class TestDailyEnglishServiceFetchWordFromApi:
 
     @respx.mock
     async def test_whitespace_string_returns_none(self, daily_english_config: DailyEnglishSource, mock_backend: MagicMock, logger: logging.Logger) -> None:
-        """Test whitespace-only string returns None."""
+        """验证纯空白字符串返回 None。"""
         respx.get("https://api.example.com/word").mock(
             return_value=Response(200, json=["   "])
         )
@@ -1037,7 +1036,7 @@ class TestDailyEnglishServiceFetchWordFromApi:
 
     @respx.mock
     async def test_http_error_returns_none(self, daily_english_config: DailyEnglishSource, mock_backend: MagicMock, logger: logging.Logger) -> None:
-        """Test HTTP error returns None."""
+        """验证 HTTP 错误返回 None。"""
         respx.get("https://api.example.com/word").mock(
             return_value=Response(500)
         )
@@ -1051,7 +1050,7 @@ class TestDailyEnglishServiceFetchWordFromApi:
 
     @respx.mock
     async def test_timeout_returns_none(self, daily_english_config: DailyEnglishSource, mock_backend: MagicMock, logger: logging.Logger) -> None:
-        """Test timeout returns None."""
+        """验证超时返回 None。"""
         respx.get("https://api.example.com/word").mock(
             side_effect=httpx.TimeoutException("timeout")
         )
@@ -1065,11 +1064,11 @@ class TestDailyEnglishServiceFetchWordFromApi:
 
 
 class TestDailyEnglishServiceFetchDailyWord:
-    """Tests for DailyEnglishService.fetch_daily_word method."""
+    """DailyEnglishService.fetch_daily_word 方法测试。"""
 
     @respx.mock
     async def test_fetch_success(self, daily_english_config: DailyEnglishSource, mock_backend: MagicMock, logger: logging.Logger) -> None:
-        """Test successful daily word fetch."""
+        """验证成功获取每日单词。"""
         respx.get("https://api.example.com/word").mock(
             return_value=Response(200, json=["hello"])
         )
@@ -1097,7 +1096,7 @@ class TestDailyEnglishServiceFetchDailyWord:
         mock_backend: MagicMock,
         logger: logging.Logger,
     ) -> None:
-        """The random-word API reuses the caller-owned client with its timeout."""
+        """随机单词 API 复用调用方持有的客户端，并设置超时。"""
         response = MagicMock()
         response.json.return_value = ["hello"]
         client = MagicMock(spec=httpx.AsyncClient)
@@ -1136,7 +1135,7 @@ class TestDailyEnglishServiceFetchDailyWord:
 
     @respx.mock
     async def test_api_fails_fallback_to_pick_random(self, daily_english_config: DailyEnglishSource, mock_backend: MagicMock, logger: logging.Logger) -> None:
-        """Test fallback to pick_random when API fails threshold times."""
+        """验证 API 失败次数达到阈值时降级为 pick_random。"""
         respx.get("https://api.example.com/word").mock(
             return_value=Response(500)
         )
@@ -1161,12 +1160,12 @@ class TestDailyEnglishServiceFetchDailyWord:
 
     @respx.mock
     async def test_all_fail_returns_none(self, daily_english_config: DailyEnglishSource, mock_backend: MagicMock, logger: logging.Logger) -> None:
-        """Test returns None when all methods fail."""
+        """验证所有方式均失败时返回 None。"""
         respx.get("https://api.example.com/word").mock(
             return_value=Response(500)
         )
 
-        # No pick_random method on backend
+        # 后端没有 pick_random 方法
         del mock_backend.pick_random
 
         service = DailyEnglishService(daily_english_config, mock_backend, logger)
@@ -1176,12 +1175,12 @@ class TestDailyEnglishServiceFetchDailyWord:
 
     @respx.mock
     async def test_word_found_but_not_in_dict(self, daily_english_config: DailyEnglishSource, mock_backend: MagicMock, logger: logging.Logger) -> None:
-        """Test returns None when API returns word but not in dictionary."""
+        """验证 API 返回的单词不在词典中时返回 None。"""
         respx.get("https://api.example.com/word").mock(
             return_value=Response(200, json=["unknownword"])
         )
 
-        mock_backend.lookup.return_value = None  # Word not in dict
+        mock_backend.lookup.return_value = None  # 单词不在词典中
 
         service = DailyEnglishService(daily_english_config, mock_backend, logger)
         result = await service.fetch_daily_word()
@@ -1192,35 +1191,35 @@ class TestDailyEnglishServiceFetchDailyWord:
     async def test_api_returns_word_not_in_dict_then_fallback(
         self, daily_english_config: DailyEnglishSource, mock_backend: MagicMock, logger: logging.Logger
     ) -> None:
-        """Test fallback when API returns words not in dictionary."""
-        # First API call returns word not in dict
-        # After threshold failures, use pick_random
+        """验证 API 返回词典中不存在的单词时降级处理。"""
+        # 首次 API 调用返回词典中不存在的单词
+        # 失败次数达到阈值后使用 pick_random
         respx.get("https://api.example.com/word").mock(
             return_value=Response(200, json=["unknownword"])
         )
 
-        # lookup returns None for unknown words
+        # lookup 对未知单词返回 None
         mock_backend.lookup.return_value = None
         mock_backend.pick_random = AsyncMock(return_value="fallback")
-        # After fallback, lookup succeeds
+        # 降级后 lookup 成功
         mock_backend.lookup = AsyncMock(side_effect=[
-            None, None,  # First attempts fail
+            None, None,  # 前几次尝试失败
             {"word": "fallback", "phonetic": "", "translation": "备选", "definition": None, "collins": 3, "oxford": False, "tag": []}
         ])
 
         service = DailyEnglishService(daily_english_config, mock_backend, logger)
         result = await service.fetch_daily_word()
 
-        # After 5 retries all fail (lookup returns None), should try pick_random
-        # But in this test setup it may return None depending on mock setup
+        # 重试 5 次均失败（lookup 返回 None）后，应尝试 pick_random
+        # 但在本测试中，结果可能因 mock 设置而为 None
         assert result is None or result is not None
 
 
 class TestDailyEnglishServiceEnsureReady:
-    """Tests for DailyEnglishService.ensure_ready method."""
+    """DailyEnglishService.ensure_ready 方法测试。"""
 
     async def test_ensure_ready_delegates(self, daily_english_config: DailyEnglishSource, mock_backend: MagicMock, logger: logging.Logger) -> None:
-        """Test ensure_ready delegates to backend."""
+        """验证 ensure_ready 委托给后端。"""
         service = DailyEnglishService(daily_english_config, mock_backend, logger)
         await service.ensure_ready()
 
@@ -1228,12 +1227,12 @@ class TestDailyEnglishServiceEnsureReady:
 
 
 # =============================================================================
-# Test CachedDailyEnglishService
+# CachedDailyEnglishService 测试
 # =============================================================================
 
 
 class TestCachedDailyEnglishService:
-    """Tests for CachedDailyEnglishService class."""
+    """CachedDailyEnglishService 类测试。"""
 
     @pytest.fixture
     def cached_service(
@@ -1243,7 +1242,7 @@ class TestCachedDailyEnglishService:
         logger: logging.Logger,
         tmp_cache_dir: Path,
     ) -> CachedDailyEnglishService:
-        """Create a CachedDailyEnglishService instance."""
+        """创建 CachedDailyEnglishService 实例。"""
         return CachedDailyEnglishService(
             config=daily_english_config,
             backend=mock_backend,
@@ -1252,11 +1251,11 @@ class TestCachedDailyEnglishService:
         )
 
     async def test_fetch_fresh_success(self, cached_service: CachedDailyEnglishService, mock_backend: MagicMock) -> None:
-        """Test successful fetch_fresh."""
+        """验证 fetch_fresh 成功获取数据。"""
         mock_backend.ensure_ready.return_value = None
         mock_backend.lookup = AsyncMock(return_value=None)
 
-        # Patch the internal service's fetch_daily_word
+        # 用 mock 替换内部服务的 fetch_daily_word
         with patch.object(cached_service._service, "fetch_daily_word", new_callable=AsyncMock) as mock_fetch:
             mock_fetch.return_value = {
                 "word": "test",
@@ -1281,7 +1280,7 @@ class TestCachedDailyEnglishService:
         logger: logging.Logger,
         tmp_cache_dir: Path,
     ) -> None:
-        """Test fetch_fresh continues even if backend.ensure_ready fails."""
+        """验证 backend.ensure_ready 失败时 fetch_fresh 仍继续执行。"""
         mock_backend.ensure_ready = AsyncMock(side_effect=Exception("Backend not ready"))
 
         service = CachedDailyEnglishService(
@@ -1296,12 +1295,12 @@ class TestCachedDailyEnglishService:
 
             result = await service.fetch_fresh()
 
-        # Should still call fetch_daily_word even after ensure_ready failed
+        # 即使 ensure_ready 失败，仍应调用 fetch_daily_word
         mock_fetch.assert_called_once()
         assert result is None
 
     async def test_fetch_fresh_returns_none_when_no_word(self, cached_service: CachedDailyEnglishService) -> None:
-        """Test fetch_fresh returns None when no word found."""
+        """验证未找到单词时 fetch_fresh 返回 None。"""
         with patch.object(cached_service._service, "fetch_daily_word", new_callable=AsyncMock) as mock_fetch:
             mock_fetch.return_value = None
 
@@ -1310,7 +1309,7 @@ class TestCachedDailyEnglishService:
         assert result is None
 
     async def test_close_delegates(self, cached_service: CachedDailyEnglishService, mock_backend: MagicMock) -> None:
-        """Test close delegates to backend."""
+        """验证 close 委托给后端。"""
         await cached_service.close()
 
         mock_backend.close.assert_called_once()
@@ -1322,7 +1321,7 @@ class TestCachedDailyEnglishService:
         logger: logging.Logger,
         tmp_cache_dir: Path,
     ) -> None:
-        """The cached wrapper forwards the shared client to its network service."""
+        """缓存包装服务将共享客户端传递给其网络服务。"""
         client = MagicMock(spec=httpx.AsyncClient)
 
         service = CachedDailyEnglishService(

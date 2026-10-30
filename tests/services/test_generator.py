@@ -26,7 +26,7 @@ from app.services.renderer import ImageRenderer
 
 
 def _build_services(generator: ImageGenerator | None = None, **overrides: object) -> AppServices:
-    """Build an AppServices container with lightweight test doubles."""
+    """使用轻量测试替身构建 AppServices 容器。"""
     values: dict[str, object] = {
         "data_fetcher": MagicMock(),
         "holiday_service": MagicMock(),
@@ -49,7 +49,7 @@ def _build_app(
     services: AppServices | None = None,
     logger: object | None = None,
 ) -> MagicMock:
-    """Build a minimal app exposing only canonical state attributes."""
+    """构建仅暴露标准状态属性的最小应用。"""
     app = MagicMock()
     app.state.config = config
     app.state.logger = logger or MagicMock()
@@ -58,24 +58,24 @@ def _build_app(
 
 
 class TestGenerationBusyError:
-    """Tests for GenerationBusyError exception."""
+    """测试 GenerationBusyError 异常。"""
 
     def test_is_exception(self) -> None:
-        """Test GenerationBusyError is an Exception."""
+        """验证 GenerationBusyError 属于 Exception。"""
         error = GenerationBusyError("busy")
         assert isinstance(error, Exception)
 
     def test_can_be_raised(self) -> None:
-        """Test GenerationBusyError can be raised."""
+        """验证可以抛出 GenerationBusyError。"""
         with pytest.raises(GenerationBusyError):
             raise GenerationBusyError("Generation in progress")
 
 
 class TestReadLatestFilename:
-    """Tests for _read_latest_filename function."""
+    """测试 _read_latest_filename 函数。"""
 
     def test_reads_v1_state(self, tmp_path: Path) -> None:
-        """Test reads filename from data file with images mapping."""
+        """验证从含 images 映射的数据文件中读取文件名。"""
         data_file = tmp_path / "2026-02-04.json"
         data = {
             "images": {"moyuren": "moyuren_20260204.jpg"},
@@ -89,7 +89,7 @@ class TestReadLatestFilename:
         assert result == "moyuren_20260204.jpg"
 
     def test_reads_v2_state(self, tmp_path: Path) -> None:
-        """Test reads filename from data file with multiple templates."""
+        """验证从含多个模板的数据文件中读取文件名。"""
         data_file = tmp_path / "2026-02-04.json"
         data = {
             "images": {
@@ -105,7 +105,7 @@ class TestReadLatestFilename:
         assert result == "moyuren_20260204.jpg"
 
     def test_reads_v2_state_with_template_name(self, tmp_path: Path) -> None:
-        """Test reads filename from data file with specific template name."""
+        """验证按指定模板名从数据文件中读取文件名。"""
         data_file = tmp_path / "2026-02-04.json"
         data = {
             "images": {
@@ -121,7 +121,7 @@ class TestReadLatestFilename:
         assert result == "custom_20260204.jpg"
 
     def test_returns_none_for_missing_file(self, tmp_path: Path) -> None:
-        """Test returns None for missing file."""
+        """验证文件缺失时返回 None。"""
         data_file = tmp_path / "nonexistent.json"
 
         result = _read_latest_filename(data_file)
@@ -129,7 +129,7 @@ class TestReadLatestFilename:
         assert result is None
 
     def test_returns_none_for_invalid_json(self, tmp_path: Path) -> None:
-        """Test returns None for invalid JSON."""
+        """验证 JSON 无效时返回 None。"""
         data_file = tmp_path / "latest.json"
         data_file.write_text("not valid json")
 
@@ -138,7 +138,7 @@ class TestReadLatestFilename:
         assert result is None
 
     def test_returns_none_for_non_dict(self, tmp_path: Path) -> None:
-        """Test returns None for non-dict JSON."""
+        """验证 JSON 不是字典时返回 None。"""
         data_file = tmp_path / "latest.json"
         data_file.write_text(json.dumps(["array", "not", "dict"]))
 
@@ -147,7 +147,7 @@ class TestReadLatestFilename:
         assert result is None
 
     def test_returns_none_for_missing_template(self, tmp_path: Path) -> None:
-        """Test returns None for missing template in images mapping."""
+        """验证 images 映射中缺少模板时返回 None。"""
         data_file = tmp_path / "2026-02-04.json"
         data = {
             "images": {
@@ -162,7 +162,7 @@ class TestReadLatestFilename:
         assert result is None
 
     def test_handles_missing_images_key(self, tmp_path: Path) -> None:
-        """Test handles missing images key gracefully."""
+        """验证能够妥善处理缺少 images 键的情况。"""
         data_file = tmp_path / "2026-02-04.json"
         data = {
             "date": "2026-02-04",
@@ -176,11 +176,11 @@ class TestReadLatestFilename:
 
 
 class TestGenerationBusyErrorExceptionChain:
-    """Tests for exception chaining in generate_and_save_image."""
+    """测试 generate_and_save_image 的异常链。"""
 
     @staticmethod
     def _build_app(tmp_path: Path) -> MagicMock:
-        """Build a minimal mock FastAPI app for generate_and_save_image."""
+        """为 generate_and_save_image 构建最小 FastAPI mock 应用。"""
         data_file = tmp_path / "cache" / "latest.json"
         data_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -198,7 +198,7 @@ class TestGenerationBusyErrorExceptionChain:
 
     @pytest.mark.asyncio
     async def test_busy_error_preserves_inflight_timeout_cause(self, tmp_path: Path) -> None:
-        """Test an in-process wait timeout preserves TimeoutError as its cause."""
+        """验证进程内等待超时时保留 TimeoutError 作为异常原因。"""
         app = self._build_app(tmp_path)
         generator = app.state.services.generator
         started = asyncio.Event()
@@ -226,7 +226,7 @@ class TestGenerationBusyErrorExceptionChain:
 
     @pytest.mark.asyncio
     async def test_busy_error_preserves_filelock_timeout_cause(self, tmp_path: Path) -> None:
-        """Test generate_and_save_image preserves FileLockTimeout as __cause__."""
+        """验证 generate_and_save_image 将 FileLockTimeout 保留为 __cause__。"""
         app = self._build_app(tmp_path)
 
         @asynccontextmanager
@@ -249,7 +249,7 @@ class TestGenerationBusyErrorExceptionChain:
 
 
 class TestImageGeneratorSingleFlight:
-    """Tests for process-local single-flight generation."""
+    """测试进程内合并并发生成请求。"""
 
     @staticmethod
     def _build_app(generator: ImageGenerator, names: tuple[str, ...] = ("moyuren", "cute")) -> MagicMock:
@@ -261,7 +261,7 @@ class TestImageGeneratorSingleFlight:
 
     @pytest.mark.asyncio
     async def test_matching_calls_share_one_generation(self) -> None:
-        """Matching callers share one fetch/render pipeline and result."""
+        """匹配的调用方共享一次获取和渲染流水线及其结果。"""
         generator = ImageGenerator()
         app = self._build_app(generator)
         started = asyncio.Event()
@@ -291,7 +291,7 @@ class TestImageGeneratorSingleFlight:
 
     @pytest.mark.asyncio
     async def test_all_template_call_covers_named_waiter(self) -> None:
-        """An all-template generation is shared by a covered named call."""
+        """指定模板的调用共享涵盖该模板的全模板生成任务。"""
         generator = ImageGenerator()
         app = self._build_app(generator)
         started = asyncio.Event()
@@ -314,7 +314,7 @@ class TestImageGeneratorSingleFlight:
 
     @pytest.mark.asyncio
     async def test_exception_propagates_to_all_waiters(self) -> None:
-        """The creator and all matching waiters receive the task exception."""
+        """创建者及所有匹配的等待方均收到任务异常。"""
         generator = ImageGenerator()
         app = self._build_app(generator)
         started = asyncio.Event()
@@ -338,7 +338,7 @@ class TestImageGeneratorSingleFlight:
 
     @pytest.mark.asyncio
     async def test_task_timeout_error_propagates_unchanged(self) -> None:
-        """A TimeoutError raised by generation reaches all callers unchanged."""
+        """生成时抛出的 TimeoutError 原样传递给所有调用方。"""
         generator = ImageGenerator()
         app = self._build_app(generator)
         started = asyncio.Event()
@@ -361,7 +361,7 @@ class TestImageGeneratorSingleFlight:
 
     @pytest.mark.asyncio
     async def test_all_template_call_joins_named_generation(self) -> None:
-        """An all-template caller joins an already-running named generation."""
+        """全模板调用加入已运行的指定模板生成任务。"""
         generator = ImageGenerator()
         app = self._build_app(generator)
         started = asyncio.Event()
@@ -384,7 +384,7 @@ class TestImageGeneratorSingleFlight:
 
     @pytest.mark.asyncio
     async def test_uncovered_template_runs_after_current_generation(self) -> None:
-        """An uncovered template queues and starts after the current task."""
+        """未被当前任务涵盖的模板排队，待当前任务结束后开始生成。"""
         generator = ImageGenerator()
         app = self._build_app(generator)
         first_started = asyncio.Event()
@@ -415,7 +415,7 @@ class TestImageGeneratorSingleFlight:
 
     @pytest.mark.asyncio
     async def test_queued_same_template_callers_coalesce_after_current(self) -> None:
-        """Several queued callers for one uncovered template share its next task."""
+        """同一未涵盖模板的多个排队调用共享下一次生成任务。"""
         generator = ImageGenerator()
         app = self._build_app(generator)
         first_started = asyncio.Event()
@@ -449,7 +449,7 @@ class TestImageGeneratorSingleFlight:
 
     @pytest.mark.asyncio
     async def test_distinct_queued_templates_remain_serial_and_coalesce(self) -> None:
-        """Distinct queued templates run serially while duplicate callers coalesce."""
+        """不同的排队模板串行生成，重复调用则合并。"""
         generator = ImageGenerator()
         app = self._build_app(generator, names=("moyuren", "cute", "work"))
         first_started = asyncio.Event()
@@ -500,7 +500,7 @@ class TestImageGeneratorSingleFlight:
 
     @pytest.mark.asyncio
     async def test_creator_cancellation_does_not_cancel_generation(self) -> None:
-        """Cancelling the creator leaves the shielded shared task running."""
+        """取消创建者不会中断受保护的共享任务。"""
         generator = ImageGenerator()
         app = self._build_app(generator)
         started = asyncio.Event()
@@ -525,7 +525,7 @@ class TestImageGeneratorSingleFlight:
 
     @pytest.mark.asyncio
     async def test_waiter_cancellation_does_not_cancel_creator(self) -> None:
-        """Cancelling a waiter leaves the creator's shared task running."""
+        """取消等待方不会中断创建者的共享任务。"""
         generator = ImageGenerator()
         app = self._build_app(generator)
         started = asyncio.Event()
@@ -551,7 +551,7 @@ class TestImageGeneratorSingleFlight:
 
     @pytest.mark.asyncio
     async def test_instances_have_independent_flights(self) -> None:
-        """Separate generator instances may generate concurrently."""
+        """不同的生成器实例可以并发生成。"""
         first_generator = ImageGenerator()
         second_generator = ImageGenerator()
         first_app = self._build_app(first_generator)
@@ -586,7 +586,7 @@ class TestImageGeneratorSingleFlight:
 
     @pytest.mark.asyncio
     async def test_shutdown_cancels_and_drains_active_task(self) -> None:
-        """Shutdown cancels and awaits the active generation task."""
+        """关闭时取消并等待当前生成任务结束。"""
         generator = ImageGenerator()
         app = self._build_app(generator)
         started = asyncio.Event()
@@ -613,7 +613,7 @@ class TestImageGeneratorSingleFlight:
     async def test_real_pipeline_is_shared_by_overlapping_calls(
         self, tmp_path: Path
     ) -> None:
-        """Overlapping wrapper calls execute the underlying pipeline once."""
+        """重叠的封装函数调用只执行一次底层流水线。"""
         generator = ImageGenerator()
         cache_dir = tmp_path / "cache"
         template = SimpleNamespace(name="moyuren")
@@ -669,7 +669,7 @@ class TestImageGeneratorSingleFlight:
 
 
 class TestReadDataFile:
-    """Tests for _read_data_file function."""
+    """测试 _read_data_file 函数。"""
 
     def test_returns_dict_for_valid_json(self, tmp_path: Path) -> None:
         from app.services.generator import _read_data_file
@@ -708,7 +708,7 @@ class TestReadDataFile:
 
 
 class TestIsRecentlyUpdated:
-    """Tests for _is_recently_updated function."""
+    """测试 _is_recently_updated 函数。"""
 
     def test_returns_true_when_within_threshold(self) -> None:
         from app.services.generator import _is_recently_updated
@@ -734,11 +734,11 @@ class TestIsRecentlyUpdated:
 
 
 class TestFetchAllDataParallel:
-    """Tests for _fetch_all_data_parallel function."""
+    """测试 _fetch_all_data_parallel 函数。"""
 
     @pytest.mark.asyncio
     async def test_uses_empty_holidays_when_service_is_disabled(self) -> None:
-        """Generation proceeds with an empty holiday list when the service is absent."""
+        """节假日服务缺失时使用空节假日列表继续生成。"""
         from app.services.generator import _fetch_all_data_parallel
 
         services = _build_services(
@@ -842,11 +842,11 @@ class TestFetchAllDataParallel:
 
 
 class TestScheduleCacheCleanup:
-    """Tests for _schedule_cache_cleanup function."""
+    """测试 _schedule_cache_cleanup 函数。"""
 
     @pytest.mark.asyncio
     async def test_retains_cleanup_task_until_done(self) -> None:
-        """Pending cleanup stays referenced and completion releases it."""
+        """保留未完成清理任务的引用，完成后释放。"""
         import app.services.generator as generator_module
 
         started = asyncio.Event()
@@ -929,7 +929,7 @@ class TestScheduleCacheCleanup:
 
 
 class TestUpdateDataFile:
-    """Tests for _update_data_file function."""
+    """测试 _update_data_file 函数。"""
 
     @pytest.mark.asyncio
     async def test_writes_data_file_and_merges_existing_images(self, tmp_path: Path) -> None:
@@ -1024,7 +1024,7 @@ class TestUpdateDataFile:
 
 
 class TestGenerateAndSaveImageNormalFlow:
-    """Tests for generate_and_save_image normal generation flow."""
+    """测试 generate_and_save_image 的正常生成流程。"""
 
     @pytest.mark.parametrize(
         ("snapshot_iso", "write_iso", "expected_thursday", "expected_updated"),
@@ -1043,7 +1043,7 @@ class TestGenerateAndSaveImageNormalFlow:
         expected_thursday: bool,
         expected_updated: str,
     ) -> None:
-        """Keep the snapshot date and weekday while timestamping the actual write."""
+        """保留快照的日期和星期，时间戳则使用实际写入时间。"""
         app = TestGenerationBusyErrorExceptionChain._build_app(tmp_path)
         snapshot = datetime.fromisoformat(snapshot_iso)
         computer = DataComputer()
@@ -1205,7 +1205,7 @@ class TestGenerateAndSaveImageNormalFlow:
     async def test_rerenders_recent_template_when_cached_image_is_missing(
         self, tmp_path: Path
     ) -> None:
-        """Re-render a recent template when its referenced image is missing."""
+        """近期生成模板引用的图片缺失时重新渲染。"""
         from datetime import date
         cache_dir = tmp_path / "cache"
         data_dir = cache_dir / "data"
@@ -1272,7 +1272,7 @@ class TestGenerateAndSaveImageNormalFlow:
 
     @pytest.mark.asyncio
     async def test_partial_template_failure(self, tmp_path: Path) -> None:
-        """Test that partial template failure returns successful results only."""
+        """验证部分模板失败时只返回成功结果。"""
         from datetime import date
 
         cache_dir = tmp_path / "cache"
@@ -1295,7 +1295,7 @@ class TestGenerateAndSaveImageNormalFlow:
 
         data_computer = MagicMock()
         image_renderer = MagicMock()
-        # First template succeeds, second fails
+        # 第一个模板成功，第二个失败
         image_renderer.render = AsyncMock(
             side_effect=["moyuren_20260205.jpg", Exception("render error")]
         )
@@ -1335,13 +1335,13 @@ class TestGenerateAndSaveImageNormalFlow:
         ):
             results = await generate_and_save_image(app)
 
-        # Only the successful template should be in results
+        # 结果中应仅包含成功的模板
         assert results == {"moyuren": "moyuren_20260205.jpg"}
         assert "moyuren_cute" not in results
 
     @pytest.mark.asyncio
     async def test_all_templates_fail_raises_storage_error(self, tmp_path: Path) -> None:
-        """Test that all templates failing raises StorageError."""
+        """验证所有模板均失败时抛出 StorageError。"""
         from datetime import date
 
         cache_dir = tmp_path / "cache"
@@ -1364,7 +1364,7 @@ class TestGenerateAndSaveImageNormalFlow:
 
         data_computer = MagicMock()
         image_renderer = MagicMock()
-        # Both templates fail
+        # 两个模板均失败
         image_renderer.render = AsyncMock(side_effect=Exception("render error"))
         cache_cleaner = MagicMock()
 
@@ -1403,7 +1403,7 @@ class TestGenerateAndSaveImageNormalFlow:
 
     @pytest.mark.asyncio
     async def test_partial_cache_renders_missing_only(self, tmp_path: Path) -> None:
-        """Test that cached templates are reused and only missing ones are rendered."""
+        """验证复用已缓存模板，仅渲染缺失模板。"""
         from datetime import date
 
         cache_dir = tmp_path / "cache"
@@ -1429,7 +1429,7 @@ class TestGenerateAndSaveImageNormalFlow:
 
         data_computer = MagicMock()
         image_renderer = MagicMock()
-        # Only renders the missing template (moyuren_cute)
+        # 仅渲染缺失的模板（moyuren_cute）
         image_renderer.render = AsyncMock(return_value="cute_20260205.jpg")
         cache_cleaner = MagicMock()
 
@@ -1454,7 +1454,7 @@ class TestGenerateAndSaveImageNormalFlow:
         mock_fetch = AsyncMock(return_value={"api_data": "ok"})
         mock_update = AsyncMock()
 
-        # _read_latest_filename returns cached file for "moyuren" but None for "moyuren_cute"
+        # _read_latest_filename 对 moyuren 返回缓存文件，对 moyuren_cute 返回 None
         def fake_read_latest(_data_file_path: Path, tname: str) -> str | None:
             if tname == "moyuren":
                 return "moyuren_cached.jpg"
@@ -1472,8 +1472,8 @@ class TestGenerateAndSaveImageNormalFlow:
         ):
             results = await generate_and_save_image(app)
 
-        # moyuren from cache, moyuren_cute newly rendered
+        # moyuren 来自缓存，moyuren_cute 为新渲染结果
         assert results == {"moyuren": "moyuren_cached.jpg", "moyuren_cute": "cute_20260205.jpg"}
-        # render should only be called once (for the missing template)
+        # render 应只调用一次（渲染缺失模板）
         image_renderer.render.assert_awaited_once()
 

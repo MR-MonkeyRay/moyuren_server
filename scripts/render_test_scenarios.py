@@ -8,7 +8,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# Add project root to path
+# 将项目根目录加入 sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.core.config import (
@@ -458,24 +458,24 @@ async def main():
         print_scenario_list()
         return
 
-    # Load config
+    # 加载配置
     config = load_config()
     logger = setup_logging(config.logging, logger_name="render_test")
     proxy_url = config.network.proxy_url
     browser_manager.configure(logger, proxy_url=proxy_url)
     stock_index_service = None
     try:
-        # Initialize timezones
+        # 初始化时区
         init_timezones(
             business_tz=config.timezone.business, display_tz=config.timezone.display
         )
 
-        # Ensure directories exist
+        # 确保目录存在
         cache_dir = Path(config.paths.cache_dir)
         (cache_dir / "images").mkdir(parents=True, exist_ok=True)
         (cache_dir / "holidays").mkdir(parents=True, exist_ok=True)
 
-        # Initialize services
+        # 初始化各服务
         news_source = config.get_source(NewsSource)
         data_fetcher = DataFetcher(
             source=news_source,
@@ -503,7 +503,7 @@ async def main():
             themes=config.templates.config.themes,
         )
 
-        # Initialize stock index service
+        # 初始化股票指数服务
         stock_index_service = None
         stock_index_source = config.get_source(StockIndexSource)
         if stock_index_source:
@@ -511,7 +511,7 @@ async def main():
                 stock_index_source, proxy_url=proxy_url
             )
 
-        # Initialize gold price service
+        # 初始化金价服务
         gold_price_service = None
         gold_price_source = config.get_source(GoldPriceSource)
         if gold_price_source:
@@ -519,7 +519,7 @@ async def main():
                 gold_price_source, proxy_url=proxy_url, instances=config.instances
             )
 
-        # Initialize daily english service if config exists
+        # 若配置存在则初始化每日英语服务
         daily_english_service = None
         daily_english_source = config.get_source(DailyEnglishSource)
         if daily_english_source and daily_english_source.enabled:
@@ -537,7 +537,7 @@ async def main():
                 proxy_url=proxy_url,
             )
 
-        # Get templates configuration
+        # 获取模板配置
         templates_config = config.get_templates_config()
 
         image_renderer = ImageRenderer(

@@ -1,4 +1,4 @@
-"""Atomic output permissions, content integrity, and cleanup guarantees."""
+"""原子输出的权限、内容完整性与清理保证。"""
 
 import os
 import stat
@@ -30,7 +30,7 @@ def test_permissions_follow_umask(
 ) -> None:
     previous = os.umask(mask)
     try:
-        # Inject a fresh startup snapshot without reloading an imported module.
+        # 注入全新的启动时快照，避免重新加载已导入的模块。
         monkeypatch.setattr(fileutil, "_OUTPUT_MODE", 0o666 & ~fileutil._read_umask())
         target = tmp_path / "output"
         target.write_bytes(b"previous")

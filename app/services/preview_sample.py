@@ -1,4 +1,4 @@
-"""Offline raw data assembly for template previews."""
+"""模板预览用的离线原始数据组装。"""
 
 import logging
 from datetime import datetime, timedelta
@@ -9,7 +9,7 @@ from app.services.daily_cache import DailyCache
 
 
 def sample_raw_data(now: datetime) -> dict[str, Any]:
-    """Build deterministic raw data suitable for rendering every bundled template."""
+    """构造确定性原始数据，足以渲染仓库内置的全部模板。"""
     business_date = now.date()
     date_text = business_date.isoformat()
     updated_text = now.replace(minute=0, second=0, microsecond=0).isoformat()
@@ -100,7 +100,7 @@ def _load_cache(
     source_name: str,
     logger: logging.Logger,
 ) -> Any:
-    """Read one daily cache without invoking its network-aware ``get`` method."""
+    """读取单个日级缓存，不调用可能联网的 ``get`` 方法。"""
     if service is None:
         return None
     try:
@@ -115,11 +115,10 @@ def cached_raw_data(
     now: datetime,
     logger: logging.Logger,
 ) -> dict[str, Any]:
-    """Assemble preview data from daily cache files with per-source samples.
+    """用日级缓存文件覆盖样例数据，组装预览数据；缺失来源保留样例。
 
-    This function deliberately calls only ``load_cache``. It never invokes a
-    service ``get``/fetch method, updates cache files, or reads the stock
-    service's process-local cache.
+    这里刻意只调用 ``load_cache``：绝不触发服务的 ``get``/抓取方法，
+    不更新缓存文件，也不读取股票服务的进程内缓存。
     """
     result = sample_raw_data(now)
 

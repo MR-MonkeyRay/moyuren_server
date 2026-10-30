@@ -1,4 +1,4 @@
-"""Tests for app/core/config.py - configuration management."""
+"""app/core/config.py 配置管理测试。"""
 
 from pathlib import Path
 
@@ -33,10 +33,10 @@ from app.core.config import (
 
 
 class TestSQLiteBackendConfig:
-    """Tests for SQLite dictionary path configuration."""
+    """SQLite 词典路径配置测试。"""
 
     def test_default_db_path(self) -> None:
-        """Test the default path is relative to the cache directory."""
+        """验证默认路径相对于缓存目录。"""
         config = SQLiteBackendConfig()
 
         assert config.db_path == "ecdict/stardict.db"
@@ -53,17 +53,17 @@ class TestSQLiteBackendConfig:
         ],
     )
     def test_resolve_db_path(self, db_path: str, expected: str) -> None:
-        """Test relative paths retain every component and absolute paths stay absolute."""
+        """验证相对路径保留全部组成部分，绝对路径保持不变。"""
         config = SQLiteBackendConfig(db_path=db_path)
 
         assert config.resolve_db_path(Path("/tmp/c")) == Path(expected)
 
 
 class TestServerConfig:
-    """Tests for ServerConfig model."""
+    """ServerConfig 模型测试。"""
 
     def test_valid_server_config(self) -> None:
-        """Test valid server configuration."""
+        """验证有效的服务器配置。"""
         config = ServerConfig(
             host="0.0.0.0", port=8000, base_domain="http://localhost:8000"
         )
@@ -72,65 +72,65 @@ class TestServerConfig:
 
 
 class TestSchedulerConfig:
-    """Tests for SchedulerConfig model."""
+    """SchedulerConfig 模型测试。"""
 
     def test_valid_daily_times(self) -> None:
-        """Test valid daily times."""
+        """验证有效的每日执行时间。"""
         config = SchedulerConfig(daily_times=["06:00", "18:00"])
         assert len(config.daily_times) == 2
 
     def test_valid_hourly_mode_config(self) -> None:
-        """Test valid hourly mode config."""
+        """验证有效的每小时调度配置。"""
         config = SchedulerConfig(mode="hourly", minute_of_hour=30)
         assert config.mode == "hourly"
         assert config.minute_of_hour == 30
 
     def test_invalid_time_format_raises_error(self) -> None:
-        """Test invalid time format raises error."""
+        """验证无效的时间格式会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             SchedulerConfig(daily_times=["25:00"])
         assert "Invalid time format" in str(exc_info.value)
 
     def test_empty_daily_times_raises_error(self) -> None:
-        """Test empty daily times raises error."""
+        """验证每日执行时间列表为空时会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             SchedulerConfig(daily_times=[])
         assert "cannot be empty" in str(exc_info.value)
 
     def test_empty_daily_times_allowed_in_hourly_mode(self) -> None:
-        """Test empty daily times is allowed in hourly mode."""
+        """验证每小时模式允许每日执行时间列表为空。"""
         config = SchedulerConfig(mode="hourly", daily_times=[], minute_of_hour=0)
         assert config.mode == "hourly"
         assert config.daily_times == []
 
     @pytest.mark.parametrize("minute", [-1, 60])
     def test_invalid_minute_of_hour_raises_error(self, minute: int) -> None:
-        """Test invalid minute_of_hour raises error."""
+        """验证无效的 minute_of_hour 会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             SchedulerConfig(mode="hourly", minute_of_hour=minute)
         assert "minute_of_hour must be between 0 and 59" in str(exc_info.value)
 
     def test_strips_whitespace(self) -> None:
-        """Test strips whitespace from time strings."""
+        """验证时间字符串两端的空白会被去除。"""
         config = SchedulerConfig(daily_times=["  06:00  "])
         assert config.daily_times == ["06:00"]
 
 
 class TestCacheConfig:
-    """Tests for CacheConfig model."""
+    """CacheConfig 模型测试。"""
 
     def test_valid_retain_days(self) -> None:
-        """Test valid retain_days."""
+        """验证有效的 retain_days。"""
         config = CacheConfig(retain_days=30)
         assert config.retain_days == 30
 
     def test_default_max_images_per_template_per_day(self) -> None:
-        """Test the default daily image limit."""
+        """验证每日图片数量上限的默认值。"""
         config = CacheConfig()
         assert config.max_images_per_template_per_day == 3
 
     def test_valid_max_images_per_template_per_day(self) -> None:
-        """Test a positive daily image limit."""
+        """验证每日图片数量上限接受正数。"""
         config = CacheConfig(max_images_per_template_per_day=5)
         assert config.max_images_per_template_per_day == 5
 
@@ -138,7 +138,7 @@ class TestCacheConfig:
     def test_invalid_max_images_per_template_per_day_raises_error(
         self, limit: int
     ) -> None:
-        """Test non-positive daily image limits are rejected."""
+        """验证每日图片数量上限不接受非正数。"""
         with pytest.raises(ValidationError) as exc_info:
             CacheConfig(max_images_per_template_per_day=limit)
         assert "must be at least 1" in str(exc_info.value)
@@ -146,42 +146,42 @@ class TestCacheConfig:
     def test_max_images_per_template_per_day_env_override(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test the daily image limit can be overridden by environment."""
+        """验证环境变量可以覆盖每日图片数量上限。"""
         monkeypatch.setenv("MOYUREN_CACHE_MAX_IMAGES_PER_TEMPLATE_PER_DAY", "7")
         config = AppConfig.from_yaml("config.yaml")
         assert config.cache.max_images_per_template_per_day == 7
 
     def test_zero_retain_days_raises_error(self) -> None:
-        """Test zero retain_days raises error."""
+        """验证 retain_days 为零时会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             CacheConfig(retain_days=0)
         assert "must be positive" in str(exc_info.value)
 
     def test_negative_retain_days_raises_error(self) -> None:
-        """Test negative retain_days raises error."""
+        """验证 retain_days 为负数时会报错。"""
         with pytest.raises(ValidationError):
             CacheConfig(retain_days=-1)
 
 
 class TestOpsConfig:
-    """Tests for OpsConfig model."""
+    """OpsConfig 模型测试。"""
 
     def test_default_api_key(self) -> None:
-        """Test default api_key is empty string."""
+        """验证 api_key 默认为空字符串。"""
         config = OpsConfig()
         assert config.api_key == ""
 
     def test_custom_api_key(self) -> None:
-        """Test custom api_key."""
+        """验证自定义 api_key。"""
         config = OpsConfig(api_key="test-key-123")
         assert config.api_key == "test-key-123"
 
 
 class TestNetworkConfig:
-    """Tests for global network configuration."""
+    """全局网络配置测试。"""
 
     def test_default_proxy_is_none(self) -> None:
-        """Test default proxy is disabled."""
+        """验证默认不启用代理。"""
         config = NetworkConfig()
         assert config.proxy_url is None
 
@@ -194,7 +194,7 @@ class TestNetworkConfig:
         ],
     )
     def test_valid_proxy_url(self, proxy_url: str) -> None:
-        """Test supported proxy URL formats."""
+        """验证支持的代理 URL 格式。"""
         config = NetworkConfig(proxy_url=proxy_url)
         assert config.proxy_url == proxy_url
 
@@ -210,7 +210,7 @@ class TestNetworkConfig:
         ],
     )
     def test_invalid_proxy_url_raises_error(self, proxy_url: str) -> None:
-        """Test invalid proxy URLs are rejected."""
+        """验证无效的代理 URL 会被拒绝。"""
         with pytest.raises(ValidationError):
             NetworkConfig(proxy_url=proxy_url)
 
@@ -219,7 +219,7 @@ class TestNetworkConfig:
         ["user:proxy-secret", "user", ":proxy-secret", "user:", "", ":"],
     )
     def test_authenticated_socks_proxy_raises_safe_error(self, userinfo: str) -> None:
-        """Test SOCKS userinfo is rejected without exposing credentials."""
+        """验证拒绝 SOCKS 用户信息时不会泄露凭据。"""
         proxy_url = f"socks5://{userinfo}@proxy.example:1080"
         with pytest.raises(ValidationError) as exc_info:
             NetworkConfig(proxy_url=proxy_url)
@@ -235,7 +235,7 @@ class TestNetworkConfig:
     def test_load_config_rejects_authenticated_socks_proxy(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test application and script config loading hides rejected proxy secrets."""
+        """验证应用和脚本拒绝代理配置时不会泄露代理凭据。"""
         monkeypatch.setenv(
             "MOYUREN_NETWORK_PROXY_URL",
             "socks5://user:proxy-secret@proxy.example:1080",
@@ -250,23 +250,23 @@ class TestNetworkConfig:
 
 
 class TestInstancesConfig:
-    """Tests for global 60s public instance configuration."""
+    """全局 60s 公共实例配置测试。"""
 
     def test_defaults_disable_instance_switching(self) -> None:
-        """Test an empty configuration performs no instance switching."""
+        """验证空配置不会触发实例切换。"""
         config = InstancesConfig()
         assert config.list_url is None
         assert config.urls is None
         assert config.allowlist is None
 
     def test_normalizes_allowlist(self) -> None:
-        """Bare hostnames and subdomain wildcards are normalized to lowercase."""
+        """将纯主机名和子域名通配符统一为小写。"""
         config = InstancesConfig(allowlist=[" API.Example.COM ", "*.Example.COM"])
         assert config.allowlist == ["api.example.com", "*.example.com"]
         assert InstancesConfig(allowlist=[]).allowlist == []
 
     def test_allowlist_environment_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """The discovered-host allowlist can be supplied as a JSON environment list."""
+        """允许通过 JSON 列表形式的环境变量提供发现主机的白名单。"""
         monkeypatch.setenv("MOYUREN_INSTANCES_ALLOWLIST", '["API.Example.COM", "*.example.org"]')
         config = AppConfig.from_yaml("config.yaml")
         assert config.instances.allowlist == ["api.example.com", "*.example.org"]
@@ -278,35 +278,35 @@ class TestInstancesConfig:
         "example.com.", "a" * 64 + ".com",
     ])
     def test_rejects_invalid_allowlist_pattern(self, pattern: str) -> None:
-        """An instance pattern cannot contain URL syntax or invalid labels."""
+        """实例匹配规则不能包含 URL 语法或无效的域名标签。"""
         with pytest.raises(ValidationError):
             InstancesConfig(allowlist=[pattern])
 
     def test_normalizes_urls(self) -> None:
-        """Test trailing slashes and blank entries are removed."""
+        """验证尾部斜杠和空白条目会被移除。"""
         config = InstancesConfig(urls=["https://60s.crystelf.top/", "  ", ""])
         assert config.urls == ["https://60s.crystelf.top"]
 
     def test_empty_urls_become_none(self) -> None:
-        """Test an all-blank URL list is treated as unset."""
+        """验证全部为空白的 URL 列表视为未设置。"""
         assert InstancesConfig(urls=["", "  "]).urls is None
 
     def test_explicit_null_urls_allowed(self) -> None:
-        """Test an explicit null URL list is allowed."""
+        """验证 URL 列表允许显式设为 null。"""
         assert InstancesConfig(urls=None).urls is None
         assert InstancesConfig(list_url=None).list_url is None
 
     def test_rejects_unknown_keys(self) -> None:
-        """Test unknown keys are rejected."""
+        """验证未知配置键会被拒绝。"""
         with pytest.raises(ValidationError):
             InstancesConfig(instances=["https://60s.crystelf.top"])
 
 
 class TestTemplatesConfig:
-    """Tests for TemplatesConfig model."""
+    """TemplatesConfig 模型测试。"""
 
     def test_get_template_by_name(self) -> None:
-        """Test get template by name."""
+        """验证按名称获取模板。"""
         config = TemplatesConfig(
             default="main",
             items=[
@@ -326,7 +326,7 @@ class TestTemplatesConfig:
         assert template.name == "alt"
 
     def test_get_template_default(self) -> None:
-        """Test get template uses default."""
+        """验证未指定名称时获取默认模板。"""
         config = TemplatesConfig(
             default="main",
             items=[
@@ -341,7 +341,7 @@ class TestTemplatesConfig:
         assert template.name == "main"
 
     def test_get_template_not_found_raises_error(self) -> None:
-        """Test get template not found raises error."""
+        """验证找不到模板时会报错。"""
         config = TemplatesConfig(
             items=[
                 TemplateItemConfig(
@@ -355,7 +355,7 @@ class TestTemplatesConfig:
             config.get_template("nonexistent")
 
     def test_duplicate_names_raises_error(self) -> None:
-        """Test duplicate template names raises error."""
+        """验证模板名称重复时会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             TemplatesConfig(
                 items=[
@@ -375,77 +375,77 @@ class TestTemplatesConfig:
 
 
 class TestLoggingConfig:
-    """Tests for LoggingConfig model."""
+    """LoggingConfig 模型测试。"""
 
     def test_valid_log_level(self) -> None:
-        """Test valid log level."""
+        """验证有效的日志级别。"""
         config = LoggingConfig(level="DEBUG")
         assert config.level == "DEBUG"
 
     def test_case_insensitive_level(self) -> None:
-        """Test log level is case insensitive."""
+        """验证日志级别不区分大小写。"""
         config = LoggingConfig(level="debug")
         assert config.level == "DEBUG"
 
     def test_invalid_level_raises_error(self) -> None:
-        """Test invalid log level raises error."""
+        """验证无效的日志级别会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             LoggingConfig(level="INVALID")
         assert "must be one of" in str(exc_info.value)
 
 
 class TestTimezoneConfig:
-    """Tests for TimezoneConfig model."""
+    """TimezoneConfig 模型测试。"""
 
     def test_valid_iana_timezone(self) -> None:
-        """Test valid IANA timezone."""
+        """验证有效的 IANA 时区。"""
         config = TimezoneConfig(business="Asia/Shanghai", display="America/New_York")
         assert config.business == "Asia/Shanghai"
 
     def test_display_accepts_local(self) -> None:
-        """Test display field accepts 'local'."""
+        """验证 display 字段接受 'local'。"""
         config = TimezoneConfig(business="Asia/Shanghai", display="local")
         assert config.display == "local"
 
     def test_business_rejects_local(self) -> None:
-        """Test business field rejects 'local'."""
+        """验证 business 字段拒绝 'local'。"""
         with pytest.raises(ValidationError) as exc_info:
             TimezoneConfig(business="local", display="local")
         assert "does not accept 'local'" in str(exc_info.value)
 
     def test_valid_utc_offset(self) -> None:
-        """Test valid UTC offset format."""
+        """验证有效的 UTC 偏移格式。"""
         config = TimezoneConfig(business="UTC+8", display="UTC-5")
         assert config.business == "UTC+8"
 
     def test_invalid_timezone_raises_error(self) -> None:
-        """Test invalid timezone raises error."""
+        """验证无效的时区会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             TimezoneConfig(business="Invalid/Zone")
         assert "Invalid timezone" in str(exc_info.value)
 
     def test_utc_offset_out_of_range_raises_error(self) -> None:
-        """Test UTC offset out of range raises error."""
+        """验证 UTC 偏移超出范围时会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             TimezoneConfig(business="UTC+15")
         assert "Invalid timezone offset" in str(exc_info.value)
 
 
 class TestHolidaySource:
-    """Tests for HolidaySource model."""
+    """HolidaySource 模型测试。"""
 
     def test_valid_holiday_config(self) -> None:
-        """Test valid holiday configuration."""
+        """验证有效的节假日配置。"""
         config = HolidaySource(type="holiday", timeout_sec=10)
         assert config.timeout_sec == 10
 
     def test_obsolete_mirror_urls_are_rejected(self) -> None:
-        """Reject removed fields rather than silently discarding configuration."""
+        """拒绝已移除的字段，而不是静默丢弃配置。"""
         with pytest.raises(ValidationError, match="extra_forbidden"):
             HolidaySource.model_validate({"mirror_urls": ["https://mirror.example"]})
 
     def test_zero_timeout_raises_error(self) -> None:
-        """Test zero timeout raises error."""
+        """验证超时时间为零时会报错。"""
         with pytest.raises(ValidationError):
             HolidaySource(type="holiday", timeout_sec=0)
 
@@ -459,7 +459,7 @@ class TestHolidaySource:
         holiday_entry: dict[str, object] | None,
         expected_enabled: bool,
     ) -> None:
-        """Test a config without a holiday entry keeps holidays enabled."""
+        """验证配置缺少节假日条目时仍保持启用节假日。"""
         import yaml
 
         raw = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
@@ -477,10 +477,10 @@ class TestHolidaySource:
 
 
 class TestCrazyThursdaySource:
-    """Tests for CrazyThursdaySource model."""
+    """CrazyThursdaySource 模型测试。"""
 
     def test_valid_config(self) -> None:
-        """Test valid crazy thursday configuration."""
+        """验证有效的疯狂星期四配置。"""
         config = CrazyThursdaySource(
             type="crazy_thursday",
             enabled=True,
@@ -490,7 +490,7 @@ class TestCrazyThursdaySource:
         assert config.enabled is True
 
     def test_disabled_config(self) -> None:
-        """Test disabled configuration."""
+        """验证禁用配置。"""
         config = CrazyThursdaySource(
             type="crazy_thursday",
             enabled=False,
@@ -501,10 +501,10 @@ class TestCrazyThursdaySource:
 
 
 class TestStockIndexSource:
-    """Tests for StockIndexSource model."""
+    """StockIndexSource 模型测试。"""
 
     def test_valid_config(self) -> None:
-        """Test valid stock index configuration."""
+        """验证有效的股票指数配置。"""
         config = StockIndexSource(
             type="stock_index",
             quote_url="https://api.example.com/quote",
@@ -528,7 +528,7 @@ class TestStockIndexSource:
         assert config.cache_ttl_sec == 60
 
     def test_object_items_preserve_configured_order_and_names(self) -> None:
-        """Test object items normalize codes while preserving order and names."""
+        """验证对象条目会规范化代码，同时保留顺序和名称。"""
         config = StockIndexSource(
             type="stock_index",
             quote_url="https://api.example.com/quote",
@@ -544,7 +544,7 @@ class TestStockIndexSource:
 
     @pytest.mark.parametrize("secid", ["1.000001", "116.UNKNOWN", "999.UNKNOWN"])
     def test_string_items_are_rejected(self, secid: str) -> None:
-        """Require an explicit name and market instead of inferring legacy entries."""
+        """要求显式提供名称和市场，不再推断旧格式条目。"""
         with pytest.raises(ValidationError):
             StockIndexSource.model_validate(
                 {
@@ -556,7 +556,7 @@ class TestStockIndexSource:
 
     @pytest.mark.parametrize("secid", ["000001", "x.000001", "1.", "1.A-B"])
     def test_invalid_secid_format_raises_error(self, secid: str) -> None:
-        """Test malformed secids are rejected in the supported object form."""
+        """验证支持的对象格式会拒绝格式错误的 secid。"""
         with pytest.raises(ValidationError, match="secid must match"):
             StockIndexSource(
                 type="stock_index",
@@ -566,7 +566,7 @@ class TestStockIndexSource:
             )
 
     def test_empty_secids_are_rejected(self) -> None:
-        """A stock source must configure at least one index."""
+        """股票数据源必须配置至少一个指数。"""
         with pytest.raises(ValidationError):
             StockIndexSource(
                 quote_url="https://api.example.com/quote",
@@ -576,7 +576,7 @@ class TestStockIndexSource:
 
     @pytest.mark.parametrize("missing_field", ["name", "market"])
     def test_object_items_require_name_and_market(self, missing_field: str) -> None:
-        """Reject incomplete objects without restoring inferred defaults."""
+        """拒绝不完整的对象，不再恢复推断出的默认值。"""
         item = {"secid": "1.000001", "name": "上证指数", "market": "A"}
         del item[missing_field]
         with pytest.raises(ValidationError, match="Field required"):
@@ -589,7 +589,7 @@ class TestStockIndexSource:
             )
 
     def test_duplicate_codes_raise_error(self) -> None:
-        """Test duplicate codes are rejected even across different prefixes."""
+        """验证即使前缀不同，重复的代码也会被拒绝。"""
         with pytest.raises(ValidationError, match="duplicate stock index code"):
             StockIndexSource(
                 type="stock_index",
@@ -602,7 +602,7 @@ class TestStockIndexSource:
             )
 
     def test_item_market_must_have_timezone(self) -> None:
-        """Test every configured item market has a timezone mapping."""
+        """验证每个配置条目的市场都有对应的时区映射。"""
         with pytest.raises(ValidationError, match="must be a key of market_timezones"):
             StockIndexSource(
                 type="stock_index",
@@ -613,10 +613,10 @@ class TestStockIndexSource:
 
 
 class TestTextLimitsConfig:
-    """Tests for caps on remote text and news count."""
+    """远程文本长度和新闻数量上限测试。"""
 
     def test_defaults(self) -> None:
-        """Every text limit has a bounded positive default."""
+        """每个文本限制都有正数默认值，以限制文本长度或数量。"""
         expected = {
             "news_item": 120,
             "news_items": 15,
@@ -632,40 +632,40 @@ class TestTextLimitsConfig:
     @pytest.mark.parametrize("field", list(TextLimitsConfig.model_fields))
     @pytest.mark.parametrize("value", [0, -1, 1.5, True, "12"])
     def test_requires_positive_integers(self, field: str, value: object) -> None:
-        """Reject non-positive and non-integer caps for every field."""
+        """所有字段均拒绝非正数和非整数的上限。"""
         with pytest.raises(ValidationError):
             TextLimitsConfig.model_validate({field: value})
 
     def test_nested_overrides_keep_other_defaults(self) -> None:
-        """A partial render configuration only overrides the requested cap."""
+        """部分渲染配置仅覆盖指定的上限。"""
         config = TemplateRenderConfig.model_validate({"text_limits": {"news_item": 10}})
         assert config.text_limits.news_item == 10
         assert config.text_limits.news_items == 15
 
 
 class TestTemplateRenderConfig:
-    """Tests for TemplateRenderConfig model."""
+    """TemplateRenderConfig 模型测试。"""
 
     def test_default_redirect_limit(self) -> None:
-        """Resource fetches follow at most five validated redirects by default."""
+        """资源获取默认最多跟随五次经过校验的重定向。"""
         assert TemplateRenderConfig().remote_resource_max_redirects == 5
         assert TemplateRenderConfig(remote_resource_max_redirects=0).remote_resource_max_redirects == 0
 
     @pytest.mark.parametrize("limit", [-1, 21, 1.5, True, "5"])
     def test_rejects_invalid_redirect_limit(self, limit: object) -> None:
-        """Redirect bounds require an integer from zero to twenty."""
+        """重定向次数上限必须是零到二十之间的整数。"""
         with pytest.raises(ValidationError):
             TemplateRenderConfig.model_validate({"remote_resource_max_redirects": limit})
 
     def test_default_resource_hosts(self) -> None:
-        """Only the existing font CDN hosts are allowed by default."""
+        """默认仅允许现有的字体 CDN 主机。"""
         assert TemplateRenderConfig().allowed_resource_hosts == [
             "fonts.googleapis.com", "fonts.googleapis.cn",
             "fonts.gstatic.com", "fonts.gstatic.cn",
         ]
 
     def test_normalizes_resource_hosts(self) -> None:
-        """Resource hosts are bare lowercase hostnames; an empty list denies all."""
+        """资源主机统一为小写纯主机名；空列表禁止所有主机。"""
         assert TemplateRenderConfig(allowed_resource_hosts=[" CDN.Example.COM "]).allowed_resource_hosts == ["cdn.example.com"]
         assert TemplateRenderConfig(allowed_resource_hosts=[]).allowed_resource_hosts == []
 
@@ -675,12 +675,12 @@ class TestTemplateRenderConfig:
         "example..com", "-example.com", "example.com.", "a" * 64 + ".com",
     ])
     def test_rejects_invalid_resource_hosts(self, hostname: str) -> None:
-        """Resource allowlist entries cannot carry schemes, ports or paths."""
+        """资源白名单条目不能包含协议、端口或路径。"""
         with pytest.raises(ValidationError):
             TemplateRenderConfig(allowed_resource_hosts=[hostname])
 
     def test_valid_config(self) -> None:
-        """Test valid template render configuration."""
+        """验证有效的模板渲染配置。"""
         config = TemplateRenderConfig(
             device_scale_factor=2,
             jpeg_quality=90,
@@ -698,76 +698,76 @@ class TestTemplateRenderConfig:
         assert config.font_ready_timeout_sec == 1.5
 
     def test_zero_scale_raises_error(self) -> None:
-        """Test zero device scale factor raises error."""
+        """验证设备缩放系数为零时会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             TemplateRenderConfig(device_scale_factor=0)
         assert "must be positive" in str(exc_info.value)
 
     def test_invalid_jpeg_quality_raises_error(self) -> None:
-        """Test invalid JPEG quality raises error."""
+        """验证无效的 JPEG 质量会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             TemplateRenderConfig(jpeg_quality=101)
         assert "must be between 1 and 100" in str(exc_info.value)
 
     def test_invalid_remote_resource_cache_ttl_raises_error(self) -> None:
-        """Test invalid remote resource cache TTL raises error."""
+        """验证无效的远程资源缓存 TTL 会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             TemplateRenderConfig(remote_resource_cache_ttl_sec=0)
         assert "remote_resource_cache_ttl_sec must be positive" in str(exc_info.value)
 
     def test_invalid_remote_resource_timeout_raises_error(self) -> None:
-        """Test invalid remote resource timeout raises error."""
+        """验证无效的远程资源超时时间会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             TemplateRenderConfig(remote_resource_timeout_sec=0)
         assert "remote_resource_timeout_sec must be positive" in str(exc_info.value)
 
     def test_invalid_page_load_timeout_raises_error(self) -> None:
-        """Test invalid page load timeout raises error."""
+        """验证无效的页面加载超时时间会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             TemplateRenderConfig(page_load_timeout_sec=0)
         assert "page_load_timeout_sec must be positive" in str(exc_info.value)
 
     def test_font_ready_timeout_exceeds_60_raises_error(self) -> None:
-        """Test font readiness timeout exceeding 60 seconds raises error."""
+        """验证字体就绪超时时间超过 60 秒时会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             TemplateRenderConfig(font_ready_timeout_sec=61.0)
         assert "font_ready_timeout_sec must not exceed 60.0" in str(exc_info.value)
 
     def test_max_size_kb_valid(self) -> None:
-        """Test valid remote resource max size."""
+        """验证有效的远程资源大小上限。"""
         config = TemplateRenderConfig(remote_resource_max_size_kb=5120)
         assert config.remote_resource_max_size_kb == 5120
 
     def test_max_size_kb_zero_raises_error(self) -> None:
-        """Test zero max size raises error."""
+        """验证大小上限为零时会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             TemplateRenderConfig(remote_resource_max_size_kb=0)
         assert "must be between 1 and 51200" in str(exc_info.value)
 
     def test_max_size_kb_too_large_raises_error(self) -> None:
-        """Test max size exceeding 51200 raises error."""
+        """验证大小上限超过 51200 时会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             TemplateRenderConfig(remote_resource_max_size_kb=51201)
         assert "must be between 1 and 51200" in str(exc_info.value)
 
     def test_ttl_exceeds_one_year_raises_error(self) -> None:
-        """Test TTL exceeding one year raises error."""
+        """验证 TTL 超过一年时会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             TemplateRenderConfig(remote_resource_cache_ttl_sec=365 * 24 * 60 * 60 + 1)
         assert "must not exceed 1 year" in str(exc_info.value)
 
     def test_timeout_exceeds_60_raises_error(self) -> None:
-        """Test timeout exceeding 60 seconds raises error."""
+        """验证超时时间超过 60 秒时会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             TemplateRenderConfig(remote_resource_timeout_sec=61.0)
         assert "must not exceed 60.0" in str(exc_info.value)
 
 
 class TestNewsSource:
-    """Tests for NewsSource model."""
+    """NewsSource 模型测试。"""
 
     def test_valid_config(self) -> None:
-        """Test valid news source configuration."""
+        """验证有效的新闻数据源配置。"""
         config = NewsSource(
             type="news", url="https://api.example.com/news", params={"key": "value"}
         )
@@ -775,17 +775,17 @@ class TestNewsSource:
         assert config.url == "https://api.example.com/news"
 
     def test_empty_url_raises_error(self) -> None:
-        """Test empty URL raises error."""
+        """验证 URL 为空时会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             NewsSource(type="news", url="")
         assert "cannot be empty" in str(exc_info.value)
 
 
 class TestFunContentSource:
-    """Tests for FunContentSource model."""
+    """FunContentSource 模型测试。"""
 
     def test_valid_config(self) -> None:
-        """Test valid fun content source configuration."""
+        """验证有效的趣味内容数据源配置。"""
         config = FunContentSource(
             type="fun_content",
             endpoints=[
@@ -801,7 +801,7 @@ class TestFunContentSource:
         assert len(config.endpoints) == 1
 
     def test_empty_endpoints_raises_error(self) -> None:
-        """Test empty endpoints raises error."""
+        """验证端点列表为空时会报错。"""
         with pytest.raises(ValidationError) as exc_info:
             FunContentSource(type="fun_content", endpoints=[])
         assert "cannot be empty" in str(exc_info.value)

@@ -1,4 +1,4 @@
-"""Operations API endpoints (API Key protected)."""
+"""运维操作 API 端点（API Key 鉴权保护）。"""
 
 import asyncio
 import hmac
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/v1/ops", tags=["ops"])
 
 
 class _UnauthorizedError(Exception):
-    """Internal exception for auth failures."""
+    """鉴权失败内部异常。"""
 
     def __init__(self, message: str) -> None:
         """初始化鉴权失败异常.
@@ -33,7 +33,7 @@ class _UnauthorizedError(Exception):
 
 
 def _verify_api_key(request: Request) -> None:
-    """Verify API Key from Authorization: Bearer <key> header."""
+    """校验 Authorization: Bearer <key> 请求头中的 API Key。"""
     config = request.app.state.config
     expected_key = config.ops.api_key
 
@@ -50,7 +50,7 @@ def _verify_api_key(request: Request) -> None:
 
 
 def _auth_error_response(message: str) -> JSONResponse:
-    """Create 401 Unauthorized response."""
+    """构造 401 未授权响应。"""
     return JSONResponse(
         content=error_response(ErrorCode.AUTH_UNAUTHORIZED, message),
         status_code=get_http_status(ErrorCode.AUTH_UNAUTHORIZED),
@@ -60,7 +60,7 @@ def _auth_error_response(message: str) -> JSONResponse:
 
 @router.post("/templates/preview", response_class=Response)
 async def ops_template_preview(request: Request, body: TemplatePreviewRequest) -> Response:
-    """Render a private preview without generation side effects or data fetching."""
+    """渲染私有预览：不触发正式生成副作用，也不抓取数据。"""
     try:
         _verify_api_key(request)
     except _UnauthorizedError as exc:
@@ -76,7 +76,7 @@ async def ops_template_preview(request: Request, body: TemplatePreviewRequest) -
             headers={"Cache-Control": "no-store"},
         )
 
-    # Each application owns its preview queue independently of real generation locks.
+    # 每个应用实例自持预览队列，与正式生成锁互不影响。
     lock: asyncio.Lock | None = getattr(request.app.state, "preview_lock", None)
     if lock is None:
         lock = asyncio.Lock()

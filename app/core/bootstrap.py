@@ -1,4 +1,4 @@
-"""Application service construction and startup helpers."""
+"""应用服务构建与启动辅助。"""
 
 import asyncio
 import logging
@@ -44,7 +44,7 @@ def build_services(
     logger: logging.Logger,
     http_client: httpx.AsyncClient | None = None,
 ) -> AppServices:
-    """Build the application service container from configuration."""
+    """根据配置构建应用服务容器。"""
     cache_dir = Path(config.paths.cache_dir)
     daily_cache_dir = cache_dir / "daily"
 
@@ -205,7 +205,7 @@ def register_scheduled_jobs(
     job: Callable[[], Awaitable[None]],
     logger: logging.Logger,
 ) -> None:
-    """Register configured image generation jobs on a scheduler."""
+    """按配置在调度器上注册图片生成任务。"""
     if config.scheduler.mode == "hourly":
         scheduler.add_hourly_job(
             job_id="generate_moyuren_image",
@@ -234,7 +234,7 @@ def register_scheduled_jobs(
 async def warmup_daily_cache(
     services: AppServices, config: AppConfig, logger: logging.Logger
 ) -> None:
-    """Warm daily data source caches."""
+    """预热日级数据源缓存。"""
     logger.info("Warming up daily cache...")
     named_tasks: list[tuple[str, Awaitable[object]]] = []
     optional_services = (
@@ -264,7 +264,7 @@ async def warmup_daily_cache(
 
 
 async def ensure_today_data(app: FastAPI) -> None:
-    """Validate today's cached data and generate an initial image if needed."""
+    """校验今日缓存数据，必要时生成首张图片。"""
     config: AppConfig = app.state.config
     logger: logging.Logger = app.state.logger
     today_str = today_business().isoformat()
@@ -323,7 +323,7 @@ async def ensure_today_data(app: FastAPI) -> None:
 def _inspect_today_data(
     data_file: Path, today_str: str, logger: logging.Logger
 ) -> tuple[bool, bool]:
-    """Return whether cached data needs regeneration and whether it is stale only."""
+    """返回缓存数据是否需要重新生成，以及是否仅为过期（stale）。"""
     if not data_file.exists():
         logger.info("No existing data file found for today")
         return True, False

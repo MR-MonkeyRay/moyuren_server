@@ -1,4 +1,4 @@
-"""Template auto-discovery service module."""
+"""模板自动发现服务模块。"""
 
 import logging
 import re
@@ -185,11 +185,11 @@ class TemplateDiscovery:
         viewport_width = int(meta.get("viewport-width", str(default_viewport.width)))
         viewport_height = int(meta.get("viewport-height", str(default_viewport.height)))
 
-        # device_scale_factor: meta > global_config
+        # device_scale_factor：meta 优先于 global_config
         dsf_str = meta.get("device-scale-factor")
         device_scale_factor = int(dsf_str) if dsf_str is not None else global_config.device_scale_factor
 
-        # jpeg_quality: meta > global_config
+        # jpeg_quality：meta 优先于 global_config
         jq_str = meta.get("jpeg-quality")
         jpeg_quality = int(jq_str) if jq_str is not None else global_config.jpeg_quality
 

@@ -1,4 +1,4 @@
-"""Tests for app/services/gold_price.py and gold price computation."""
+"""测试 app/services/gold_price.py 与金价计算。"""
 
 import logging
 from pathlib import Path
@@ -14,14 +14,14 @@ from app.services.gold_price import CachedGoldPriceService, GoldPriceService
 
 
 class TestGoldPriceServiceParseResponse:
-    """Tests for GoldPriceService._parse_response"""
+    """测试 GoldPriceService._parse_response。"""
 
     def _make_service(self):
         config = GoldPriceSource(url="https://example.com/gold", timeout_sec=5)
         return GoldPriceService(config=config, logger=logging.getLogger("test"))
 
     def test_parse_valid_response(self) -> None:
-        """Test parsing valid gold price response."""
+        """测试解析有效的金价响应。"""
         service = self._make_service()
         data = {
             "data": {
@@ -35,33 +35,33 @@ class TestGoldPriceServiceParseResponse:
         assert result == {"today_price": "680.00", "sell_price": "670.00", "unit": "元/克"}
 
     def test_parse_non_dict_response(self) -> None:
-        """Test parsing non-dict response returns None."""
+        """测试非字典响应返回 None。"""
         service = self._make_service()
         assert service._parse_response("not a dict") is None
         assert service._parse_response([1, 2, 3]) is None
         assert service._parse_response(None) is None
 
     def test_parse_missing_metals(self) -> None:
-        """Test parsing response with missing or invalid metals field."""
+        """测试 metals 字段缺失或无效的响应。"""
         service = self._make_service()
         assert service._parse_response({"data": None}) is None
         assert service._parse_response({"data": {}}) is None
         assert service._parse_response({"data": {"metals": "not a list"}}) is None
 
     def test_parse_no_today_gold_price(self) -> None:
-        """Test parsing response without '今日金价' entry."""
+        """测试响应中没有“今日金价”条目的情况。"""
         service = self._make_service()
         data = {"data": {"metals": [{"name": "白银", "today_price": "5.00"}]}}
         assert service._parse_response(data) is None
 
     def test_parse_empty_metals_list(self) -> None:
-        """Test parsing response with empty metals list."""
+        """测试 metals 列表为空的响应。"""
         service = self._make_service()
         data = {"data": {"metals": []}}
         assert service._parse_response(data) is None
 
     def test_parse_default_unit(self) -> None:
-        """Test parsing response uses default unit when not provided."""
+        """测试未提供单位时使用默认单位。"""
         service = self._make_service()
         data = {"data": {"metals": [{"name": "今日金价", "today_price": "680.00", "sell_price": "670.00"}]}}
         result = service._parse_response(data)
@@ -69,13 +69,13 @@ class TestGoldPriceServiceParseResponse:
 
 
 class TestComputeGoldPrice:
-    """Tests for DomainDataAggregator._compute_gold_price"""
+    """测试 DomainDataAggregator._compute_gold_price。"""
 
     def _make_aggregator(self):
         return DomainDataAggregator()
 
     def test_compute_valid_gold_price(self) -> None:
-        """Test computing valid gold price data."""
+        """测试计算有效的金价数据。"""
         agg = self._make_aggregator()
         raw_data = {"gold_price": {"today_price": "680.00", "sell_price": "670.00", "unit": "元/克"}}
         result = agg._compute_gold_price(raw_data)
@@ -87,7 +87,7 @@ class TestComputeGoldPrice:
         assert "+" in result["spread_pct"]
 
     def test_compute_gold_price_down(self) -> None:
-        """Test computing gold price with downward trend."""
+        """测试金价下跌趋势的计算。"""
         agg = self._make_aggregator()
         raw_data = {"gold_price": {"today_price": "660.00", "sell_price": "670.00", "unit": "元/克"}}
         result = agg._compute_gold_price(raw_data)
@@ -95,7 +95,7 @@ class TestComputeGoldPrice:
         assert "-" in result["spread_pct"]
 
     def test_compute_gold_price_flat(self) -> None:
-        """Test computing gold price with flat trend."""
+        """测试金价持平趋势的计算。"""
         agg = self._make_aggregator()
         raw_data = {"gold_price": {"today_price": "670.00", "sell_price": "670.00", "unit": "元/克"}}
         result = agg._compute_gold_price(raw_data)
@@ -103,39 +103,39 @@ class TestComputeGoldPrice:
         assert result["spread_pct"] == "+0.00%"
 
     def test_compute_gold_price_missing_data(self) -> None:
-        """Test computing gold price with missing or invalid data."""
+        """测试金价数据缺失或无效的情况。"""
         agg = self._make_aggregator()
         assert agg._compute_gold_price({}) is None
         assert agg._compute_gold_price({"gold_price": None}) is None
         assert agg._compute_gold_price({"gold_price": "not a dict"}) is None
 
     def test_compute_gold_price_invalid_values(self) -> None:
-        """Test computing gold price with non-numeric values."""
+        """测试金价包含非数值的情况。"""
         agg = self._make_aggregator()
         raw_data = {"gold_price": {"today_price": "abc", "sell_price": "670.00"}}
         assert agg._compute_gold_price(raw_data) is None
 
     def test_compute_gold_price_missing_keys(self) -> None:
-        """Test computing gold price with missing required keys."""
+        """测试金价缺少必需字段的情况。"""
         agg = self._make_aggregator()
-        raw_data = {"gold_price": {"today_price": "680.00"}}  # missing sell_price
+        raw_data = {"gold_price": {"today_price": "680.00"}}  # 缺少 sell_price
         assert agg._compute_gold_price(raw_data) is None
 
     def test_compute_gold_price_zero_sell_price(self) -> None:
-        """Test computing gold price with zero sell price (edge case).
+        """测试卖出价为零的边界情况。
 
-        Note: trend is based on change (today - sell), so 680 - 0 = 680 > 0 = "up".
-        change_pct is 0 when sell_price is 0 to avoid division by zero.
+        趋势取决于差值（今日价减卖出价），因此 680 - 0 = 680 > 0，结果为 "up"。
+        sell_price 为 0 时，change_pct 设为 0，避免除以零。
         """
         agg = self._make_aggregator()
         raw_data = {"gold_price": {"today_price": "680.00", "sell_price": "0"}}
         result = agg._compute_gold_price(raw_data)
         assert result is not None
         assert result["spread_pct"] == "+0.00%"
-        assert result["trend"] == "up"  # change=680 > 0, so "up"
+        assert result["trend"] == "up"  # 差值为 680 > 0，因此为 "up"
 
     def test_compute_gold_price_default_unit(self) -> None:
-        """Test computing gold price uses default unit when not provided."""
+        """测试未提供单位时使用默认单位。"""
         agg = self._make_aggregator()
         raw_data = {"gold_price": {"today_price": "680.00", "sell_price": "670.00"}}
         result = agg._compute_gold_price(raw_data)
@@ -143,15 +143,15 @@ class TestComputeGoldPrice:
 
 
 class TestGoldPriceServiceFetch:
-    """Tests for GoldPriceService.fetch_gold_price async method."""
+    """测试 GoldPriceService.fetch_gold_price 异步方法。"""
 
     def _make_config(self):
-        """Create a mock config."""
+        """创建 mock 配置。"""
         return GoldPriceSource(url="https://example.com/gold", timeout_sec=5)
 
     @respx.mock
     async def test_fetch_success_with_injected_client(self) -> None:
-        """Test successful fetch with injected HTTP client."""
+        """测试使用注入的 HTTP 客户端成功获取数据。"""
         config = self._make_config()
         respx.get(config.url).mock(
             return_value=Response(
@@ -177,7 +177,7 @@ class TestGoldPriceServiceFetch:
 
     @respx.mock
     async def test_fetch_success_without_injected_client(self) -> None:
-        """Test successful fetch without injected client (creates temporary)."""
+        """测试未注入客户端时，创建临时客户端成功获取数据。"""
         config = self._make_config()
         respx.get(config.url).mock(
             return_value=Response(
@@ -198,11 +198,11 @@ class TestGoldPriceServiceFetch:
         assert result is not None
         assert result["today_price"] == "690.00"
         assert result["sell_price"] == "680.00"
-        assert result["unit"] == "元/克"  # default
+        assert result["unit"] == "元/克"  # 默认单位
 
     @respx.mock
     async def test_fetch_timeout_returns_none(self) -> None:
-        """Test TimeoutException returns None."""
+        """测试发生 TimeoutException 时返回 None。"""
         config = self._make_config()
         respx.get(config.url).mock(side_effect=httpx.TimeoutException("timeout"))
 
@@ -213,7 +213,7 @@ class TestGoldPriceServiceFetch:
 
     @respx.mock
     async def test_fetch_http_status_error_returns_none(self) -> None:
-        """Test HTTPStatusError returns None."""
+        """测试发生 HTTPStatusError 时返回 None。"""
         config = self._make_config()
         respx.get(config.url).mock(return_value=Response(500))
 
@@ -224,7 +224,7 @@ class TestGoldPriceServiceFetch:
 
     @respx.mock
     async def test_fetch_generic_exception_returns_none(self) -> None:
-        """Test generic exception returns None."""
+        """测试发生一般异常时返回 None。"""
         config = self._make_config()
         respx.get(config.url).mock(side_effect=Exception("network error"))
 
@@ -235,7 +235,7 @@ class TestGoldPriceServiceFetch:
 
     @respx.mock
     async def test_fetch_with_injected_client_uses_same_client(self) -> None:
-        """Test that injected client is reused (not creating new one)."""
+        """测试复用注入的客户端，而非创建新客户端。"""
         config = self._make_config()
         route = respx.get(config.url).mock(
             return_value=Response(
@@ -246,7 +246,7 @@ class TestGoldPriceServiceFetch:
 
         async with httpx.AsyncClient() as client:
             service = GoldPriceService(config, http_client=client, logger=logging.getLogger("test"))
-            # Fetch multiple times - should use same client
+            # 多次获取数据应复用同一客户端
             await service.fetch_gold_price()
             await service.fetch_gold_price()
 
@@ -254,7 +254,7 @@ class TestGoldPriceServiceFetch:
 
     @respx.mock
     async def test_fetch_switches_to_public_instance(self) -> None:
-        """Test a blocked primary endpoint falls through to the public instance."""
+        """测试主源被阻止时回退到公共实例。"""
         config = GoldPriceSource(url="https://api.example.com/gold", timeout_sec=5)
         instances = InstancesConfig(urls=["https://inst.example.com"])
         respx.get("https://api.example.com/gold").mock(return_value=Response(403))
@@ -327,7 +327,7 @@ class TestGoldPriceServiceFetch:
 
     @respx.mock
     async def test_fetch_returns_none_when_all_endpoints_unusable(self) -> None:
-        """Test None is returned when neither the primary nor the instance is usable."""
+        """测试主源和公共实例均不可用时返回 None。"""
         config = GoldPriceSource(url="https://api.example.com/gold", timeout_sec=5)
         instances = InstancesConfig(urls=["https://inst.example.com"])
         respx.get("https://api.example.com/gold").mock(return_value=Response(403))
@@ -348,22 +348,22 @@ class TestGoldPriceServiceFetch:
 
 
 class TestCachedGoldPriceService:
-    """Tests for CachedGoldPriceService."""
+    """测试 CachedGoldPriceService。"""
 
     def _make_config(self):
-        """Create a mock config."""
+        """创建 mock 配置。"""
         return GoldPriceSource(url="https://example.com/gold", timeout_sec=5)
 
     @pytest.fixture
     def cache_dir(self, tmp_path: Path) -> Path:
-        """Create temporary cache directory."""
+        """创建临时缓存目录。"""
         cache_dir = tmp_path / "daily"
         cache_dir.mkdir()
         return cache_dir
 
     @respx.mock
     def test_init_creates_service(self, cache_dir: Path) -> None:
-        """Test constructor correctly initializes internal service."""
+        """测试构造函数正确初始化内部服务。"""
         config = self._make_config()
         logger = logging.getLogger("test")
 
@@ -373,7 +373,7 @@ class TestCachedGoldPriceService:
         assert isinstance(service._service, GoldPriceService)
 
     async def test_init_with_http_client(self, cache_dir: Path) -> None:
-        """Test constructor passes HTTP client to internal service."""
+        """测试构造函数将 HTTP 客户端传递给内部服务。"""
         config = self._make_config()
         logger = logging.getLogger("test")
 
@@ -383,7 +383,7 @@ class TestCachedGoldPriceService:
 
     @respx.mock
     async def test_fetch_fresh_delegates_to_service(self, cache_dir: Path) -> None:
-        """Test fetch_fresh delegates to GoldPriceService.fetch_gold_price."""
+        """测试 fetch_fresh 委托 GoldPriceService.fetch_gold_price 获取数据。"""
         config = self._make_config()
         respx.get(config.url).mock(
             return_value=Response(
@@ -406,7 +406,7 @@ class TestCachedGoldPriceService:
 
     @respx.mock
     async def test_fetch_fresh_returns_none_on_error(self, cache_dir: Path) -> None:
-        """Test fetch_fresh returns None when underlying service fails."""
+        """测试底层服务失败时 fetch_fresh 返回 None。"""
         config = self._make_config()
         respx.get(config.url).mock(side_effect=httpx.TimeoutException("timeout"))
 

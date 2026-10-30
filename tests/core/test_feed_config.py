@@ -1,4 +1,4 @@
-"""Tests for RSS feed configuration."""
+"""RSS 订阅源配置测试。"""
 
 from pathlib import Path
 
@@ -9,7 +9,7 @@ from app.core.config import AppConfig, FeedConfig
 
 
 def test_feed_config_defaults() -> None:
-    """Enable the feed with a seven-item default window."""
+    """feed 默认启用，窗口为 7 条。"""
     config = FeedConfig()
 
     assert config.enabled is True
@@ -18,19 +18,19 @@ def test_feed_config_defaults() -> None:
 
 @pytest.mark.parametrize("max_items", [1, 60])
 def test_feed_config_accepts_bounds(max_items: int) -> None:
-    """Accept both documented item-count boundaries."""
+    """接受文档规定的两个条目数边界值。"""
     assert FeedConfig(max_items=max_items).max_items == max_items
 
 
 @pytest.mark.parametrize("max_items", [0, 61])
 def test_feed_config_rejects_out_of_range_values(max_items: int) -> None:
-    """Reject item-count limits outside the supported range."""
+    """拒绝超出支持范围的条目数上限。"""
     with pytest.raises(ValidationError):
         FeedConfig(max_items=max_items)
 
 
 def test_feed_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Load feed settings through the standard nested environment convention."""
+    """通过标准的嵌套环境变量约定加载 feed 配置。"""
     monkeypatch.setenv("MOYUREN_FEED_ENABLED", "false")
     monkeypatch.setenv("MOYUREN_FEED_MAX_ITEMS", "12")
 

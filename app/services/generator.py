@@ -1,4 +1,4 @@
-"""Image generation service module."""
+"""图片生成服务模块。"""
 
 import asyncio
 import logging
@@ -27,7 +27,7 @@ from app.services.variants import generate_variants
 
 INFLIGHT_WAIT_TIMEOUT_SEC = 90
 
-# Keep background cleanup alive until its completion callback releases it.
+# 保留后台清理任务的引用，直到完成回调将其释放。
 _cleanup_tasks: set[asyncio.Task[None]] = set()
 
 
@@ -66,8 +66,8 @@ def _read_latest_filename(data_file: Path, template_name: str | None = None) -> 
     """读取 data 文件中的最新文件名
 
     Args:
-        data_file: Path to data file.
-        template_name: Optional template name to look up.
+        data_file: 数据文件路径。
+        template_name: 可选，要查找的模板名称。
 
     Returns:
         文件名，如果读取失败则返回 None
@@ -82,17 +82,16 @@ def _read_latest_filename(data_file: Path, template_name: str | None = None) -> 
 
 
 async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict[str, Any]:
-    """Fetch all data sources in parallel.
+    """并行获取所有数据源。
 
-    Uses asyncio.gather to fetch data from multiple sources concurrently,
-    significantly reducing total fetch time compared to sequential fetching.
+    使用 asyncio.gather 并发获取多个来源的数据，显著缩短串行获取所需的总时间。
 
     Args:
-        app: FastAPI application instance with services in app.state.
-        logger: Logger instance for logging.
+        app: FastAPI 应用实例，服务位于 app.state 中。
+        logger: 用于记录日志的 logger 实例。
 
     Returns:
-        Dictionary containing all fetched data with appropriate defaults for failures.
+        包含所有获取结果的字典，失败项使用适当的默认值。
     """
     services: AppServices = app.state.services
     data_fetcher = services.data_fetcher
@@ -105,13 +104,13 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
     stale_sources: list[str] = []
 
     async def get_cached_data(service: DailyCache[Any]) -> Any:
-        """Capture fallback status before another caller can update it."""
+        """在其他调用方更新降级状态之前记录该状态。"""
         data = await service.get()
         if data is not None and getattr(service, "last_outcome", None) == "stale":
             stale_sources.append(service.namespace)
         return data
 
-    # Define fetch tasks
+    # 定义获取任务
     async def fetch_api_data() -> dict[str, Any]:
         """获取基础 API 数据。
 
@@ -244,7 +243,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
             logger.warning("Failed to fetch daily english: %s", safe_exception_for_log(e))
             return None
 
-    # Execute all fetches in parallel
+    # 并行执行所有获取任务
     (
         api_data_result,
         holiday_payload_result,
@@ -263,8 +262,8 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
         fetch_daily_english(),
     )
 
-    # Merge results into raw_data with type safety
-    # Ensure raw_data is a dict (DailyCache.get() might return non-dict if corrupted)
+    # 将结果合并到 raw_data，并确保类型安全
+    # 确保 raw_data 为字典（缓存损坏时 DailyCache.get() 可能返回其他类型）
     if not isinstance(api_data_result, dict):
         logger.warning(
             "raw_data is not dict (got %s), using empty dict", type(api_data_result).__name__
@@ -284,7 +283,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
     raw_data["daily_english"] = daily_english_result
     raw_data["stale_sources"] = sorted(set(stale_sources))
 
-    # Log fetch results (count actual API data keys, excluding merged fields)
+    # 记录获取结果（仅统计实际 API 数据的键，不含合并字段）
     api_keys = [k for k in raw_data if k not in ("holidays", "make_up_workdays", "fun_content", "kfc_copy", "stock_indices", "gold_price", "daily_english", "stale_sources")]
     logger.info("Fetched data: %d API endpoints, parallel fetch completed", len(api_keys))
     if holidays_result:
@@ -304,15 +303,13 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
 
 
 def _schedule_cache_cleanup(cache_cleaner: CacheCleaner, logger: logging.Logger) -> None:
-    """Schedule cache cleanup as a fire-and-forget background task.
+    """调度无需等待的后台缓存清理任务。
 
-    This function creates a background task for cache cleanup that doesn't
-    block the main generation flow. Errors are logged but don't affect
-    the caller.
+    创建后台任务清理缓存，不阻塞主生成流程；错误仅记录日志，不影响调用方。
 
     Args:
-        cache_cleaner: CacheCleaner instance.
-        logger: Logger instance for logging.
+        cache_cleaner: CacheCleaner 实例。
+        logger: 用于记录日志的 logger 实例。
     """
 
     async def _cleanup_task() -> None:
@@ -371,7 +368,7 @@ class ImageGenerator:
             if covered:
                 return result
 
-        # Keep task publication atomic; the directory check is throttled to one glob/stat pass.
+        # 保持任务发布的原子性；目录检查已节流为一次 glob/stat 扫描。
         templates_config = app.state.config.get_templates_config()
         self._templates = frozenset(
             [template_name] if template_name else (item.name for item in templates_config.items)
@@ -409,7 +406,7 @@ class ImageGenerator:
         template_name: str | None = None,
         trigger: NotifyTrigger = "manual",
     ) -> dict[str, str]:
-        """Record one duration for each shared generation run."""
+        """每次共享生成任务只记录一次耗时。"""
         started = time.monotonic()
         result: GenerationResult = "failure"
         try:
@@ -431,7 +428,7 @@ class ImageGenerator:
             record_generation_duration(time.monotonic() - started, result)
 
     def _schedule_notification(self, app: FastAPI, trigger: NotifyTrigger) -> None:
-        """Schedule notification delivery for images rendered by this run."""
+        """调度本次渲染图片的通知推送。"""
         services: AppServices | None = getattr(app.state, "services", None)
         notifier = getattr(services, "notifier", None)
         notify_config = getattr(app.state.config, "notify", None)
@@ -463,28 +460,26 @@ class ImageGenerator:
     async def _run_generation(
         self, app: FastAPI, template_name: str | None = None
     ) -> dict[str, str]:
-        """Generate images and update data file.
+        """生成图片并更新数据文件。
 
-        This function performs the complete image generation pipeline:
-        1. Fetch data from API endpoints
-        2. Compute template context
-        3. Render HTML to image for each template
-        4. Update cache/data/{date}.json atomically
+        执行完整的图片生成流程：
+        1. 从 API 获取数据
+        2. 计算模板上下文
+        3. 将各模板的 HTML 渲染为图片
+        4. 原子更新 cache/data/{date}.json
 
-        When template_name is None, all configured templates are rendered.
-        When template_name is specified, only that template is rendered.
+        template_name 为 None 时渲染所有已配置模板，否则只渲染指定模板。
 
         Args:
-            app: FastAPI application instance with services in app.state.
-            template_name: Optional template name. None renders all templates.
+            app: FastAPI 应用实例，服务位于 app.state 中。
+            template_name: 可选模板名称；None 表示渲染所有模板。
 
         Returns:
-            Dict mapping template names to generated image filenames.
-            Templates that failed to render will be omitted from the dict.
+            模板名称到生成图片文件名的映射，不包含渲染失败的模板。
 
         Raises:
-            StorageError: If no templates are configured or all templates fail to render.
-            GenerationBusyError: If generation is locked by another process.
+            StorageError: 未配置模板或所有模板均渲染失败。
+            GenerationBusyError: 其他进程已持有生成锁。
         """
         services: AppServices = app.state.services
         logger = app.state.logger
@@ -495,7 +490,7 @@ class ImageGenerator:
         self._notification_images = {}
         self._notification_data = None
 
-        # Determine which templates to render
+        # 确定要渲染的模板
         templates_config = await asyncio.to_thread(config.get_templates_config)
         if template_name:
             templates_to_render = [templates_config.get_template(template_name)]
@@ -531,7 +526,7 @@ class ImageGenerator:
                                 len(templates_to_render),
                             )
                             return cached_results
-                        # Only render missing templates, carry over cached results
+                        # 仅渲染缺失的模板，保留已缓存的结果
                         templates_to_render = missing_templates
                         pre_cached = cached_results
                         logger.info(
@@ -542,15 +537,15 @@ class ImageGenerator:
 
                 logger.info("Starting image generation for %d template(s)...", len(templates_to_render))
 
-                # 1. Fetch all data sources in parallel (使用缓存服务)
+                # 1. 并行获取所有数据源（使用缓存服务）
                 raw_data = await _fetch_all_data_parallel(app, logger)
 
-                # 2. Compute template context (once for all templates)
+                # 2. 计算模板上下文（所有模板共用一次计算结果）
                 template_data = services.data_computer.compute(raw_data, now=now)
                 logger.info("Template data computed")
 
-                # 3. Render each template and update data file
-                # TODO: Consider using asyncio.gather for parallel rendering when template count grows
+                # 3. 逐个渲染模板并更新数据文件
+                # TODO: 模板数量增加时，考虑使用 asyncio.gather 并行渲染
                 results: dict[str, str] = dict(pre_cached)
                 failed_templates: list[str] = []
                 for template_item in templates_to_render:
@@ -604,7 +599,7 @@ class ImageGenerator:
                         ", ".join(failed_templates),
                     )
 
-                # 4. Clean up old cache (fire-and-forget, non-blocking)
+                # 4. 清理旧缓存（后台执行，无需等待，不阻塞生成流程）
                 _schedule_cache_cleanup(services.cache_cleaner, logger)
 
                 return results
@@ -633,19 +628,19 @@ async def _update_data_file(
     now: datetime | None = None,
     image_variants: list[ImageVariant] | None = None,
 ) -> dict[str, Any]:
-    """Atomically update the daily data file with latest image information.
+    """将最新图片信息原子更新到每日数据文件。
 
     Args:
-        data_dir: Path to the data directory (e.g., "cache/data").
-        filename: Generated image filename.
-        template_data: Template data dictionary from DataComputer.
-        raw_data: Raw data dictionary containing original API responses.
-        config: Application config.
-        template_name: Template name used for rendering.
-        now: Optional business-time snapshot for this generation.
+        data_dir: 数据目录路径（如 "cache/data"）。
+        filename: 生成的图片文件名。
+        template_data: DataComputer 生成的模板数据字典。
+        raw_data: 包含原始 API 响应的数据字典。
+        config: 应用配置。
+        template_name: 渲染所用的模板名称。
+        now: 可选，本次生成使用的业务时间快照。
 
     Raises:
-        StorageError: If file write fails.
+        StorageError: 文件写入失败。
     """
 
     if now is None:
@@ -666,12 +661,12 @@ async def _update_data_file(
 
         data_file = dir_path / f"{business_date.isoformat()}.json"
 
-        # Extract data from template_data
+        # 从 template_data 提取数据
         date_info = template_data.get("date", {})
         fun_content_raw = template_data.get("history", {})
         kfc_content_raw = template_data.get("kfc_content")
 
-        # Build fun_content
+        # 构建趣味内容
         fun_content = None
         if fun_content_raw:
             title = fun_content_raw.get("title", "")
@@ -688,17 +683,17 @@ async def _update_data_file(
                     content_type = "moyu_quote"
             fun_content = {"type": content_type, "title": title, "text": fun_content_raw.get("content", "")}
 
-        # Build KFC content
+        # 构建 KFC 文案
         kfc_content = None
         if kfc_content_raw and isinstance(kfc_content_raw, dict):
             kfc_content = kfc_content_raw.get("content")
 
-        # Cache freshness tracks write time; business fields keep the snapshot.
+        # 缓存新鲜度以写入时间为准；业务字段仍使用时间快照。
         written_at = datetime.now(get_display_timezone())
         updated_str = written_at.strftime("%Y/%m/%d %H:%M:%S")
         updated_at_ms = int(written_at.timestamp() * 1000)
 
-        # Read existing data file to merge images mapping
+        # 读取已有数据文件，合并图片映射
         existing_images: dict[str, str] = {}
         existing_variants: dict[str, list[ImageVariant]] = {}
         if data_file.exists():
@@ -709,12 +704,12 @@ async def _update_data_file(
             except StorageError:
                 pass
 
-        # Update images mapping
+        # 更新图片映射
         existing_images[template_name] = filename
-        # Replacing a base image also replaces its old variant references.
+        # 替换原图时，同时替换其旧变体的引用。
         existing_variants[template_name] = image_variants or []
 
-        # Build data file content
+        # 构建数据文件内容
         data = {
             "date": business_date.isoformat(),
             "updated": updated_str,

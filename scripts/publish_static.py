@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static artifact generation script for container deployment."""
+"""为容器部署生成静态产物。"""
 
 import argparse
 import asyncio
@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-# Add project root to path
+# 将项目根目录加入导入路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.core.config import (
@@ -47,7 +47,7 @@ _CACHE_VARIANT_PATTERN = re.compile(r"^(?:_w(?P<width>\d+))?\.(?P<extension>jpg|
 
 
 def _published_variant_name(source_stem: str, filename: str, prefix: str) -> str:
-    """Map a cache variant filename to its stable published artifact name."""
+    """将缓存变体文件名映射为固定的发布产物名称。"""
     suffix = filename.removeprefix(source_stem)
     if suffix == ".jpg":
         return f"{prefix}.jpg"
@@ -57,7 +57,7 @@ def _published_variant_name(source_stem: str, filename: str, prefix: str) -> str
 
 
 def _existing_variant_files(source: Path) -> list[Path]:
-    """Discover every valid sibling representation, including lazy-generated files."""
+    """查找同目录下所有有效图片格式及尺寸变体，包括按需生成的文件。"""
     candidates = [source, source.with_suffix(".webp")]
     candidates.extend(source.parent.glob(f"{source.stem}_w*.jpg"))
     candidates.extend(source.parent.glob(f"{source.stem}_w*.webp"))
@@ -76,7 +76,7 @@ def _existing_variant_files(source: Path) -> list[Path]:
 
 
 def _published_variant_metadata(source: Path) -> list[dict[str, str | int]]:
-    """Build static data metadata from all image representations on disk."""
+    """根据磁盘上的所有图片格式及尺寸变体构建静态数据元信息。"""
     try:
         source_width = image_width(source)
     except RenderError:
@@ -100,7 +100,7 @@ def _published_variant_metadata(source: Path) -> list[dict[str, str | int]]:
 
 
 def _latest_manifest(data: DailyDataFile) -> DailyDataFile:
-    """Build root-manifest metadata that names the root image artifacts."""
+    """构建根目录清单元信息，使用根目录图片产物的名称。"""
     payload = data.model_dump(mode="json", exclude_unset=True)
     payload["images"] = {
         template: _rename_published_prefix(filename, "moyuren", "latest")
@@ -123,12 +123,12 @@ def _latest_manifest(data: DailyDataFile) -> DailyDataFile:
 
 
 def _rename_published_prefix(filename: str, source: str, target: str) -> str:
-    """Rename one stable published image-family prefix."""
+    """替换已发布图片及其变体共用的固定文件名前缀。"""
     return f"{target}{filename.removeprefix(source)}" if filename.startswith(source) else filename
 
 
 def _publish_image_family(source: Path, date_dir: Path, output_dir: Path) -> int:
-    """Copy a source family to dated and latest artifact names."""
+    """将原图及其变体复制为日期目录和最新产物的名称。"""
     copied = 0
     for source_file in _existing_variant_files(source):
         dated_name = _published_variant_name(source.stem, source_file.name, "moyuren")
@@ -140,7 +140,7 @@ def _publish_image_family(source: Path, date_dir: Path, output_dir: Path) -> int
 
 
 def _build_timestamp_fields(now: datetime) -> dict[str, str | int | bool]:
-    """Build output timestamps from one business-time snapshot."""
+    """根据同一业务时间快照构建输出时间戳。"""
     display_now = now.astimezone(get_display_timezone())
     business_date = now.date()
     return {
@@ -152,33 +152,33 @@ def _build_timestamp_fields(now: datetime) -> dict[str, str | int | bool]:
 
 
 def parse_args():
-    """Parse command line arguments."""
+    """解析命令行参数。"""
     parser = argparse.ArgumentParser(
-        description="Generate static artifacts for moyuren calendar"
+        description="生成摸鱼日历静态产物"
     )
     parser.add_argument(
         "--output",
         type=str,
         default="/output",
-        help="Output directory for artifacts (default: /output)",
+        help="产物输出目录（默认：/output）",
     )
     parser.add_argument(
         "--base-url",
         type=str,
         default="https://moyuren.pages.dev",
-        help="Base URL for static site (default: https://moyuren.pages.dev)",
+        help="静态站点基础 URL（默认：https://moyuren.pages.dev）",
     )
     return parser.parse_args()
 
 
 def write_atomic(content: str, target_path: Path) -> None:
-    """Write content to file atomically."""
+    """将内容原子写入文件。"""
     target_path.parent.mkdir(parents=True, exist_ok=True)
     write_output_atomic(target_path, content)
 
 
 def copy_atomic(src_path: Path, target_path: Path) -> None:
-    """Copy file atomically."""
+    """原子复制文件。"""
     target_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = None
     try:
@@ -203,14 +203,14 @@ def copy_atomic(src_path: Path, target_path: Path) -> None:
 def generate_txt(
     data: dict, base_url: str, image_path: str = "latest.jpg"
 ) -> str:
-    """Generate TXT format artifact."""
+    """生成 TXT 格式产物。"""
     lines = []
 
-    # Title and header
+    # 标题和页头
     lines.append(f"摸鱼日历 {data['date']}")
     lines.append("=" * 40)
 
-    # Date info
+    # 日期信息
     weekday = data.get("weekday", "")
     lunar_date = data.get("lunar_date", "")
     if weekday or lunar_date:
@@ -222,7 +222,7 @@ def generate_txt(
         lines.append(date_line)
         lines.append("")
 
-    # Holidays countdown
+    # 假期倒计时
     holidays = data.get("holidays", [])
     if holidays:
         lines.append("假期倒计时：")
@@ -235,7 +235,7 @@ def generate_txt(
                     lines.append(f"  {name}：还有 {days_left} 天（{duration}天假期）")
         lines.append("")
 
-    # News list
+    # 新闻列表
     news_list = data.get("news_list", [])
     if news_list:
         lines.append("今日热点：")
@@ -244,7 +244,7 @@ def generate_txt(
                 lines.append(f"  - {news}")
         lines.append("")
 
-    # Fun content
+    # 趣味内容
     fun_content = data.get("fun_content")
     if fun_content and isinstance(fun_content, dict):
         title = fun_content.get("title", "")
@@ -253,14 +253,14 @@ def generate_txt(
             lines.append(f"{title}: {text}")
             lines.append("")
 
-    # KFC content (only on Thursday)
+    # KFC 文案（仅周四）
     if data.get("is_crazy_thursday"):
         kfc_content = data.get("kfc_content")
         if kfc_content:
             lines.append(f"疯狂星期四: {kfc_content}")
             lines.append("")
 
-    # Footer
+    # 页脚
     lines.append(f"更新时间: {data['updated']}")
     lines.append(f"图片: {base_url}/{image_path}")
     lines.append("")
@@ -271,14 +271,14 @@ def generate_txt(
 def generate_md(
     data: dict, base_url: str, image_path: str = "latest.jpg"
 ) -> str:
-    """Generate Markdown format artifact."""
+    """生成 Markdown 格式产物。"""
     lines = []
 
-    # Title
+    # 标题
     lines.append(f"# 摸鱼日历 - {data['date']}")
     lines.append("")
 
-    # Date info
+    # 日期信息
     weekday = data.get("weekday", "")
     lunar_date = data.get("lunar_date", "")
     if weekday or lunar_date:
@@ -290,11 +290,11 @@ def generate_md(
         lines.append(f"**{date_line}**")
         lines.append("")
 
-    # Image
+    # 图片
     lines.append(f"![摸鱼日历]({base_url}/{image_path})")
     lines.append("")
 
-    # Holidays countdown
+    # 假期倒计时
     holidays = data.get("holidays", [])
     if holidays:
         lines.append("## 假期倒计时")
@@ -308,7 +308,7 @@ def generate_md(
                     lines.append(f"- {name}：还有 {days_left} 天（{duration}天假期）")
         lines.append("")
 
-    # News list
+    # 新闻列表
     news_list = data.get("news_list", [])
     if news_list:
         lines.append("## 今日热点")
@@ -318,7 +318,7 @@ def generate_md(
                 lines.append(f"{idx}. {news}")
         lines.append("")
 
-    # Fun content
+    # 趣味内容
     fun_content = data.get("fun_content")
     if fun_content and isinstance(fun_content, dict):
         title = fun_content.get("title", "")
@@ -329,7 +329,7 @@ def generate_md(
             lines.append(f"> {text}")
             lines.append("")
 
-    # KFC content (only on Thursday)
+    # KFC 文案（仅周四）
     if data.get("is_crazy_thursday"):
         kfc_content = data.get("kfc_content")
         if kfc_content:
@@ -338,7 +338,7 @@ def generate_md(
             lines.append(f"> {kfc_content}")
             lines.append("")
 
-    # Footer
+    # 页脚
     lines.append(f"*更新时间: {data['updated']}*")
     lines.append("")
 
@@ -346,12 +346,12 @@ def generate_md(
 
 
 async def main() -> None:
-    """Generate static artifacts."""
+    """生成静态产物。"""
     args = parse_args()
     output_dir = Path(args.output)
     base_url = args.base_url.rstrip("/")
 
-    # Load config
+    # 加载配置
     config = load_config()
     logger = setup_logging(config.logging, logger_name="publish_static")
     browser_manager.configure(logger, proxy_url=config.network.proxy_url)
@@ -360,20 +360,20 @@ async def main() -> None:
         logger.info("Output directory: %s", output_dir)
         logger.info("Base URL: %s", base_url)
 
-        # Initialize timezones
+        # 初始化时区
         init_timezones(
             business_tz=config.timezone.business, display_tz=config.timezone.display
         )
         now = now_business()
         business_date = now.date()
 
-        # Ensure directories exist
+        # 确保目录存在
         cache_dir = Path(config.paths.cache_dir)
         (cache_dir / "images").mkdir(parents=True, exist_ok=True)
         (cache_dir / "data").mkdir(parents=True, exist_ok=True)
         (cache_dir / "holidays").mkdir(parents=True, exist_ok=True)
 
-        # Initialize services (same as render_once.py:48-88)
+        # 初始化服务
         news_source = config.get_source(NewsSource)
         data_fetcher = DataFetcher(
             source=news_source,
@@ -398,7 +398,7 @@ async def main() -> None:
             fun_content_source, proxy_url=config.network.proxy_url, instances=config.instances
         )
 
-        # Initialize KFC service if config exists
+        # 有配置时初始化 KFC 服务
         kfc_service = None
         crazy_thursday_source = config.get_source(CrazyThursdaySource)
         if crazy_thursday_source:
@@ -406,7 +406,7 @@ async def main() -> None:
                 crazy_thursday_source, proxy_url=config.network.proxy_url, instances=config.instances
             )
 
-        # Initialize stock index service if config exists
+        # 有配置时初始化股票指数服务
         stock_index_service = None
         stock_index_source = config.get_source(StockIndexSource)
         if stock_index_source:
@@ -414,7 +414,7 @@ async def main() -> None:
                 stock_index_source, proxy_url=config.network.proxy_url
             )
 
-        # Initialize gold price service if config exists
+        # 有配置时初始化金价服务
         gold_price_service = None
         gold_price_source = config.get_source(GoldPriceSource)
         if gold_price_source:
@@ -422,7 +422,7 @@ async def main() -> None:
                 gold_price_source, proxy_url=config.network.proxy_url, instances=config.instances
             )
 
-        # Initialize daily english service if config exists
+        # 有配置时初始化每日英语服务
         daily_english_service = None
         daily_english_source = config.get_source(DailyEnglishSource)
         if daily_english_source and daily_english_source.enabled:
@@ -446,7 +446,7 @@ async def main() -> None:
             themes=config.templates.config.themes,
         )
 
-        # Get templates configuration
+        # 获取模板配置
         templates_config = config.get_templates_config()
 
         image_renderer = ImageRenderer(
@@ -460,10 +460,10 @@ async def main() -> None:
         logger.info("Starting artifact generation...")
 
         try:
-            # 1. Fetch news
+            # 1. 获取新闻
             raw_data = {"news": await data_fetcher.fetch()}
 
-            # 1.1 Fetch holiday data
+            # 1.1 获取节假日数据
             raw_data["holidays"] = []
             raw_data["make_up_workdays"] = []
             if holiday_service:
@@ -481,7 +481,7 @@ async def main() -> None:
                         safe_exception_for_log(e, config.network.proxy_url),
                     )
 
-            # 1.2 Fetch fun content
+            # 1.2 获取趣味内容
             try:
                 fun_content = await fun_content_service.fetch_content(business_date)
                 raw_data["fun_content"] = fun_content
@@ -493,7 +493,7 @@ async def main() -> None:
                 )
                 raw_data["fun_content"] = None
 
-            # 1.3 Fetch KFC Crazy Thursday content (Only on Thursday)
+            # 1.3 获取 KFC 疯狂星期四文案（仅周四）
             raw_data["kfc_copy"] = None
             if kfc_service and business_date.weekday() == 3:
                 try:
@@ -507,7 +507,7 @@ async def main() -> None:
                         safe_exception_for_log(e, config.network.proxy_url),
                     )
 
-            # 1.4 Fetch stock index data
+            # 1.4 获取股票指数数据
             raw_data["stock_indices"] = None
             if stock_index_service:
                 try:
@@ -520,7 +520,7 @@ async def main() -> None:
                         safe_exception_for_log(e, config.network.proxy_url),
                     )
 
-            # 1.5 Fetch gold price data
+            # 1.5 获取金价数据
             raw_data["gold_price"] = None
             if gold_price_service:
                 try:
@@ -534,7 +534,7 @@ async def main() -> None:
                         safe_exception_for_log(e, config.network.proxy_url),
                     )
 
-            # 1.6 Fetch daily english
+            # 1.6 获取每日英语
             raw_data["daily_english"] = None
             if daily_english_service:
                 try:
@@ -551,11 +551,11 @@ async def main() -> None:
                         safe_exception_for_log(e, config.network.proxy_url),
                     )
 
-            # 2. Compute template context
+            # 2. 计算模板上下文
             template_data = data_computer.compute(raw_data, now=now)
             logger.info("Template data computed")
 
-            # 3. Render image
+            # 3. 渲染图片
             filename = await image_renderer.render(template_data, now=now)
             logger.info("Image rendered: %s", filename)
 
@@ -574,16 +574,16 @@ async def main() -> None:
             )
             sys.exit(10)
 
-        # 4. Build data dict (same as render_once.py:150-202)
+        # 4. 构建数据字典
         timestamp_fields = _build_timestamp_fields(now)
         today_str = business_date.isoformat()
 
-        # Extract data from template_data
+        # 从 template_data 提取数据
         date_info = template_data.get("date", {})
         fun_content_raw = template_data.get("history", {})
         kfc_content_raw = template_data.get("kfc_content")
 
-        # Build fun_content
+        # 构建 fun_content
         stored_fun_content: dict[str, str] | None = None
         if fun_content_raw:
             title = fun_content_raw.get("title", "")
@@ -605,7 +605,7 @@ async def main() -> None:
                 "text": fun_content_raw.get("content", ""),
             }
 
-        # Build KFC content
+        # 构建 KFC 文案
         kfc_content = None
         if kfc_content_raw and isinstance(kfc_content_raw, dict):
             kfc_content = kfc_content_raw.get("content")
@@ -614,12 +614,11 @@ async def main() -> None:
             **timestamp_fields,
             "images": {"moyuren": "moyuren.jpg"},
             "image_variants": {"moyuren": _published_variant_metadata(src_image)},
-            # New content fields
             "weekday": date_info.get("week_cn", ""),
             "lunar_date": date_info.get("lunar_date", ""),
             "fun_content": stored_fun_content,
             "kfc_content": kfc_content,
-            # Full rendering data fields
+            # 完整渲染数据字段
             "date_info": template_data.get("date"),
             "weekend": template_data.get("weekend"),
             "solar_term": template_data.get("solar_term"),
@@ -644,19 +643,19 @@ async def main() -> None:
         data_file = DailyDataFile.model_validate(data_payload)
         data = data_file.model_dump(mode="json")
 
-        # 5. Generate artifacts to output directory
+        # 5. 在输出目录生成产物
         try:
             date_dir = output_dir / today_str
             date_dir.mkdir(parents=True, exist_ok=True)
 
-            # JSON artifacts
+            # JSON 产物
             write_atomic(data_file.dump_json(), date_dir / "data.json")
             write_atomic(_latest_manifest(data_file).dump_json(), output_dir / "latest.json")
             logger.info(
                 "JSON artifacts written: %s, %s", date_dir / "data.json", output_dir / "latest.json"
             )
 
-            # Image artifacts (copy from cache)
+            # 图片产物（从缓存复制）
             if not src_image.exists():
                 logger.error("Source image not found: %s", src_image)
                 sys.exit(11)
@@ -669,7 +668,7 @@ async def main() -> None:
             )
             logger.info("Published %s image artifact(s)", published_images)
 
-            # TXT artifacts
+            # TXT 产物
             dated_image_path = f"{today_str}/moyuren.jpg"
             dated_txt_content = generate_txt(data, base_url, dated_image_path)
             latest_txt_content = generate_txt(data, base_url)
@@ -679,7 +678,7 @@ async def main() -> None:
                 "TXT artifacts written: %s, %s", date_dir / "data.txt", output_dir / "latest.txt"
             )
 
-            # Markdown artifacts
+            # Markdown 产物
             dated_md_content = generate_md(data, base_url, dated_image_path)
             latest_md_content = generate_md(data, base_url)
             write_atomic(dated_md_content, date_dir / "data.md")
@@ -692,7 +691,7 @@ async def main() -> None:
             logger.error("Failed to write artifacts: %s", e, exc_info=True)
             sys.exit(11)
 
-        # 6. Validate artifacts
+        # 6. 校验产物
         try:
             required_files = [
                 date_dir / "data.json",
@@ -716,7 +715,7 @@ async def main() -> None:
             logger.error("Validation error: %s", e, exc_info=True)
             sys.exit(12)
 
-        # 7. Print summary
+        # 7. 输出摘要
         image_size = (output_dir / "latest.jpg").stat().st_size / 1024
         json_size = (output_dir / "latest.json").stat().st_size / 1024
 

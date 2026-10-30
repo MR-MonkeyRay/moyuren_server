@@ -1,4 +1,4 @@
-"""Variant integration without browsers, executor threads or external services."""
+"""变体集成测试，不依赖浏览器、executor 线程或外部服务。"""
 
 import logging
 from collections.abc import AsyncIterator, Callable
@@ -18,13 +18,13 @@ from app.services.generator import ImageGenerator, _update_data_file
 
 
 async def inline(function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-    """Execute synchronous work in the test's current thread."""
+    """在测试当前线程中同步执行任务。"""
     return function(*args, **kwargs)
 
 
 @asynccontextmanager
 async def unlocked(*args: object, **kwargs: object) -> AsyncIterator[None]:
-    """Avoid exercising OS lock polling in this integration unit test."""
+    """本集成单元测试中避免触发操作系统锁轮询。"""
     yield
 
 
@@ -32,7 +32,7 @@ async def unlocked(*args: object, **kwargs: object) -> AsyncIterator[None]:
 async def test_pipeline_records_variants_and_survives_failure(
     tmp_path: Path, caplog: pytest.LogCaptureFixture, failed: bool,
 ) -> None:
-    """Variant failure leaves the successfully rendered base image usable."""
+    """变体失败不影响已成功渲染的基础图片可用性。"""
     images_dir = tmp_path / "images"
     images_dir.mkdir()
     filename = "moyuren_20261029_060000.jpg"
@@ -74,7 +74,7 @@ async def test_pipeline_records_variants_and_survives_failure(
 
 
 async def test_update_replaces_only_current_templates_variants(tmp_path: Path) -> None:
-    """A partial render keeps other templates' variants without stale current entries."""
+    """部分渲染保留其他模板的变体，且不残留过期的当前条目。"""
     now = datetime(2026, 10, 29, 6, tzinfo=timezone.utc)
     path = tmp_path / "2026-10-29.json"
     DailyDataFile.model_validate({

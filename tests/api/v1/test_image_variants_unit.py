@@ -1,4 +1,4 @@
-"""Unit coverage for image variant API selection and cache identity."""
+"""图片变体 API 选择与缓存标识的单元测试。"""
 
 import json
 import logging
@@ -19,7 +19,7 @@ from app.models.schemas import ImageVariant
 
 @pytest.fixture(autouse=True)
 def inline_to_thread(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Execute small Pillow helpers inline in this sandbox."""
+    """在本沙箱中内联执行小型 Pillow 辅助函数。"""
     async def inline(function: Callable[..., Any], *args: object) -> Any:
         return function(*args)
 
@@ -186,7 +186,7 @@ async def test_missing_configured_variant_is_generated_lazily(
 
 
 def test_openapi_exposes_variant_parameters(tmp_path: Path) -> None:
-    """Publish the exact format choices and positive width constraint without HTTP clients."""
+    """不使用 HTTP 客户端，验证 OpenAPI 中的 format 选项与正整数 width 约束。"""
     request = _request(tmp_path)
     request.app.include_router(moyuren_module.router)
     parameters = request.app.openapi()["paths"]["/api/v1/moyuren"]["get"]["parameters"]

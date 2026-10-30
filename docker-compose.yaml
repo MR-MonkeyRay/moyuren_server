@@ -7,28 +7,28 @@ services:
     volumes:
       - ./cache:/app/cache
     environment:
-      # Timezone configuration (system-level, not part of pydantic-settings)
+      # 时区配置（系统级，不属于 pydantic-settings）
       TZ: Asia/Shanghai
 
-      # Server configuration (host-side variables retain their existing names)
+      # 服务配置（宿主机侧变量沿用原有名称）
       MOYUREN_SERVER_HOST: ${SERVER_HOST:-0.0.0.0}
       MOYUREN_SERVER_PORT: ${SERVER_PORT:-8000}
       MOYUREN_SERVER_BASE_DOMAIN: ${SERVER_BASE_DOMAIN:-http://127.0.0.1:8000}
 
-      # Scheduler configuration (JSON array format required)
+      # 调度器配置（需为 JSON 数组格式）
       MOYUREN_SCHEDULER_DAILY_TIMES: '${SCHEDULER_DAILY_TIMES:-["06:00"]}'
 
-      # Cache configuration
+      # 缓存配置
       MOYUREN_CACHE_RETAIN_DAYS: ${CACHE_RETAIN_DAYS:-30}
 
-      # Ops API configuration (empty key disables ops endpoints; requests always return 401)
+      # Ops API 配置（密钥留空则禁用 Ops 端点，请求一律返回 401）
       MOYUREN_OPS_API_KEY: ${OPS_API_KEY:-}
 
-      # Logging configuration (default: stdout only)
+      # 日志配置（默认仅输出到 stdout）
       MOYUREN_LOGGING_LEVEL: ${LOGGING_LEVEL:-INFO}
       # MOYUREN_LOGGING_FILE: ${LOGGING_FILE:-}  # 设置此变量可启用文件日志
 
-      # Note: Holiday, fun_content, crazy_thursday, stock_index 等数据源配置
+      # 注意：holiday、fun_content、crazy_thursday、stock_index 等数据源配置
       # 现在统一在 config.yaml 的 data_sources 列表中管理，无法通过环境变量覆盖单个项
       # 如需修改这些配置，请直接编辑 config.yaml 文件
 

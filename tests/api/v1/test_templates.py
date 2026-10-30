@@ -1,4 +1,4 @@
-"""Tests for app/api/v1/templates.py - templates API endpoint."""
+"""测试 app/api/v1/templates.py 的模板 API 端点。"""
 
 import asyncio
 import json
@@ -18,7 +18,7 @@ from app.services.template_discovery import TemplateDiscovery
 
 @pytest.fixture(autouse=True)
 def run_to_thread_inline(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Avoid sandbox threadpool hangs while preserving the async call boundary."""
+    """避免沙箱线程池挂起，同时保留异步调用边界。"""
 
     async def inline(
         function: Callable[..., object], *args: object, **kwargs: object
@@ -30,7 +30,7 @@ def run_to_thread_inline(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def templates_app(tmp_path: Path) -> FastAPI:
-    """Create a test FastAPI app with templates router."""
+    """创建挂载模板路由的测试 FastAPI 应用。"""
     app = FastAPI()
     app.include_router(templates_router)
 
@@ -38,7 +38,7 @@ def templates_app(tmp_path: Path) -> FastAPI:
     config.server.base_domain = "http://localhost:8000"
     config.paths.cache_dir = str(tmp_path / "cache")
 
-    # Create template items
+    # 创建模板项
     item1 = MagicMock()
     item1.name = "moyuren"
     item1.description = "杂志风格版"
@@ -47,7 +47,7 @@ def templates_app(tmp_path: Path) -> FastAPI:
     templates_config.items = [item1]
     config.get_templates_config.return_value = templates_config
 
-    # Create cache directories
+    # 创建缓存目录
     (tmp_path / "cache" / "data").mkdir(parents=True)
 
     app.state.config = config
@@ -55,11 +55,11 @@ def templates_app(tmp_path: Path) -> FastAPI:
 
 
 class TestTemplatesAPI:
-    """Tests for /api/v1/templates endpoint."""
+    """测试 /api/v1/templates 端点。"""
 
     @pytest.mark.anyio
     async def test_get_templates(self, templates_app: FastAPI) -> None:
-        """Test get templates returns template list."""
+        """验证获取模板时返回模板列表。"""
         with patch("app.api.v1.templates.today_business", return_value=date(2026, 2, 10)):
             async with AsyncClient(transport=ASGITransport(app=templates_app), base_url="http://test") as client:
                 response = await client.get("/api/v1/templates")
@@ -70,12 +70,12 @@ class TestTemplatesAPI:
         assert len(data["data"]) == 1
         assert data["data"][0]["name"] == "moyuren"
         assert data["data"][0]["description"] == "杂志风格版"
-        assert data["data"][0]["image"] is None  # No data file yet
+        assert data["data"][0]["image"] is None  # 尚无数据文件
         assert data["data"][0]["show_daily_english"] is False
 
     @pytest.mark.anyio
     async def test_get_templates_with_image(self, templates_app: FastAPI, tmp_path: Path) -> None:
-        """Test get templates returns image URL when data exists."""
+        """验证存在数据时获取模板会返回图片 URL。"""
         data_dir = tmp_path / "cache" / "data"
         data_file = data_dir / "2026-02-10.json"
         data_file.write_text(json.dumps({
@@ -95,7 +95,7 @@ class TestTemplatesAPI:
 
     @pytest.mark.anyio
     async def test_get_templates_cache_header(self, templates_app: FastAPI) -> None:
-        """Test templates endpoint returns correct cache headers."""
+        """验证模板端点返回正确的缓存头。"""
         with patch("app.api.v1.templates.today_business", return_value=date(2026, 2, 10)):
             async with AsyncClient(transport=ASGITransport(app=templates_app), base_url="http://test") as client:
                 response = await client.get("/api/v1/templates")
@@ -105,7 +105,7 @@ class TestTemplatesAPI:
 
     @pytest.mark.anyio
     async def test_get_templates_reports_actual_daily_english_support(self, tmp_path: Path) -> None:
-        """Expose the feature flag parsed from each production template's meta tags."""
+        """返回从各正式模板 meta 标签解析出的功能开关。"""
         app = FastAPI()
         app.include_router(templates_router)
         config = MagicMock()

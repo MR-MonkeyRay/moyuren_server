@@ -1,4 +1,4 @@
-"""Unit tests for missing-image recovery without a threaded HTTP client."""
+"""不使用多线程 HTTP 客户端的图片缺失恢复单元测试。"""
 
 import json
 import logging
@@ -21,7 +21,7 @@ from app.services.generator import GenerationBusyError
 
 @pytest.fixture
 def api_request(tmp_path: Path, mock_services: AppServices) -> Request:
-    """Create a request with cached metadata and a missing image."""
+    """创建元数据已缓存但图片缺失的请求。"""
     app = FastAPI()
     config = MagicMock()
     config.paths.cache_dir = str(tmp_path)
@@ -39,7 +39,7 @@ def api_request(tmp_path: Path, mock_services: AppServices) -> Request:
 
 
 def _save_data(cache_dir: Path, images: dict[str, str]) -> None:
-    """Write valid metadata for the fixed business date."""
+    """为固定业务日期写入有效元数据。"""
     (cache_dir / "data" / "2026-02-10.json").write_text(json.dumps({
         "date": "2026-02-10",
         "updated": "2026/02/10 07:22:32",
@@ -52,7 +52,7 @@ async def _get_response(
     api_request: Request, encode: str = "json", template: str | None = None,
     target_date: str | None = None,
 ) -> Response:
-    """Call the route directly with concrete query defaults."""
+    """使用明确的查询参数默认值直接调用路由。"""
     async def inline(function: Callable[..., Any], *args: object) -> Any:
         return function(*args)
 
@@ -71,7 +71,7 @@ async def _get_response(
 async def test_missing_image_regenerates_and_reloads(
     api_request: Request, encode: str, template: str | None,
 ) -> None:
-    """Every output format recovers the selected image and reloads metadata."""
+    """所有输出格式均恢复所选图片并重新加载元数据。"""
     cache_dir = Path(api_request.app.state.config.paths.cache_dir)
 
     async def regenerate(
@@ -100,7 +100,7 @@ async def test_missing_image_regenerates_and_reloads(
 async def test_generation_busy_response(
     api_request: Request, encode: str, missing_data: bool,
 ) -> None:
-    """Missing JSON and missing images share the same busy response."""
+    """JSON 缺失和图片缺失时返回相同的生成繁忙响应。"""
     if missing_data:
         (Path(api_request.app.state.config.paths.cache_dir) / "data" / "2026-02-10.json").unlink()
     with (
@@ -120,7 +120,7 @@ async def test_generation_busy_response(
 
 @pytest.mark.parametrize("missing_data", [False, True])
 async def test_generation_failure_response(api_request: Request, missing_data: bool) -> None:
-    """Generation failures retain the existing structured error response."""
+    """生成失败时保留现有的结构化错误响应。"""
     if missing_data:
         (Path(api_request.app.state.config.paths.cache_dir) / "data" / "2026-02-10.json").unlink()
     with (
@@ -136,7 +136,7 @@ async def test_generation_failure_response(api_request: Request, missing_data: b
 
 @pytest.mark.parametrize("encode", ["json", "text", "markdown", "image"])
 async def test_image_still_missing_after_regeneration(api_request: Request, encode: str) -> None:
-    """Recovery attempts generation once and returns 404 if the image stays missing."""
+    """恢复时只尝试生成一次，图片仍缺失则返回 404。"""
     with (
         patch("app.api.v1.moyuren.today_business", return_value=date(2026, 2, 10)),
         patch("app.api.v1.moyuren.generate_and_save_image", new_callable=AsyncMock) as generate,
@@ -149,7 +149,7 @@ async def test_image_still_missing_after_regeneration(api_request: Request, enco
 
 
 async def test_historical_missing_image_does_not_generate(api_request: Request) -> None:
-    """Historical images keep their existing 404 behavior without generation."""
+    """历史图片缺失时仍返回 404，不触发生成。"""
     with (
         patch("app.api.v1.moyuren.today_business", return_value=date(2026, 2, 11)),
         patch("app.api.v1.moyuren.generate_and_save_image", new_callable=AsyncMock) as generate,
@@ -162,7 +162,7 @@ async def test_historical_missing_image_does_not_generate(api_request: Request) 
 
 
 async def test_unknown_template_does_not_generate(api_request: Request) -> None:
-    """Unknown templates keep their template-not-found response."""
+    """未知模板仍返回模板不存在的响应。"""
     with (
         patch("app.api.v1.moyuren.today_business", return_value=date(2026, 2, 10)),
         patch("app.api.v1.moyuren.generate_and_save_image", new_callable=AsyncMock) as generate,
@@ -178,7 +178,7 @@ async def test_unknown_template_does_not_generate(api_request: Request) -> None:
 async def test_configured_template_without_filename_recovers(
     api_request: Request, template: str | None,
 ) -> None:
-    """A configured template absent from metadata also triggers recovery."""
+    """已配置的模板在元数据中缺失时也会触发恢复。"""
     cache_dir = Path(api_request.app.state.config.paths.cache_dir)
     _save_data(cache_dir, {})
 
@@ -201,7 +201,7 @@ async def test_configured_template_without_filename_recovers(
 
 @pytest.mark.parametrize("filename", ["../outside.jpg", "nested/image.jpg", "nested\\image.jpg"])
 async def test_invalid_image_path_does_not_generate(api_request: Request, filename: str) -> None:
-    """Unsafe image filenames are rejected before any generation attempt."""
+    """在尝试生成前拒绝不安全的图片文件名。"""
     _save_data(Path(api_request.app.state.config.paths.cache_dir), {"moyuren": filename})
     with (
         patch("app.api.v1.moyuren.today_business", return_value=date(2026, 2, 10)),
@@ -215,7 +215,7 @@ async def test_invalid_image_path_does_not_generate(api_request: Request, filena
 
 
 async def test_missing_default_image_regenerates_first_template(api_request: Request) -> None:
-    """Default recovery follows metadata order even for an unconfigured template."""
+    """默认恢复遵循元数据顺序，即使首个模板未配置。"""
     cache_dir = Path(api_request.app.state.config.paths.cache_dir)
     _save_data(cache_dir, {"custom": "missing.jpg", "moyuren": "available.jpg"})
     (cache_dir / "images" / "available.jpg").write_bytes(b"image")
@@ -233,7 +233,7 @@ async def test_missing_default_image_regenerates_first_template(api_request: Req
 async def test_only_selected_image_triggers_recovery(
     api_request: Request, template: str | None,
 ) -> None:
-    """Check the first available image or the explicit template, independently."""
+    """仅检查首个可用图片或显式指定的模板，互不影响。"""
     cache_dir = Path(api_request.app.state.config.paths.cache_dir)
     _save_data(cache_dir, {"moyuren": "available.jpg", "custom": "missing.jpg"})
     (cache_dir / "images" / "available.jpg").write_bytes(b"image")
@@ -255,7 +255,7 @@ async def test_only_selected_image_triggers_recovery(
 async def test_missing_json_does_not_generate_twice(
     api_request: Request, template: str | None,
 ) -> None:
-    """A generation that restores only metadata does not trigger a second attempt."""
+    """生成仅恢复元数据时，不会再次尝试生成。"""
     cache_dir = Path(api_request.app.state.config.paths.cache_dir)
     (cache_dir / "data" / "2026-02-10.json").unlink()
 
@@ -277,7 +277,7 @@ async def test_missing_json_does_not_generate_twice(
 
 
 async def test_matching_etag_does_not_hide_missing_image(api_request: Request) -> None:
-    """Image recovery and missing-file errors take precedence over a cached ETag."""
+    """图片恢复和文件缺失错误的处理优先于缓存 ETag。"""
     api_request.scope["headers"] = [(b"if-none-match", b'"1739145752000"')]
     with (
         patch("app.api.v1.moyuren.today_business", return_value=date(2026, 2, 10)),
@@ -291,7 +291,7 @@ async def test_matching_etag_does_not_hide_missing_image(api_request: Request) -
 
 
 async def test_image_symlink_outside_directory_is_rejected(api_request: Request) -> None:
-    """Reject symlinks into a sibling directory even when it shares a path prefix."""
+    """拒绝指向同级目录的符号链接，即使目录共享路径前缀。"""
     cache_dir = Path(api_request.app.state.config.paths.cache_dir)
     outside_dir = cache_dir / "images_outside"
     outside_dir.mkdir()
@@ -313,7 +313,7 @@ async def test_image_symlink_outside_directory_is_rejected(api_request: Request)
 async def test_missing_image_generates_only_selected_template(
     api_request: Request, template: str | None,
 ) -> None:
-    """Generate the first mapped template or the explicitly requested template."""
+    """生成映射中的首个模板或显式请求的模板。"""
     cache_dir = Path(api_request.app.state.config.paths.cache_dir)
     _save_data(cache_dir, {"first": "first_missing.jpg", "custom": "custom_missing.jpg"})
     with (
@@ -329,7 +329,7 @@ async def test_missing_image_generates_only_selected_template(
 
 
 async def test_missing_image_without_known_template_generates_all(api_request: Request) -> None:
-    """Generate all templates when no template or image mapping identifies one."""
+    """未指定模板且图片映射无法确定模板时，生成所有模板。"""
     _save_data(Path(api_request.app.state.config.paths.cache_dir), {})
     with (
         patch("app.api.v1.moyuren.today_business", return_value=date(2026, 2, 10)),

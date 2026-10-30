@@ -1,4 +1,4 @@
-"""RSS responses using ASGI transport without lifespan or browser startup."""
+"""通过 ASGI transport 测试 RSS 响应，不启动 lifespan 或浏览器。"""
 
 import json
 import logging
@@ -22,7 +22,7 @@ from app.models.schemas import DailyDataFile
 
 @pytest.fixture
 def feed_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
-    """Provide injected configuration and inline thread work for this sandbox."""
+    """为测试环境注入配置，并在线程任务调用处直接执行。"""
     async def inline(function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         return function(*args, **kwargs)
 
@@ -50,7 +50,7 @@ def feed_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
 def _save(
     tmp_path: Path, day: str = "2026-10-29", **values: Any
 ) -> DailyDataFile:
-    """Persist daily metadata and a small JPEG placeholder with known size."""
+    """保存每日元数据和大小已知的小型 JPEG 占位文件。"""
     data = DailyDataFile.model_validate({
         "date": day, "updated": f"{day} 06:00:00",
         "updated_at": int(datetime.fromisoformat(day).replace(tzinfo=UTC).timestamp() * 1000) + 321,
@@ -66,12 +66,12 @@ def _save(
 
 
 def _client(app: FastAPI) -> httpx.AsyncClient:
-    """Create a minimal async HTTP client."""
+    """创建最简异步 HTTP 客户端。"""
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
 
 def _channel(response: httpx.Response) -> ET.Element:
-    """Parse RSS and require its channel element."""
+    """解析 RSS，并确保存在 channel 元素。"""
     assert response.status_code == 200, response.text
     assert response.headers["content-type"] == "application/rss+xml; charset=utf-8"
     root = ET.fromstring(response.content)
@@ -82,7 +82,7 @@ def _channel(response: httpx.Response) -> ET.Element:
 
 
 async def test_feed_xml_content_and_safe_description(feed_app: FastAPI, tmp_path: Path) -> None:
-    """Expose ordered dated items, valid dates, enclosures and safely escaped HTML."""
+    """返回按日期排序的条目、合法日期、附件和安全转义的 HTML。"""
     _save(tmp_path, "2026-10-28")
     newest = _save(
         tmp_path, weekday="星期四\x01", lunar_date="九月\x0b十九 & <节>",
@@ -136,7 +136,7 @@ async def test_feed_xml_content_and_safe_description(feed_app: FastAPI, tmp_path
 async def test_skip_bad_files_and_stop_after_limit(
     feed_app: FastAPI, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Ignore malformed filenames, bad JSON, unreadable files and nonmatching templates."""
+    """忽略格式错误的文件名、无效 JSON、不可读文件和不匹配的模板。"""
     _save(tmp_path, "2026-10-20")
     _save(tmp_path, "2026-10-21")
     _save(tmp_path, "2026-10-22", images={"moyuren": "other.jpg"})
@@ -166,7 +166,7 @@ async def test_skip_bad_files_and_stop_after_limit(
 
 @pytest.mark.parametrize("existing_directory", [False, True])
 async def test_empty_feed(feed_app: FastAPI, tmp_path: Path, existing_directory: bool) -> None:
-    """Absent and empty data directories both produce valid zero-item RSS."""
+    """数据目录不存在或为空时，均生成合法的零条目 RSS。"""
     if existing_directory:
         (tmp_path / "data").mkdir()
     async with _client(feed_app) as client:
@@ -177,7 +177,7 @@ async def test_empty_feed(feed_app: FastAPI, tmp_path: Path, existing_directory:
 
 
 async def test_missing_image_omits_only_enclosure(feed_app: FastAPI, tmp_path: Path) -> None:
-    """An unavailable JPEG preserves its dated entry and description."""
+    """JPEG 不可用时仍保留带日期的条目和描述。"""
     _save(tmp_path)
     (tmp_path / "images" / "cute_2026-10-29.jpg").unlink()
     async with _client(feed_app) as client:
@@ -189,7 +189,7 @@ async def test_missing_image_omits_only_enclosure(feed_app: FastAPI, tmp_path: P
 
 
 async def test_limit_template_and_enabled_validation(feed_app: FastAPI, tmp_path: Path) -> None:
-    """Respect the configured maximum, template default and standard error response."""
+    """遵循配置的数量上限、默认模板和标准错误响应。"""
     feed_app.state.config.feed = FeedConfig(max_items=2)
     for day in ["2026-10-27", "2026-10-28", "2026-10-29"]:
         _save(tmp_path, day)
@@ -215,7 +215,7 @@ async def test_limit_template_and_enabled_validation(feed_app: FastAPI, tmp_path
 
 
 async def test_http_cache_and_head(feed_app: FastAPI, tmp_path: Path) -> None:
-    """ETag scopes template/limit, regeneration changes validators, HEAD matches GET."""
+    """ETag 区分模板和条数上限，重新生成会更新校验值，HEAD 与 GET 一致。"""
     data = _save(tmp_path)
     async with _client(feed_app) as client:
         response = await client.get("/api/v1/feed.xml?limit=1")
@@ -257,7 +257,7 @@ async def test_http_cache_and_head(feed_app: FastAPI, tmp_path: Path) -> None:
     (SchedulerConfig(daily_times=["06:00", "18:00"]), None),
 ])
 async def test_scheduler_ttl(feed_app: FastAPI, scheduler: SchedulerConfig, ttl: str | None) -> None:
-    """Include TTL for simple intervals and omit it for multiple daily slots."""
+    """简单调度间隔包含 TTL，每日多个时段则省略 TTL。"""
     feed_app.state.config.scheduler = scheduler
     async with _client(feed_app) as client:
         response = await client.get("/api/v1/feed.xml")
@@ -265,5 +265,5 @@ async def test_scheduler_ttl(feed_app: FastAPI, scheduler: SchedulerConfig, ttl:
 
 
 def test_strip_xml_invalid_characters() -> None:
-    """Keep legal whitespace/Unicode and strip controls and lone surrogates."""
+    """保留合法空白和 Unicode，移除控制字符和孤立代理项。"""
     assert feed_module._clean_text("新闻😀\t\n\r\x00\x01\x0b\ud800\ufffe") == "新闻😀\t\n\r"

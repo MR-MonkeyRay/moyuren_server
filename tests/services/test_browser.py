@@ -1,4 +1,4 @@
-"""Tests for app/services/browser.py - browser manager."""
+"""app/services/browser.py 浏览器管理器测试。"""
 
 import asyncio
 import logging
@@ -11,21 +11,21 @@ from app.services.browser import BrowserManager
 
 
 class TestBrowserManager:
-    """Tests for BrowserManager class."""
+    """BrowserManager 类测试。"""
 
     @pytest.fixture
     def manager(self, logger: logging.Logger) -> BrowserManager:
-        """Create a BrowserManager instance."""
+        """创建 BrowserManager 实例。"""
         return BrowserManager(logger_instance=logger)
 
     def test_init(self, manager: BrowserManager) -> None:
-        """Test browser manager initialization."""
+        """测试浏览器管理器初始化。"""
         assert manager._browser is None
         assert manager._playwright is None
         assert manager.is_ready is False
 
     def test_is_ready_with_connected_browser(self, manager: BrowserManager) -> None:
-        """Test readiness reports a connected browser without launching one."""
+        """测试就绪检查识别已连接的浏览器，且不启动新浏览器。"""
         manager._browser = MagicMock()
         manager._browser.is_connected.return_value = True
 
@@ -33,21 +33,21 @@ class TestBrowserManager:
         manager._browser.is_connected.assert_called_once_with()
 
     def test_is_ready_with_disconnected_browser(self, manager: BrowserManager) -> None:
-        """Test readiness rejects a disconnected browser."""
+        """测试已断连的浏览器被判定为未就绪。"""
         manager._browser = MagicMock()
         manager._browser.is_connected.return_value = False
 
         assert manager.is_ready is False
 
     def test_configure(self, manager: BrowserManager) -> None:
-        """Test configure with logger."""
+        """测试配置日志记录器。"""
         new_logger = logging.getLogger("new_test")
         manager.configure(new_logger, proxy_url="http://proxy.example:8080")
         assert manager._logger is new_logger
         assert manager._proxy_url == "http://proxy.example:8080"
 
     def test_configure_rejects_proxy_change_after_launch(self, manager: BrowserManager) -> None:
-        """Test changing proxy after browser launch is rejected."""
+        """测试浏览器启动后不允许更改代理。"""
         manager._browser = MagicMock()
 
         with pytest.raises(RuntimeError, match="Cannot change browser proxy"):
@@ -55,7 +55,7 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_ensure_browser_lazy_init(self, manager: BrowserManager) -> None:
-        """Test _ensure_browser lazy initialization."""
+        """测试 _ensure_browser 延迟初始化。"""
         mock_browser = MagicMock()
         mock_browser.is_connected.return_value = True
 
@@ -72,7 +72,7 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_ensure_browser_launches_with_proxy(self, manager: BrowserManager) -> None:
-        """Test Chromium launch receives Playwright proxy config."""
+        """测试 Chromium 启动时接收 Playwright 代理配置。"""
         manager.configure(logging.getLogger("new_test"), proxy_url="http://user:pass@proxy.example:8080")
         mock_browser = MagicMock()
         mock_browser.is_connected.return_value = True
@@ -98,7 +98,7 @@ class TestBrowserManager:
     async def test_ensure_browser_rejects_authenticated_socks_proxy(
         self, manager: BrowserManager
     ) -> None:
-        """Test Chromium rejects SOCKS authentication before browser launch."""
+        """测试在浏览器启动前拒绝 Chromium 不支持的 SOCKS 认证。"""
         manager.configure(logging.getLogger("new_test"), proxy_url="socks5://user:pass@proxy.example:1080")
         mock_playwright_instance = AsyncMock()
 
@@ -115,19 +115,19 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_ensure_browser_already_initialized(self, manager: BrowserManager) -> None:
-        """Test _ensure_browser when already initialized."""
+        """测试已初始化时的 _ensure_browser 行为。"""
         manager._browser = MagicMock()
         manager._browser.is_connected.return_value = True
 
         with patch("app.services.browser.async_playwright") as mock_async_pw:
             await manager._ensure_browser()
 
-            # Should not call async_playwright
+            # 不应调用 async_playwright
             mock_async_pw.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_ensure_browser_relaunches_disconnected_browser(self, manager: BrowserManager) -> None:
-        """Test a disconnected browser is cleaned up and relaunched."""
+        """测试清理并重新启动已断连的浏览器。"""
         page = MagicMock()
         stale_browser = MagicMock()
         stale_browser.is_connected.return_value = False
@@ -160,7 +160,7 @@ class TestBrowserManager:
     async def test_concurrent_disconnected_recovery_launches_one_replacement(
         self, manager: BrowserManager
     ) -> None:
-        """Test concurrent recovery callers share one replacement browser."""
+        """测试并发恢复请求共用同一个新浏览器。"""
         stale_browser = MagicMock()
         stale_browser.is_connected.return_value = False
         stale_browser.close = AsyncMock()
@@ -199,7 +199,7 @@ class TestBrowserManager:
     async def test_ensure_browser_relaunches_when_stale_cleanup_fails(
         self, manager: BrowserManager, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Test stale cleanup failures are sanitized and do not prevent relaunch."""
+        """测试旧资源清理失败的信息会脱敏，且不阻止重新启动。"""
         stale_browser = MagicMock()
         stale_browser.is_connected.return_value = False
         stale_browser.close = AsyncMock(side_effect=RuntimeError("https://user:secret@example.com/close"))
@@ -227,7 +227,7 @@ class TestBrowserManager:
     async def test_disconnected_recovery_cancelled_during_launch_cleans_all_resources(
         self, manager: BrowserManager
     ) -> None:
-        """Test cancellation during recovery cleans stale and replacement Playwright resources."""
+        """测试恢复过程取消时清理旧资源及新建的 Playwright 资源。"""
         stale_browser = MagicMock()
         stale_browser.is_connected.return_value = False
         stale_browser.close = AsyncMock()
@@ -254,7 +254,7 @@ class TestBrowserManager:
     async def test_shutdown_starting_during_stale_cleanup_prevents_relaunch(
         self, manager: BrowserManager
     ) -> None:
-        """Test shutdown detected after stale cleanup prevents a replacement launch."""
+        """测试清理旧资源后检测到关闭状态时不再启动新浏览器。"""
         stale_browser = MagicMock()
         stale_browser.is_connected.return_value = False
 
@@ -281,7 +281,7 @@ class TestBrowserManager:
     async def test_shutdown_starting_during_playwright_start_stops_new_instance(
         self, manager: BrowserManager
     ) -> None:
-        """Test shutdown detected after Playwright starts stops it before browser launch."""
+        """测试 Playwright 启动后检测到关闭状态时，先停止它，不启动浏览器。"""
         fresh_playwright = MagicMock()
         fresh_playwright.stop = AsyncMock()
 
@@ -303,7 +303,7 @@ class TestBrowserManager:
     async def test_disconnected_event_relaunches_and_ignores_old_callback(
         self, manager: BrowserManager, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Test disconnect callback invalidates only its own browser instance."""
+        """测试断连回调只将其所属的浏览器实例标记为失效。"""
         page = AsyncMock()
         first_browser = MagicMock()
         first_browser.is_connected.return_value = True
@@ -347,7 +347,7 @@ class TestBrowserManager:
     async def test_disconnected_event_is_quiet_during_shutdown(
         self, manager: BrowserManager, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Test intentional shutdown disconnect does not log a warning or relaunch."""
+        """测试主动关闭导致的断连不记录警告，也不重新启动。"""
         mock_browser = MagicMock()
         mock_browser.is_connected.return_value = True
 
@@ -374,7 +374,7 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_create_page(self, manager: BrowserManager) -> None:
-        """Test create_page."""
+        """测试 create_page 创建页面。"""
         mock_page = MagicMock()
         mock_browser = AsyncMock()
         mock_browser.is_connected = MagicMock(return_value=True)
@@ -390,8 +390,8 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_create_page_browser_not_initialized(self, manager: BrowserManager) -> None:
-        """Test create_page raises when browser not initialized."""
-        # Mock _ensure_browser to not actually initialize
+        """测试浏览器未初始化时 create_page 抛出异常。"""
+        # mock _ensure_browser，避免实际初始化
         manager._ensure_browser = AsyncMock()
         manager._browser = None
 
@@ -402,7 +402,7 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_shutdown(self, manager: BrowserManager) -> None:
-        """Test shutdown."""
+        """测试关闭流程。"""
         mock_browser = AsyncMock()
         mock_playwright = AsyncMock()
 
@@ -418,7 +418,7 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_shutdown_handles_close_error(self, manager: BrowserManager) -> None:
-        """Test shutdown handles browser close error."""
+        """测试关闭流程处理浏览器关闭异常。"""
         mock_browser = AsyncMock()
         mock_browser.close = AsyncMock(side_effect=Exception("Close failed"))
         mock_playwright = AsyncMock()
@@ -426,7 +426,7 @@ class TestBrowserManager:
         manager._browser = mock_browser
         manager._playwright = mock_playwright
 
-        # Should not raise
+        # 不应抛出异常
         await manager.shutdown()
 
         assert manager._browser is None
@@ -434,7 +434,7 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_shutdown_handles_stop_error(self, manager: BrowserManager) -> None:
-        """Test shutdown handles playwright stop error."""
+        """测试关闭流程处理 Playwright 停止异常。"""
         mock_browser = AsyncMock()
         mock_playwright = AsyncMock()
         mock_playwright.stop = AsyncMock(side_effect=Exception("Stop failed"))
@@ -442,7 +442,7 @@ class TestBrowserManager:
         manager._browser = mock_browser
         manager._playwright = mock_playwright
 
-        # Should not raise
+        # 不应抛出异常
         await manager.shutdown()
 
         assert manager._browser is None
@@ -450,8 +450,8 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_shutdown_when_not_initialized(self, manager: BrowserManager) -> None:
-        """Test shutdown when not initialized."""
-        # Should not raise
+        """测试未初始化时的关闭流程。"""
+        # 不应抛出异常
         await manager.shutdown()
 
         assert manager._browser is None
@@ -459,7 +459,7 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_shutdown_allows_later_reuse(self, manager: BrowserManager) -> None:
-        """Test shutdown closes resources without making the manager permanently unusable."""
+        """测试关闭流程释放资源后，管理器仍可再次使用。"""
         mock_browser = AsyncMock()
         mock_playwright = AsyncMock()
 
@@ -475,31 +475,31 @@ class TestBrowserManager:
         await manager.create_page({"width": 800, "height": 600, "device_scale_factor": 2})
         manager._ensure_browser.assert_awaited_once()
 
-    # --- warmup ---
+    # --- 预热 ---
 
     @pytest.mark.asyncio
     async def test_warmup(self, manager: BrowserManager) -> None:
-        """Test warmup delegates to _ensure_browser."""
+        """测试预热委托给 _ensure_browser。"""
         manager._ensure_browser = AsyncMock()
         await manager.warmup()
         manager._ensure_browser.assert_awaited_once()
 
-    # --- _ensure_browser: shutting_down guards ---
+    # --- _ensure_browser：关闭状态检查 ---
 
     @pytest.mark.asyncio
     async def test_ensure_browser_shutting_down_before_lock(self, manager: BrowserManager) -> None:
-        """Test _ensure_browser raises when shutting_down (fast path)."""
+        """测试 _ensure_browser 在关闭状态下通过快速路径抛出异常。"""
         manager._shutting_down = True
         with pytest.raises(RuntimeError, match="shutting down"):
             await manager._ensure_browser()
 
     @pytest.mark.asyncio
     async def test_ensure_browser_shutting_down_inside_lock(self, manager: BrowserManager) -> None:
-        """Test _ensure_browser raises when shutting_down detected inside lock."""
+        """测试 _ensure_browser 在锁内检测到关闭状态时抛出异常。"""
 
         class _FakeCtx:
             async def __aenter__(self_ctx):
-                # Simulate another coroutine setting shutting_down while we waited for lock
+                # 模拟等待锁时另一协程设置关闭状态
                 manager._shutting_down = True
                 return self_ctx
 
@@ -511,11 +511,11 @@ class TestBrowserManager:
         with pytest.raises(RuntimeError, match="shutting down"):
             await manager._ensure_browser()
 
-    # --- _ensure_browser: start() failure ---
+    # --- _ensure_browser：start() 失败 ---
 
     @pytest.mark.asyncio
     async def test_ensure_browser_start_failure(self, manager: BrowserManager) -> None:
-        """Test _ensure_browser when async_playwright().start() itself fails."""
+        """测试 async_playwright().start() 本身失败时的 _ensure_browser 行为。"""
         with patch("app.services.browser.async_playwright") as mock_async_pw:
             mock_async_pw.return_value.start = AsyncMock(side_effect=RuntimeError("start boom"))
 
@@ -525,11 +525,11 @@ class TestBrowserManager:
             assert manager._browser is None
             assert manager._playwright is None
 
-    # --- _ensure_browser: launch failure cleanup ---
+    # --- _ensure_browser：启动失败后的清理 ---
 
     @pytest.mark.asyncio
     async def test_ensure_browser_launch_failure_cleans_up_pw(self, manager: BrowserManager) -> None:
-        """Test _ensure_browser cleans up playwright when chromium.launch fails."""
+        """测试 chromium.launch 失败时 _ensure_browser 清理 Playwright。"""
         mock_pw = AsyncMock()
         mock_pw.chromium.launch = AsyncMock(side_effect=RuntimeError("launch boom"))
 
@@ -545,7 +545,7 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_ensure_browser_launch_failure_pw_stop_also_fails(self, manager: BrowserManager) -> None:
-        """Test _ensure_browser handles pw.stop() failure after launch failure."""
+        """测试 _ensure_browser 处理启动失败后的 pw.stop() 异常。"""
         mock_pw = AsyncMock()
         mock_pw.chromium.launch = AsyncMock(side_effect=RuntimeError("launch boom"))
         mock_pw.stop = AsyncMock(side_effect=Exception("stop boom"))
@@ -559,11 +559,11 @@ class TestBrowserManager:
             assert manager._browser is None
             assert manager._playwright is None
 
-    # --- _ensure_browser: CancelledError ---
+    # --- _ensure_browser：取消异常（CancelledError） ---
 
     @pytest.mark.asyncio
     async def test_ensure_browser_cancelled_cleans_up_pw(self, manager: BrowserManager) -> None:
-        """Test _ensure_browser cleans up playwright on CancelledError."""
+        """测试 _ensure_browser 遇到 CancelledError 时清理 Playwright。"""
         mock_pw = AsyncMock()
         mock_pw.chromium.launch = AsyncMock(side_effect=asyncio.CancelledError())
 
@@ -579,7 +579,7 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_ensure_browser_cancelled_pw_stop_fails(self, manager: BrowserManager) -> None:
-        """Test _ensure_browser handles pw.stop() failure after cancellation."""
+        """测试 _ensure_browser 处理取消后的 pw.stop() 异常。"""
         mock_pw = AsyncMock()
         mock_pw.chromium.launch = AsyncMock(side_effect=asyncio.CancelledError())
         mock_pw.stop = AsyncMock(side_effect=Exception("stop boom"))
@@ -593,17 +593,17 @@ class TestBrowserManager:
             assert manager._browser is None
             assert manager._playwright is None
 
-    # --- _ensure_browser: double-check inside lock ---
+    # --- _ensure_browser：锁内二次检查 ---
 
     @pytest.mark.asyncio
     async def test_ensure_browser_already_initialized_inside_lock(self, manager: BrowserManager) -> None:
-        """Test _ensure_browser skips launch when browser set by another coroutine inside lock."""
+        """测试锁内发现浏览器已由另一协程初始化时，_ensure_browser 跳过启动。"""
         mock_browser = MagicMock()
         mock_browser.is_connected.return_value = True
 
         class _FakeCtx:
             async def __aenter__(self_ctx):
-                # Simulate another coroutine initialized browser while we waited
+                # 模拟等待锁时另一协程已初始化浏览器
                 manager._browser = mock_browser
                 return self_ctx
 
@@ -614,21 +614,21 @@ class TestBrowserManager:
 
         with patch("app.services.browser.async_playwright") as mock_async_pw:
             await manager._ensure_browser()
-            # Should not call async_playwright since browser was set inside lock
+            # 浏览器已在锁内设置，不应调用 async_playwright
             mock_async_pw.assert_not_called()
 
-    # --- create_page: shutting_down guards ---
+    # --- create_page：关闭状态检查 ---
 
     @pytest.mark.asyncio
     async def test_create_page_shutting_down_before_ensure(self, manager: BrowserManager) -> None:
-        """Test create_page raises when shutting_down (fast path)."""
+        """测试 create_page 在关闭状态下通过快速路径抛出异常。"""
         manager._shutting_down = True
         with pytest.raises(RuntimeError, match="shutting down"):
             await manager.create_page({"width": 800, "height": 600, "device_scale_factor": 1})
 
     @pytest.mark.asyncio
     async def test_create_page_shutting_down_inside_lock(self, manager: BrowserManager) -> None:
-        """Test create_page raises when shutting_down detected inside lock."""
+        """测试 create_page 在锁内检测到关闭状态时抛出异常。"""
         manager._browser = MagicMock()
         manager._ensure_browser = AsyncMock()
 
@@ -645,11 +645,11 @@ class TestBrowserManager:
         with pytest.raises(RuntimeError, match="shutting down"):
             await manager.create_page({"width": 800, "height": 600, "device_scale_factor": 1})
 
-    # --- create_page: error rollback ---
+    # --- create_page：异常回滚 ---
 
     @pytest.mark.asyncio
     async def test_create_page_new_page_error_decrements_counter(self, manager: BrowserManager) -> None:
-        """Test create_page decrements _active_pages on new_page failure."""
+        """测试 new_page 失败时 create_page 递减 _active_pages。"""
         mock_browser = AsyncMock()
         mock_browser.is_connected = MagicMock(return_value=True)
         mock_browser.new_page = AsyncMock(side_effect=RuntimeError("page boom"))
@@ -676,7 +676,7 @@ class TestBrowserManager:
     async def test_create_page_retries_closed_browser_error_once(
         self, manager: BrowserManager, message: str
     ) -> None:
-        """Test closed-browser errors relaunch and retry exactly once."""
+        """测试浏览器关闭异常会触发重新启动，且只重试一次。"""
         page = MagicMock()
         stale_browser = MagicMock()
         stale_browser.is_connected.return_value = True
@@ -708,7 +708,7 @@ class TestBrowserManager:
     async def test_create_page_closed_browser_retry_failure_rolls_back(
         self, manager: BrowserManager
     ) -> None:
-        """Test a failed retry propagates and rolls back active page accounting."""
+        """测试重试失败时向外抛出异常，并回滚活动页面计数。"""
         stale_browser = MagicMock()
         stale_browser.is_connected.return_value = True
         stale_browser.new_page = AsyncMock(side_effect=PlaywrightError("Browser has been closed"))
@@ -736,7 +736,7 @@ class TestBrowserManager:
     async def test_create_page_target_closed_preserves_connected_browser(
         self, manager: BrowserManager, message: str
     ) -> None:
-        """Test target-only errors preserve a connected browser and other active pages."""
+        """测试仅涉及目标的异常不会影响已连接的浏览器和其他活动页面。"""
         error = PlaywrightError(message)
         mock_browser = MagicMock()
         mock_browser.is_connected.return_value = True
@@ -766,7 +766,7 @@ class TestBrowserManager:
     async def test_create_page_generic_playwright_error_is_not_retried(
         self, manager: BrowserManager
     ) -> None:
-        """Test a generic Playwright error propagates without relaunch."""
+        """测试普通 Playwright 异常直接向外抛出，不重新启动浏览器。"""
         mock_browser = MagicMock()
         mock_browser.is_connected.return_value = True
         mock_browser.new_page = AsyncMock(side_effect=PlaywrightError("Invalid viewport"))
@@ -784,7 +784,7 @@ class TestBrowserManager:
     async def test_create_page_retries_when_browser_disconnects_after_error(
         self, manager: BrowserManager
     ) -> None:
-        """Test an error followed by disconnect triggers one relaunch and retry."""
+        """测试异常后浏览器断连会触发一次重新启动与重试。"""
         page = MagicMock()
         stale_browser = MagicMock()
         stale_browser.is_connected.return_value = False
@@ -809,7 +809,7 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_create_page_cancelled_during_retry_rolls_back(self, manager: BrowserManager) -> None:
-        """Test cancellation during retry rolls back active page accounting."""
+        """测试重试时取消会回滚活动页面计数。"""
         stale_browser = MagicMock()
         stale_browser.is_connected.return_value = True
         stale_browser.new_page = AsyncMock(side_effect=PlaywrightError("Browser closed"))
@@ -834,7 +834,7 @@ class TestBrowserManager:
     async def test_create_page_shutdown_starting_during_retry_rolls_back(
         self, manager: BrowserManager
     ) -> None:
-        """Test shutdown beginning during recovery prevents retry and rolls back accounting."""
+        """测试恢复期间开始关闭会阻止重试，并回滚页面计数。"""
         stale_browser = MagicMock()
         stale_browser.is_connected.return_value = True
         stale_browser.new_page = AsyncMock(side_effect=PlaywrightError("Browser closed"))
@@ -859,7 +859,7 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_create_page_cancelled_decrements_counter(self, manager: BrowserManager) -> None:
-        """Test create_page decrements _active_pages on CancelledError."""
+        """测试 create_page 遇到 CancelledError 时递减 _active_pages。"""
         mock_browser = AsyncMock()
         mock_browser.new_page = AsyncMock(side_effect=asyncio.CancelledError())
         manager._browser = mock_browser
@@ -870,11 +870,11 @@ class TestBrowserManager:
 
         assert manager._active_pages == 0
 
-    # --- release_page ---
+    # --- 释放页面 ---
 
     @pytest.mark.asyncio
     async def test_release_page(self, manager: BrowserManager) -> None:
-        """Test release_page closes page and decrements counter."""
+        """测试 release_page 关闭页面并递减计数。"""
         mock_page = AsyncMock()
         manager._active_pages = 1
 
@@ -885,7 +885,7 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_release_page_close_error(self, manager: BrowserManager) -> None:
-        """Test release_page still decrements counter when close fails."""
+        """测试页面关闭失败时 release_page 仍会递减计数。"""
         mock_page = AsyncMock()
         mock_page.close = AsyncMock(side_effect=Exception("close boom"))
         manager._active_pages = 1
@@ -896,7 +896,7 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_release_page_counter_never_negative(self, manager: BrowserManager) -> None:
-        """Test release_page clamps counter to 0."""
+        """测试 release_page 将计数下限限制为 0。"""
         mock_page = AsyncMock()
         manager._active_pages = 0
 
@@ -904,11 +904,11 @@ class TestBrowserManager:
 
         assert manager._active_pages == 0
 
-    # --- shutdown: active pages timeout ---
+    # --- shutdown：等待活动页面超时 ---
 
     @pytest.mark.asyncio
     async def test_shutdown_waits_for_active_pages(self, manager: BrowserManager) -> None:
-        """Test shutdown waits for active pages then closes."""
+        """测试关闭流程等待活动页面释放后再关闭资源。"""
         mock_browser = AsyncMock()
         mock_playwright = AsyncMock()
         manager._browser = mock_browser
@@ -929,14 +929,14 @@ class TestBrowserManager:
 
     @pytest.mark.asyncio
     async def test_shutdown_timeout_with_active_pages(self, manager: BrowserManager) -> None:
-        """Test shutdown proceeds after timeout even with active pages."""
+        """测试超时后即使仍有活动页面也继续关闭。"""
         mock_browser = AsyncMock()
         mock_playwright = AsyncMock()
         manager._browser = mock_browser
         manager._playwright = mock_playwright
         manager._active_pages = 1
 
-        # Patch timeout to be very short
+        # 将超时时间设得很短
         with patch("app.services.browser._SHUTDOWN_TIMEOUT", 0.05), \
              patch("app.services.browser._SHUTDOWN_POLL_INTERVAL", 0.01):
             await manager.shutdown()
@@ -945,10 +945,10 @@ class TestBrowserManager:
         assert manager._browser is None
         assert manager._active_pages == 0
 
-    # --- module-level singleton ---
+    # --- 模块级单例 ---
 
     def test_module_level_browser_manager_exists(self) -> None:
-        """Test that module-level browser_manager singleton is created."""
+        """测试模块级 browser_manager 单例已创建。"""
         from app.services.browser import browser_manager
 
         assert isinstance(browser_manager, BrowserManager)

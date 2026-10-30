@@ -1,4 +1,4 @@
-"""Tests for bundled font routing and template fallback links."""
+"""测试内置字体路由和模板回退链接。"""
 
 import logging
 from pathlib import Path
@@ -17,7 +17,7 @@ from app.services.renderer import ImageRenderer
 
 
 def _renderer(tmp_path: Path, fonts_dir: Path, **render_options: object) -> ImageRenderer:
-    """Build a renderer whose local font bundle is isolated to a test directory."""
+    """创建渲染器，将本地字体包隔离在测试目录中。"""
     return ImageRenderer(
         templates_config=TemplatesConfig(),
         images_dir=str(tmp_path / "images"),
@@ -31,7 +31,7 @@ def _renderer(tmp_path: Path, fonts_dir: Path, **render_options: object) -> Imag
 
 
 def _route(url: str, *, resource_type: str = "font", method: str = "GET") -> AsyncMock:
-    """Build the subset of a Playwright route used by the font handler."""
+    """构造字体处理器所用的 Playwright 路由部分。"""
     route = AsyncMock()
     route.request = MagicMock(url=url, resource_type=resource_type, method=method)
     return route
@@ -52,7 +52,7 @@ async def test_local_font_route_serves_bundle_before_allowlist_and_tracking(
     resource_type: str,
     content_type: str,
 ) -> None:
-    """Serve the virtual origin with CORS without fetching or tracking it remotely."""
+    """通过虚拟域提供带 CORS 的响应，不发起远程请求或跟踪。"""
     fonts_dir = tmp_path / "fonts"
     fonts_dir.mkdir()
     (fonts_dir / "fonts.css").write_bytes(b"@font-face {}")
@@ -84,7 +84,7 @@ async def test_local_font_route_serves_bundle_before_allowlist_and_tracking(
 
 @pytest.mark.asyncio
 async def test_local_font_route_uses_per_renderer_memory_cache(tmp_path: Path) -> None:
-    """Reuse the first local read for later requests in the renderer instance."""
+    """渲染器实例内的后续请求复用首次读取的本地内容。"""
     fonts_dir = tmp_path / "fonts"
     fonts_dir.mkdir()
     (fonts_dir / "fonts.css").write_bytes(b"initial")
@@ -130,7 +130,7 @@ async def test_local_font_route_uses_per_renderer_memory_cache(tmp_path: Path) -
 async def test_local_font_route_returns_404_for_invalid_requests(
     tmp_path: Path, url: str, method: str
 ) -> None:
-    """Reject traversal, nested paths, unsupported files, misses, and non-GET requests."""
+    """拒绝路径穿越、嵌套路径、不支持的文件、缺失文件及非 GET 请求。"""
     fonts_dir = tmp_path / "fonts"
     fonts_dir.mkdir()
     (fonts_dir / "fonts.css").write_bytes(b"css")
@@ -152,7 +152,7 @@ async def test_local_font_route_returns_404_for_invalid_requests(
 
 @pytest.mark.asyncio
 async def test_local_font_route_rejects_symlink_escape(tmp_path: Path) -> None:
-    """Do not serve a matching filename whose resolved target leaves the bundle."""
+    """即使文件名匹配，也不提供符号链接解析后位于字体包目录外的文件。"""
     fonts_dir = tmp_path / "fonts"
     fonts_dir.mkdir()
     (fonts_dir / "fonts.css").write_bytes(b"css")
@@ -174,7 +174,7 @@ async def test_local_font_route_rejects_symlink_escape(tmp_path: Path) -> None:
 async def test_local_font_route_remains_available_after_remote_fonts_stop(
     tmp_path: Path,
 ) -> None:
-    """Keep serving bundled files after the remote font timeout aborts its queue."""
+    """远程字体超时中止请求队列后，仍可提供内置字体文件。"""
     fonts_dir = tmp_path / "fonts"
     fonts_dir.mkdir()
     (fonts_dir / "fonts.css").write_bytes(b"css")
@@ -203,7 +203,7 @@ async def test_incomplete_local_bundle_warns_once_and_uses_remote_fallback(
     create_directory: bool,
     remote_font_fallback: bool,
 ) -> None:
-    """Report a missing bundle once per renderer and keep the virtual host offline."""
+    """每个渲染器仅报告一次字体包缺失，且虚拟域不发起网络请求。"""
     fonts_dir = tmp_path / "missing-fonts"
     if create_directory:
         fonts_dir.mkdir()
@@ -249,7 +249,7 @@ def test_templates_use_local_fonts_with_optional_google_fallback(
     remote_font_fallback: bool,
     use_china_cdn: bool,
 ) -> None:
-    """Always load the bundle and emit the selected Google fallback only when enabled."""
+    """始终加载字体包，仅在启用时添加所选 Google 字体回退链接。"""
     fonts_dir = tmp_path / "fonts"
     fonts_dir.mkdir()
     (fonts_dir / "fonts.css").write_bytes(b"css")

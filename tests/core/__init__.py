@@ -1,1 +1,1 @@
-"""Core tests package."""
+"""核心模块测试包。"""

@@ -1,4 +1,4 @@
-"""Templates API endpoint."""
+"""模板列表 API 端点。"""
 
 import asyncio
 from pathlib import Path
@@ -20,7 +20,7 @@ async def get_templates(request: Request) -> JSONResponse:
     base_domain = config.server.base_domain.rstrip("/")
     templates_config = await asyncio.to_thread(config.get_templates_config)
 
-    # Read today's data to get latest image URLs
+    # 读取当天数据，取各模板最新图片 URL
     data_dir = Path(config.paths.cache_dir) / "data"
     today_str = today_business().isoformat()
     data_file = data_dir / f"{today_str}.json"

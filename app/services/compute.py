@@ -1,4 +1,4 @@
-"""Business computation service module."""
+"""业务计算服务模块。"""
 
 import logging
 import math
@@ -57,27 +57,27 @@ def _compute_data_freshness(
 # 时区缩写映射表（映射到 UTC 偏移）
 _TIMEZONE_ABBR_MAP: dict[str, timedelta] = {
     # 中国时区（本项目默认）
-    "CST": timedelta(hours=8),  # China Standard Time
-    "CCT": timedelta(hours=8),  # China Coast Time
-    "BJT": timedelta(hours=8),  # Beijing Time
+    "CST": timedelta(hours=8),  # 中国标准时间
+    "CCT": timedelta(hours=8),  # 中国沿海时间
+    "BJT": timedelta(hours=8),  # 北京时间
     # UTC 变体
     "UTC": timedelta(hours=0),
     "GMT": timedelta(hours=0),
     "Z": timedelta(hours=0),
     # 美国时区
-    "EST": timedelta(hours=-5),  # Eastern Standard Time
-    "EDT": timedelta(hours=-4),  # Eastern Daylight Time
-    "CDT": timedelta(hours=-5),  # Central Daylight Time
-    "MST": timedelta(hours=-7),  # Mountain Standard Time
-    "MDT": timedelta(hours=-6),  # Mountain Daylight Time
-    "PST": timedelta(hours=-8),  # Pacific Standard Time
-    "PDT": timedelta(hours=-7),  # Pacific Daylight Time
+    "EST": timedelta(hours=-5),  # 美国东部标准时间
+    "EDT": timedelta(hours=-4),  # 美国东部夏令时间
+    "CDT": timedelta(hours=-5),  # 美国中部夏令时间
+    "MST": timedelta(hours=-7),  # 美国山地标准时间
+    "MDT": timedelta(hours=-6),  # 美国山地夏令时间
+    "PST": timedelta(hours=-8),  # 美国太平洋标准时间
+    "PDT": timedelta(hours=-7),  # 美国太平洋夏令时间
     # 其他常见时区
-    "JST": timedelta(hours=9),  # Japan Standard Time
-    "KST": timedelta(hours=9),  # Korea Standard Time
-    "IST": timedelta(hours=5, minutes=30),  # India Standard Time
-    "AEST": timedelta(hours=10),  # Australian Eastern Standard Time
-    "AEDT": timedelta(hours=11),  # Australian Eastern Daylight Time
+    "JST": timedelta(hours=9),  # 日本标准时间
+    "KST": timedelta(hours=9),  # 韩国标准时间
+    "IST": timedelta(hours=5, minutes=30),  # 印度标准时间
+    "AEST": timedelta(hours=10),  # 澳大利亚东部标准时间
+    "AEDT": timedelta(hours=11),  # 澳大利亚东部夏令时间
 }
 
 
@@ -187,13 +187,13 @@ def normalize_datetime(value: str, default_tz: timezone | None = None) -> str | 
 
 
 class DomainDataAggregator:
-    """Aggregate domain data from raw API responses."""
+    """从原始 API 响应中聚合领域数据。"""
 
-    # Week day mappings
+    # 星期名称映射
     _WEEK_CN = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
     _WEEK_EN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-    # Default placeholder data
+    # 默认占位数据
     _DEFAULT_GUIDE_YI = ["摸鱼", "喝茶", "休息", "学习"]
     _DEFAULT_GUIDE_JI = ["加班", "开会", "焦虑", "提需求"]
     _DEFAULT_HISTORY = "历史上的今天，世界依然在运转。在这个平凡的日子里，你也可以选择不把事情放在心上。"
@@ -211,7 +211,7 @@ class DomainDataAggregator:
         work_end_time: str | None = None,
         themes: ThemesConfig | None = None,
     ) -> None:
-        """Initialize the aggregator with external text limits."""
+        """使用外部文本长度限制初始化聚合器。"""
         self._text_limits = text_limits or TextLimitsConfig()
         self._themes = themes or ThemesConfig()
         self._work_end_time = (
@@ -222,7 +222,7 @@ class DomainDataAggregator:
 
     @staticmethod
     def _truncate(value: str, limit: int) -> str:
-        """Truncate text with an ellipsis included in the configured limit."""
+        """截断文本，省略号也计入配置的长度限制。"""
         if len(value) <= limit:
             return value
         if limit == 1:
@@ -230,7 +230,7 @@ class DomainDataAggregator:
         return f"{value[: limit - 1]}…"
 
     def _default_news(self) -> list[dict[str, Any]]:
-        """Return default news shaped by the configured item and count limits."""
+        """返回符合单条长度和条数限制的默认新闻。"""
         return [
             {
                 "num": item["num"],
@@ -242,15 +242,15 @@ class DomainDataAggregator:
     def aggregate(
         self, raw_data: dict[str, Any], now: datetime | None = None
     ) -> dict[str, Any]:
-        """Aggregate raw API data into domain data.
+        """将原始 API 数据聚合为领域数据。
 
         Args:
-            raw_data: Dictionary mapping endpoint names to their fetched data.
-                      Values can be dict, list, or None depending on endpoint.
-            now: Optional business-time snapshot for this generation.
+            raw_data: 端点名称到所获取数据的映射字典。
+                      值可为字典、列表或 None，具体取决于端点。
+            now: 本次生成可选的业务时间快照。
 
         Returns:
-            A complete template context dictionary with all required variables.
+            包含所有必需变量的完整模板上下文字典。
         """
         # 使用业务时区的当前时间（用于节假日/节气/周末判断）
         if now is None:
@@ -297,13 +297,13 @@ class DomainDataAggregator:
         }
 
     def _compute_stock_indices(self, raw_data: dict[str, Any]) -> dict[str, Any] | None:
-        """Compute stock indices data for template.
+        """计算模板所需的股票指数数据。
 
         Args:
-            raw_data: Raw data dictionary.
+            raw_data: 原始数据字典。
 
         Returns:
-            Dictionary with stock indices or None.
+            股票指数数据字典或 None。
         """
         data = raw_data.get("stock_indices")
         # 增加类型校验
@@ -331,7 +331,7 @@ class DomainDataAggregator:
             if not isinstance(item, dict):
                 continue
 
-            # Format price with proper decimal places and type safety
+            # 安全转换价格类型，并按指定小数位格式化
             price = item.get("price")
             if price is not None:
                 try:
@@ -341,7 +341,7 @@ class DomainDataAggregator:
             else:
                 price_str = "--"
 
-            # Format change percentage with type safety
+            # 安全转换涨跌幅类型并格式化为百分比
             change_pct = item.get("change_pct")
             if change_pct is not None:
                 try:
@@ -380,13 +380,13 @@ class DomainDataAggregator:
         }
 
     def _compute_gold_price(self, raw_data: dict[str, Any]) -> dict[str, Any] | None:
-        """Compute gold price data for template.
+        """计算模板所需的金价数据。
 
         Args:
-            raw_data: Raw data dictionary.
+            raw_data: 原始数据字典。
 
         Returns:
-            Dictionary with gold price info or None.
+            金价信息字典或 None。
         """
         data = raw_data.get("gold_price")
         if not isinstance(data, dict):
@@ -409,16 +409,16 @@ class DomainDataAggregator:
             return None
 
     def _compute_kfc(self, now: datetime, raw_data: dict[str, Any]) -> dict[str, Any] | None:
-        """Compute KFC content if available and it's Thursday.
+        """仅在周四且有内容时生成 KFC 文案数据。
 
         Args:
-            now: Current datetime.
-            raw_data: Raw data dictionary.
+            now: 当前日期时间。
+            raw_data: 原始数据字典。
 
         Returns:
-            Dictionary with kfc content or None.
+            KFC 文案字典或 None。
         """
-        # 0=Mon, ... 3=Thu
+        # 0=周一，……，3=周四
         if now.weekday() == 3:
             content = raw_data.get("kfc_copy")
             if content:
@@ -427,7 +427,7 @@ class DomainDataAggregator:
         return None
 
     def _compute_daily_english(self, raw_data: dict[str, Any]) -> dict[str, Any] | None:
-        """Copy daily English data and cap its externally sourced text fields."""
+        """复制每日英语数据，并限制外部文本字段的长度。"""
         daily_english = raw_data.get("daily_english")
         if not isinstance(daily_english, dict):
             return None
@@ -503,18 +503,18 @@ class DomainDataAggregator:
     def _compute_date(
         self, now: datetime, festivals: dict[str, str | None] | None = None
     ) -> dict[str, Any]:
-        """Compute date information including lunar calendar data.
+        """计算日期信息，包括农历数据。
 
         Args:
-            now: Current datetime in Shanghai timezone.
+            now: 业务时区的当前日期时间。
 
         Returns:
-            Date information dictionary with both gregorian and lunar data.
+            同时包含公历和农历数据的日期信息字典。
         """
         weekday = now.weekday()
         today = now.date()
 
-        # Get lunar calendar info from CalendarService
+        # 从 CalendarService 获取农历信息
         lunar_info = CalendarService.get_lunar_info(today)
         if festivals is None:
             festivals = CalendarService.get_festivals(today)
@@ -536,22 +536,22 @@ class DomainDataAggregator:
         }
 
     def _truncate_holiday_name(self, value: Any) -> Any:
-        """Cap a holiday or festival name while preserving null values."""
+        """限制节假日名称长度，同时保留空值。"""
         if isinstance(value, str):
             return self._truncate(value, self._text_limits.holiday_name)
         return value
 
     def _compute_weekend(self, now: datetime) -> dict[str, int | bool]:
-        """Compute days until weekend.
+        """计算距离周末的天数。
 
         Args:
-            now: Current datetime.
+            now: 当前日期时间。
 
         Returns:
-            Dictionary with days_left until weekend and is_weekend flag.
+            包含距周末天数 days_left 和周末标记 is_weekend 的字典。
         """
         weekday = now.weekday()
-        # Saturday = 5, Sunday = 6
+        # 周六 = 5，周日 = 6
         is_weekend = weekday >= 5
         if is_weekend:
             days_left = 0
@@ -639,13 +639,13 @@ class DomainDataAggregator:
         }
 
     def _compute_progress(self, now: datetime) -> dict[str, float]:
-        """Compute week/month/year progress percentages.
+        """计算周、月、年的进度百分比。
 
         Args:
-            now: Current datetime in business timezone.
+            now: 业务时区的当前日期时间。
 
         Returns:
-            Dictionary with week_progress, month_progress, year_progress in [0.0, 100.0].
+            包含 week_progress、month_progress、year_progress 的字典，值均在 [0.0, 100.0] 内。
         """
         now_ts = now.timestamp()
 
@@ -689,41 +689,41 @@ class DomainDataAggregator:
         }
 
     def _compute_solar_term(self, now: datetime) -> dict[str, Any]:
-        """Compute next solar term using CalendarService.
+        """通过 CalendarService 获取当日或下一个节气的信息。
 
         Args:
-            now: Current datetime.
+            now: 当前日期时间。
 
         Returns:
-            Solar term information dictionary.
+            节气信息字典。
         """
         return CalendarService.get_solar_term_info(now.date())
 
     def _compute_guide(self, now: datetime) -> dict[str, list[str]]:
-        """Compute yi/ji guide using CalendarService.
+        """通过 CalendarService 计算宜忌指南。
 
         Args:
-            now: Current datetime.
+            now: 当前日期时间。
 
         Returns:
-            Dictionary with yi and ji lists.
+            包含宜（yi）和忌（ji）列表的字典。
         """
         yi_ji = CalendarService.get_yi_ji(now.date())
 
-        # Use CalendarService data if available, otherwise fall back to defaults
+        # 优先使用 CalendarService 数据，不可用时回退到默认值
         yi = yi_ji["yi"][:4] if yi_ji["yi"] else self._DEFAULT_GUIDE_YI[:2]
         ji = yi_ji["ji"][:4] if yi_ji["ji"] else self._DEFAULT_GUIDE_JI[:2]
 
         return {"yi": yi, "ji": ji}
 
     def _compute_history(self, raw_data: dict[str, Any]) -> dict[str, str]:
-        """Extract fun content for display.
+        """提取用于展示的趣味内容。
 
         Args:
-            raw_data: Raw data dictionary containing 'fun_content' key.
+            raw_data: 包含 fun_content 键的原始数据字典。
 
         Returns:
-            Dictionary with 'title' and 'content' keys, plus 'type' when supplied.
+            包含 title 和 content 键的字典；源数据提供 type 时也一并返回。
         """
         fun_content = raw_data.get("fun_content")
         if fun_content and isinstance(fun_content, dict):
@@ -740,16 +740,16 @@ class DomainDataAggregator:
         return {"title": "🐟 摸鱼小贴士", "content": self._DEFAULT_HISTORY}
 
     def _compute_news_list(self, raw_data: dict[str, Any]) -> list[dict[str, Any]]:
-        """Extract or generate news list.
+        """提取或生成新闻列表。
 
         Args:
-            raw_data: Raw API data dictionary.
+            raw_data: 原始 API 数据字典。
 
         Returns:
-            List of news items.
+            新闻条目列表。
         """
         news_data = raw_data.get("news")
-        # Fetchers normalize primary, instance and mirror responses to this envelope.
+        # 获取器已将主源、公共实例和镜像响应统一为此封装结构。
         if isinstance(news_data, dict):
             data = news_data.get("data")
             if isinstance(data, dict):
@@ -765,19 +765,19 @@ class DomainDataAggregator:
         return self._default_news()
 
     def _compute_news_meta(self, raw_data: dict[str, Any]) -> dict[str, Any]:
-        """Extract news API metadata.
+        """提取新闻 API 元数据。
 
         Args:
-            raw_data: Raw API data dictionary.
+            raw_data: 原始 API 数据字典。
 
         Returns:
-            News metadata dictionary.
+            新闻元数据字典。
         """
         news_data = raw_data.get("news")
         if isinstance(news_data, dict):
             data = news_data.get("data")
             if isinstance(data, dict):
-                # Prefer source publication time; API refresh time is a distinct upstream field.
+                # 优先使用来源发布时间；API 刷新时间是上游的另一个字段。
                 updated_str = data.get("updated") or data.get("api_updated")
                 # 规范化为 RFC3339 格式
                 normalized_updated = normalize_datetime(updated_str) if updated_str else None
@@ -792,12 +792,12 @@ class DomainDataAggregator:
         """整合三种数据源的节日数据。
 
         Args:
-            now: Current datetime.
-            raw_data: Raw API data dictionary, expects "holidays" key from HolidayService.
+            now: 当前日期时间。
+            raw_data: 原始 API 数据字典，预期包含 HolidayService 提供的 holidays 键。
 
         Returns:
-            List of holiday dictionaries with name, start_date, end_date, duration,
-            days_left, is_legal_holiday, color.
+            节日字典列表，每项包含 name、start_date、end_date、duration、
+            days_left、is_legal_holiday、color。
         """
         today = now.date()
 
@@ -1029,20 +1029,20 @@ class DomainDataAggregator:
 
 
 class TemplateAdapter:
-    """Template adapter for filling defaults and shaping output."""
+    """补齐默认值并整理输出结构的模板适配器。"""
 
     def __init__(self, text_limits: TextLimitsConfig | None = None) -> None:
-        """Initialize the adapter with the same limits as domain aggregation."""
+        """使用与领域数据聚合相同的限制初始化适配器。"""
         self._text_limits = text_limits or TextLimitsConfig()
 
     def adapt(self, domain_data: dict[str, Any]) -> dict[str, Any]:
-        """Adapt domain data for template rendering.
+        """将领域数据适配为模板渲染数据。
 
         Args:
-            domain_data: Domain data from DomainDataAggregator.
+            domain_data: DomainDataAggregator 产出的领域数据。
 
         Returns:
-            Adapted data with defaults filled in.
+            已补齐默认值的适配数据。
         """
         data = dict(domain_data)
 
@@ -1090,7 +1090,7 @@ class TemplateAdapter:
 
 
 class DataComputer:
-    """Compute a template context and freshness from one business-time snapshot."""
+    """基于同一个业务时间快照计算模板上下文与数据新鲜度。"""
 
     def __init__(
         self,
@@ -1100,14 +1100,14 @@ class DataComputer:
         work_end_time: str | None = None,
         themes: ThemesConfig | None = None,
     ) -> None:
-        """Initialize DataComputer with optional aggregator and adapter.
+        """初始化 DataComputer，可选传入聚合器和适配器。
 
         Args:
-            aggregator: Domain data aggregator instance.
-            adapter: Template adapter instance.
-            text_limits: Limits for externally sourced text.
-            work_end_time: Configured business-time workday end in HH:MM format.
-            themes: Festival and solar-term-season theme selection rules.
+            aggregator: 领域数据聚合器实例。
+            adapter: 模板适配器实例。
+            text_limits: 外部文本的长度限制。
+            work_end_time: 配置的工作日下班时间，使用业务时区，格式为 HH:MM。
+            themes: 节日及节气季节的主题选择规则。
         """
         self._aggregator = aggregator or DomainDataAggregator(
             text_limits=text_limits, work_end_time=work_end_time, themes=themes
@@ -1117,14 +1117,14 @@ class DataComputer:
     def compute(
         self, raw_data: dict[str, Any], now: datetime | None = None
     ) -> dict[str, Any]:
-        """Compute template context from raw data.
+        """根据原始数据计算模板上下文。
 
         Args:
-            raw_data: Raw API data dictionary.
-            now: Optional business-time snapshot for this generation.
+            raw_data: 原始 API 数据字典。
+            now: 本次生成可选的业务时间快照。
 
         Returns:
-            Template context dictionary.
+            模板上下文字典。
         """
         snapshot = now or now_business()
         domain_data = self._aggregator.aggregate(raw_data, now=snapshot)
@@ -1134,10 +1134,10 @@ class DataComputer:
 
     @property
     def aggregator(self) -> DomainDataAggregator:
-        """Get the domain data aggregator."""
+        """获取领域数据聚合器。"""
         return self._aggregator
 
     @property
     def adapter(self) -> TemplateAdapter:
-        """Get the template adapter."""
+        """获取模板适配器。"""
         return self._adapter

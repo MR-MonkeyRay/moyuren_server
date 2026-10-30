@@ -1,4 +1,4 @@
-"""Moyuren image API endpoints."""
+"""摸鱼日历图片 API 端点。"""
 
 import asyncio
 import logging
@@ -25,47 +25,47 @@ ImageFormat = Literal["jpeg", "webp"]
 
 
 def _get_filename_for_template(images: dict[str, str], template: str | None) -> str | None:
-    """Get filename for specified template from images mapping.
+    """从图片映射中获取指定模板的文件名。
 
     Args:
-        images: Images mapping {template_name: filename}
-        template: Template name, None means use first available
+        images: 图片映射 {template_name: filename}
+        template: 模板名，None 表示使用首个可用模板
 
     Returns:
-        Filename or None if not found
+        文件名，未找到时返回 None
     """
     if not images:
         return None
 
     if template is None:
-        # Return first available image
+        # 返回首张可用图片
         return next(iter(images.values()), None)
 
-    # Return specific template image
+    # 返回指定模板的图片
     return images.get(template)
 
 
 def _build_cache_headers(
     target_date: date, updated_at: int, identity: str | None = None
 ) -> dict[str, str]:
-    """Build HTTP cache headers based on date.
+    """根据日期构建 HTTP 缓存头。
 
     Args:
-        target_date: Target date for the data
-        updated_at: Update timestamp in milliseconds
+        target_date: 数据的目标日期
+        updated_at: 毫秒级更新时间戳
 
     Returns:
-        Dictionary of cache headers
+        缓存头字典
     """
     today = today_business()
 
     if target_date < today:
-        # History data - immutable
+        # 历史数据不再变化
         return {
             "Cache-Control": "public, max-age=31536000, immutable",
         }
     else:
-        # Today's data - use ETag and Last-Modified
+        # 当天数据使用 ETag 和 Last-Modified
         etag = _cache_etag(updated_at, identity)
         last_modified = datetime.fromtimestamp(updated_at / 1000, tz=UTC).strftime(
             "%a, %d %b %Y %H:%M:%S GMT"
@@ -80,13 +80,13 @@ def _build_cache_headers(
 def _build_simple_response(
     data: DailyDataFile, base_domain: str, template: str | None
 ) -> dict[str, object]:
-    """Build simple response (encode=json, detail=false).
+    """构建精简响应（encode=json，detail=false）。
 
     Returns:
         - date: YYYY-MM-DD
         - updated: YYYY/MM/DD HH:MM:SS
-        - updated_at: milliseconds timestamp
-        - image: full URL
+        - updated_at: 毫秒级时间戳
+        - image: 完整 URL
     """
     filename = _get_filename_for_template(data.images, template)
     if not filename:
@@ -108,7 +108,7 @@ def _build_simple_response(
 def _variant_payload(
     data: DailyDataFile, base_domain: str, template: str | None
 ) -> list[dict[str, object]]:
-    """Build public variant metadata with absolute static URLs."""
+    """构建公开的图片变体元数据，使用静态资源的绝对 URL。"""
     template_name = template or next(iter(data.images), None)
     if template_name is None or data.image_variants is None:
         return []
@@ -125,17 +125,16 @@ def _variant_payload(
 def _build_detail_response(
     data: DailyDataFile, base_domain: str, template: str | None
 ) -> dict[str, object]:
-    """Build detailed response (encode=json, detail=true).
+    """构建详情响应（encode=json，detail=true）。
 
-    Returns the established public detail fields plus image URL. Internal
-    ``schema_version`` metadata is intentionally excluded from API output.
+    仅返回公开详情字段及图片 URL，不暴露内部的 ``schema_version`` 元数据。
     """
     simple = _build_simple_response(data, base_domain, template)
     stored = data.model_dump(
         mode="json", exclude={"schema_version"}, exclude_unset=True
     )
 
-    # Add all optional fields
+    # 仅选择公开字段，不透传全部缓存数据
     detail_fields = {
         "weekday": stored.get("weekday", ""),
         "lunar_date": stored.get("lunar_date", ""),
@@ -162,9 +161,9 @@ def _build_detail_response(
 def _build_text_response(
     data: DailyDataFile, base_domain: str, template: str | None
 ) -> str:
-    """Build plain text response (encode=text).
+    """构建纯文本响应（encode=text）。
 
-    Format:
+    格式：
         日期: 2026-02-10
         更新时间: 2026/02/10 07:22:32
         图片: https://example.com/static/moyuren_20260210_072232.jpg
@@ -180,9 +179,9 @@ def _build_text_response(
 def _build_markdown_response(
     data: DailyDataFile, base_domain: str, template: str | None
 ) -> str:
-    """Build markdown response (encode=markdown).
+    """构建 Markdown 响应（encode=markdown）。
 
-    Format:
+    格式：
         # 摸鱼日历 - 2026-02-10
 
         **更新时间**: 2026/02/10 07:22:32
@@ -200,7 +199,7 @@ def _build_markdown_response(
 async def _generate_on_demand(
     request: Request, logger: logging.Logger, template_name: str | None = None
 ) -> JSONResponse | None:
-    """Generate images on demand and translate generation errors to responses."""
+    """按需生成图片，并将生成错误转换为响应。"""
     try:
         await generate_and_save_image(request.app, template_name=template_name)
     except GenerationBusyError:
@@ -233,23 +232,23 @@ async def _load_data_for_date(
     *,
     allow_generation: bool = True,
 ) -> tuple[DailyDataFile | None, JSONResponse | None]:
-    """Load and validate data file for specified date.
+    """加载并校验指定日期的数据文件。
 
     Args:
-        request: FastAPI request object
-        target_date: Target date to load
-        logger: Logger instance
-        template: Requested template, None means use first available
-        allow_generation: Whether this request may still attempt generation
+        request: FastAPI 请求对象
+        target_date: 要加载的目标日期
+        logger: 日志记录器实例
+        template: 请求的模板，None 表示使用首个可用模板
+        allow_generation: 本次请求是否仍可尝试生成
 
     Returns:
-        Tuple of (data, error_response). If successful, error_response is None.
+        (data, error_response) 元组，成功时 error_response 为 None。
     """
     config = request.app.state.config
     cache_dir = Path(config.paths.cache_dir)
     data_file = cache_dir / "data" / f"{target_date.isoformat()}.json"
 
-    # For today's date, trigger generation if file doesn't exist
+    # 当天的数据文件不存在时触发生成
     today = today_business()
     if target_date == today and not data_file.exists() and allow_generation:
         logger.info("Data file not found for today (%s), triggering generation...", target_date)
@@ -258,7 +257,7 @@ async def _load_data_for_date(
             return None, error
         allow_generation = False
 
-    # Read data file
+    # 读取数据文件
     if not data_file.exists():
         logger.warning("Data file not found for date: %s", target_date)
         return None, JSONResponse(
@@ -334,7 +333,7 @@ def _handle_json_response(
     target_date: date,
     logger: logging.Logger,
 ) -> JSONResponse:
-    """Handle JSON format response (encode=json)."""
+    """处理 JSON 格式响应（encode=json）。"""
     if detail:
         response_data = _build_detail_response(data, base_domain, template)
     else:
@@ -358,7 +357,7 @@ def _handle_text_response(
     target_date: date,
     logger: logging.Logger,
 ) -> PlainTextResponse:
-    """Handle plain text format response (encode=text)."""
+    """处理纯文本格式响应（encode=text）。"""
     text_content = _build_text_response(data, base_domain, template)
     logger.info("Retrieved moyuren data for %s (encode=text)", target_date)
     return PlainTextResponse(
@@ -376,7 +375,7 @@ def _handle_markdown_response(
     target_date: date,
     logger: logging.Logger,
 ) -> PlainTextResponse:
-    """Handle markdown format response (encode=markdown)."""
+    """处理 Markdown 格式响应（encode=markdown）。"""
     markdown_content = _build_markdown_response(data, base_domain, template)
     logger.info("Retrieved moyuren data for %s (encode=markdown)", target_date)
     return PlainTextResponse(
@@ -389,11 +388,11 @@ def _handle_markdown_response(
 def _get_image_path(
     filename: str, cache_dir: str, logger: logging.Logger
 ) -> tuple[Path | None, JSONResponse | None]:
-    """Resolve an existing image file within the images directory."""
-    # Build and validate image path
+    """解析 images 目录内已存在的图片文件路径。"""
+    # 构建并校验图片路径
     images_dir = Path(cache_dir) / "images"
 
-    # Validate filename to prevent path traversal
+    # 校验文件名，防止路径穿越
     if "/" in filename or "\\" in filename or ".." in filename:
         logger.error("Invalid filename with path separators: %s", filename)
         return None, JSONResponse(
@@ -406,7 +405,7 @@ def _get_image_path(
 
     image_path = images_dir / filename
 
-    # Ensure resolved path is still within images_dir
+    # 确保解析后的路径仍在 images_dir 内
     try:
         resolved_path = image_path.resolve()
         resolved_images = images_dir.resolve()
@@ -429,7 +428,7 @@ def _get_image_path(
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Check if image file exists
+    # 检查图片文件是否存在
     if not image_path.is_file():
         logger.error("Image file not found: %s", image_path)
         return None, JSONResponse(
@@ -446,7 +445,7 @@ def _get_image_path(
 def _select_variant_width(
     requested_width: int | None, original_width: int, configured_widths: list[int]
 ) -> int:
-    """Choose the full width or nearest configured width for a request."""
+    """未指定宽度时返回原宽；否则选不小于请求值的最小宽度，无则选最大宽度。"""
     if requested_width is None:
         return original_width
     available = sorted({width for width in configured_widths if width < original_width} | {original_width})
@@ -456,7 +455,7 @@ def _select_variant_width(
 def _recorded_variant(
     data: DailyDataFile, template: str | None, image_format: ImageFormat, width: int
 ) -> ImageVariant | None:
-    """Find an exact recorded variant for the selected template."""
+    """查找所选模板中精确匹配的已记录图片变体。"""
     template_name = template or next(iter(data.images), None)
     if template_name is None or data.image_variants is None:
         return None
@@ -473,7 +472,7 @@ def _recorded_variant(
 def _recorded_widths(
     data: DailyDataFile, template: str | None, image_format: ImageFormat
 ) -> list[int]:
-    """Return recorded widths for a template and exact image format."""
+    """返回指定模板和图片格式的已记录宽度。"""
     template_name = template or next(iter(data.images), None)
     if template_name is None or data.image_variants is None:
         return []
@@ -492,7 +491,7 @@ async def _resolve_image_variant(
     width: int | None,
     logger: logging.Logger,
 ) -> tuple[Path, ImageVariant] | JSONResponse:
-    """Select and, when necessary, lazily create an image variant."""
+    """选择图片变体，必要时按需创建。"""
     filename = _get_filename_for_template(data.images, template)
     if not filename:
         return JSONResponse(
@@ -578,7 +577,7 @@ def _handle_image_response(
     target_date: date,
     logger: logging.Logger,
 ) -> FileResponse:
-    """Handle an already resolved image file response."""
+    """返回已解析的图片文件响应。"""
     logger.info("Serving moyuren image for %s: %s", target_date, variant.filename)
     return FileResponse(
         path=image_path,
@@ -600,49 +599,49 @@ def _handle_image_response(
 )
 async def get_moyuren(
     request: Request,
-    date: str | None = Query(None, description="Target date in YYYY-MM-DD format, defaults to today"),
+    date: str | None = Query(None, description="目标日期（YYYY-MM-DD），默认今天"),
     encode: str = Query(
         "json",
-        description="Output format: json, text, markdown, image, url",
+        description="输出格式：json、text、markdown、image、url",
         json_schema_extra={"enum": list(get_args(EncodeFormat))},
     ),
-    template: str | None = Query(None, description="Template name, defaults to first available"),
-    detail: bool = Query(False, description="Include detailed fields (only for encode=json)"),
+    template: str | None = Query(None, description="模板名，默认使用首个可用模板"),
+    detail: bool = Query(False, description="包含详情字段（仅适用于 encode=json）"),
     format: Annotated[
         ImageFormat | None,
-        Query(description="Image format for encode=image or encode=url"),
+        Query(description="图片格式，适用于 encode=image 或 encode=url"),
     ] = None,
     width: Annotated[
         int | None,
-        Query(gt=0, description="Requested image width for encode=image or encode=url"),
+        Query(gt=0, description="请求的图片宽度，适用于 encode=image 或 encode=url"),
     ] = None,
 ) -> Response:
-    """Get moyuren calendar image data or file.
+    """获取摸鱼日历图片数据或文件。
 
-    Unified endpoint supporting multiple output formats and query parameters.
+    统一端点，支持多种输出格式和查询参数。
 
-    Query Parameters:
-        - date: Target date (YYYY-MM-DD), defaults to today
-        - encode: Output format (json/text/markdown/image/url), defaults to json
-        - template: Template name, defaults to first available
-        - detail: Include detailed fields (only for encode=json), defaults to false
-        - format: Exact image format (jpeg/webp) for image and URL responses
-        - width: Preferred image width for image and URL responses
+    查询参数：
+        - date: 目标日期（YYYY-MM-DD），默认今天
+        - encode: 输出格式（json/text/markdown/image/url），默认 json
+        - template: 模板名，默认使用首个可用模板
+        - detail: 包含详情字段（仅适用于 encode=json），默认 false
+        - format: 图片和 URL 响应的指定图片格式（jpeg/webp）
+        - width: 图片和 URL 响应的期望图片宽度
 
-    HTTP Caching:
-        - History dates (< today): Cache-Control: immutable
-        - Today's date: ETag + Last-Modified, supports 304 Not Modified
+    HTTP 缓存：
+        - 历史日期（早于今天）：Cache-Control: immutable
+        - 当天日期：ETag + Last-Modified，支持 304 Not Modified
 
     Returns:
-        - encode=json: JSON response with image metadata
-        - encode=text: Plain text response
-        - encode=markdown: Markdown formatted response
-        - encode=image: JPEG or WebP image file
-        - encode=url: Plain text URL for the selected image variant
+        - encode=json: 包含图片元数据的 JSON 响应
+        - encode=text: 纯文本响应
+        - encode=markdown: Markdown 格式响应
+        - encode=image: JPEG 或 WebP 图片文件
+        - encode=url: 所选图片变体的纯文本 URL
     """
     logger = logging.getLogger(__name__)
 
-    # Validate encode parameter
+    # 校验 encode 参数
     valid_encodes = list(get_args(EncodeFormat))
     if encode not in valid_encodes:
         return JSONResponse(
@@ -673,7 +672,7 @@ async def get_moyuren(
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Parse and validate date parameter
+    # 解析并校验 date 参数
     if date is None:
         target_date = today_business()
     else:
@@ -688,7 +687,7 @@ async def get_moyuren(
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-    # Load data for target date
+    # 加载目标日期的数据
     data, error = await _load_data_for_date(request, target_date, logger, template)
     if error:
         return error
@@ -696,7 +695,7 @@ async def get_moyuren(
 
     base_domain = config.server.base_domain
 
-    # Handle different output formats
+    # 处理不同的输出格式
     try:
         variant_path: Path | None = None
         variant: ImageVariant | None = None

@@ -1,4 +1,4 @@
-# Testing dependencies
+# 测试依赖
 pytest>=8.2,<10
 pytest-asyncio>=0.23,<2
 pytest-mock>=3.14,<4
@@ -8,9 +8,9 @@ freezegun>=1.5,<2
 coverage[toml]>=7.6,<8
 diff-cover>=9.0,<12
 
-# Local font bundle generation (build-time only)
+# 本地字体子集生成（仅构建期使用）
 fonttools[woff]>=4.50,<5
 
-# Linting and type checking (Ruff rules can change between minor releases).
+# 代码检查与类型检查（Ruff 规则可能随次版本更新而变化，版本上限不跨次版本）
 ruff>=0.15,<0.16
 mypy>=2.1,<2.2

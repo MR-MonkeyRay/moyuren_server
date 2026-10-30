@@ -1,4 +1,4 @@
-"""Rest-day, work-end and contained-festival computation regressions."""
+"""休息日、下班倒计时及假期内节日计算的回归测试。"""
 
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -11,7 +11,7 @@ from app.services.compute import DataComputer, DomainDataAggregator
 
 
 def _snapshot(value: str) -> datetime:
-    """Build a fixed business-time snapshot independent of the wall clock."""
+    """构造不依赖系统时钟的固定业务时间快照。"""
     return datetime.fromisoformat(value).replace(tzinfo=timezone(timedelta(hours=8)))
 
 
@@ -28,7 +28,7 @@ def _snapshot(value: str) -> datetime:
 def test_rest_days_follow_2026_adjustments(
     today: str, expected_date: str, days_left: int, today_off: bool, name: str | None
 ) -> None:
-    """Future make-up Saturdays absent from raw ranges must remain workdays."""
+    """原始假期区间未涵盖的未来补班周六仍应为工作日。"""
     raw = {
         "holidays": [
             {"name": "国庆节", "start_date": "2026-10-01", "end_date": "2026-10-07"}
@@ -48,7 +48,7 @@ def test_rest_days_follow_2026_adjustments(
 
 
 def test_raw_off_day_range_wins_over_calendar_makeup_day() -> None:
-    """The fresher raw source overrides tyme on any day inside its off-day range."""
+    """较新的原始数据源在休假区间内优先于 tyme。"""
     raw = {
         "make_up_workdays": ["2026-05-08", "2026-05-09"],
         "holidays": [
@@ -78,7 +78,7 @@ def test_raw_off_day_range_wins_over_calendar_makeup_day() -> None:
 def test_holiday_cn_makeup_weekend_overrides_outdated_calendar(
     today: str, days_left: int
 ) -> None:
-    """An unpublished-in-tyme makeup Saturday is skipped and shows work-end time."""
+    """跳过 tyme 尚未收录的补班周六，并显示下班倒计时。"""
     raw = {"holidays": [], "make_up_workdays": ["2027-01-09"]}
     with patch.object(CalendarService, "get_day_off_status",
                       side_effect=lambda target: (target.weekday() >= 5, None)):
@@ -95,7 +95,7 @@ def test_holiday_cn_makeup_weekend_overrides_outdated_calendar(
 def test_missing_or_invalid_makeup_data_preserves_weekend(
     make_up_workdays: Any,
 ) -> None:
-    """Legacy and malformed supplemental data retain existing weekend behavior."""
+    """旧格式及格式错误的补充数据保留现有周末规则。"""
     with patch.object(CalendarService, "get_day_off_status",
                       side_effect=lambda target: (target.weekday() >= 5, None)):
         result = DataComputer().compute(
@@ -107,7 +107,7 @@ def test_missing_or_invalid_makeup_data_preserves_weekend(
 
 
 def test_raw_off_day_range_keeps_off_work_hidden_despite_makeup_data() -> None:
-    """The same off-range precedence controls today's badge and work-end countdown."""
+    """休假区间的优先级同样决定今日标记和下班倒计时。"""
     with patch.object(CalendarService, "get_day_off_status", return_value=(False, None)):
         result = DataComputer().compute({
             "holidays": [{"name": "特别假期", "start_date": "2027-01-09", "is_off_day": True}],
@@ -119,7 +119,7 @@ def test_raw_off_day_range_keeps_off_work_hidden_despite_makeup_data() -> None:
 
 
 def test_raw_non_off_entry_defers_to_calendar() -> None:
-    """Only raw off-day ranges override the calendar's legal-holiday status."""
+    """只有原始休假区间能覆盖日历的法定休假状态。"""
     raw = {"holidays": [{
         "name": "旧补班安排",
         "start_date": "2026-05-09",
@@ -134,7 +134,7 @@ def test_raw_non_off_entry_defers_to_calendar() -> None:
 
 @pytest.mark.parametrize("raw", [{}, {"holidays": None}])
 def test_missing_holidays_fall_back_to_plain_weekend(raw: dict[str, Any]) -> None:
-    """Without holiday data, even a make-up Saturday uses legacy weekend rules."""
+    """缺少节假日数据时，补班周六也沿用原有周末规则。"""
     with patch.object(CalendarService, "get_day_off_status") as status:
         rest = DomainDataAggregator()._compute_next_rest_day(_snapshot("2026-02-13T10:00"), raw)
 
@@ -145,7 +145,7 @@ def test_missing_holidays_fall_back_to_plain_weekend(raw: dict[str, Any]) -> Non
 
 
 def test_rest_day_search_is_bounded() -> None:
-    """Pathological work schedules terminate and use the ordinary Saturday fallback."""
+    """异常工作安排下搜索仍会结束，并回退到普通周六。"""
     with patch.object(CalendarService, "get_day_off_status", return_value=(False, None)) as status:
         rest = DomainDataAggregator()._compute_next_rest_day(
             _snapshot("2026-05-08T10:00"), {"holidays": []}
@@ -170,7 +170,7 @@ def test_rest_day_search_is_bounded() -> None:
 def test_off_work_uses_shared_snapshot_and_rest_status(
     snapshot: str, end_time: str, expected: dict[str, Any] | None
 ) -> None:
-    """Work-end uses configured time, hides on off days, and rounds partial minutes up."""
+    """下班倒计时使用配置时间，休息日隐藏，不足一分钟向上取整。"""
     result = DataComputer(work_end_time=end_time).compute(
         {"holidays": []}, now=_snapshot(snapshot)
     )
@@ -180,7 +180,7 @@ def test_off_work_uses_shared_snapshot_and_rest_status(
 
 @pytest.mark.parametrize("kind", ["solar", "lunar"])
 def test_contained_festival_merges_before_limit_and_refills_slot(kind: str) -> None:
-    """Youth Day / New Year's Eve belongs to its statutory row; the next festival fits."""
+    """青年节或除夕合并到所属法定假期行，并为后续节日腾出位置。"""
     if kind == "solar":
         start, end, holiday_name, festival_name, festival_date = (
             "2026-05-01", "2026-05-05", "劳动节", "青年节", "2026-05-04"
@@ -212,7 +212,7 @@ def test_contained_festival_merges_before_limit_and_refills_slot(kind: str) -> N
 
 
 def test_makeup_entry_does_not_absorb_same_day_festival() -> None:
-    """A non-off-day holiday entry cannot absorb an unrelated festival."""
+    """非休假条目不能合并无关节日。"""
     with (
         patch.object(CalendarService, "get_upcoming_lunar_festivals", return_value=[]),
         patch.object(CalendarService, "get_upcoming_solar_festivals", return_value=[

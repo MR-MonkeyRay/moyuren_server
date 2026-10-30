@@ -1,4 +1,4 @@
-"""Shared image URLs and conditional HTTP cache validation."""
+"""图片 URL 拼接与 HTTP 条件请求缓存校验。"""
 
 import hashlib
 from datetime import UTC, datetime
@@ -8,12 +8,12 @@ from fastapi import Request
 
 
 def build_image_url(base_domain: str, filename: str) -> str:
-    """Build full image URL from base domain and filename."""
+    """根据公开域名与文件名拼出图片完整 URL。"""
     return f"{base_domain.rstrip('/')}/static/{filename}"
 
 
 def cache_etag(updated_at: int, identity: str | None = None) -> str:
-    """Build a stable ETag, optionally scoped to a selected image variant."""
+    """生成稳定的 ETag；传入 identity 时限定到具体图片变体。"""
     if identity is None:
         return f'"{updated_at}"'
     digest = hashlib.sha256(identity.encode()).hexdigest()[:16]
@@ -27,18 +27,18 @@ def check_not_modified(
     *,
     allow_if_modified_since: bool = True,
 ) -> bool:
-    """Check if client cache is still valid (304 Not Modified).
+    """判断客户端缓存是否仍有效（可返回 304 Not Modified）。
 
     Args:
-        request: FastAPI request object
-        updated_at: Update timestamp in milliseconds
+        request: FastAPI 请求对象
+        updated_at: 毫秒级更新时间戳
 
     Returns:
-        True if client cache is valid (should return 304)
+        True 表示客户端缓存有效，应返回 304
     """
     etag = cache_etag(updated_at, identity)
 
-    # Check If-None-Match header
+    # 校验 If-None-Match 请求头
     if_none_match = request.headers.get("If-None-Match")
     if if_none_match is not None:
         validators = [validator.strip() for validator in if_none_match.split(",")]
@@ -47,7 +47,7 @@ def check_not_modified(
             for validator in validators
         )
 
-    # Check If-Modified-Since header
+    # 校验 If-Modified-Since 请求头
     if_modified_since = (
         request.headers.get("If-Modified-Since") if allow_if_modified_since else None
     )

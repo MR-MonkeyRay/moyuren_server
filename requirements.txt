@@ -1,4 +1,4 @@
-# Cap dependencies below the next major; Dependabot proposes upgrades for review.
+# 依赖版本上限为下一个主版本；升级由 Dependabot 提交 PR 评审。
 fastapi>=0.100.0,<1
 uvicorn>=0.23.0,<1
 pyyaml>=6.0,<7

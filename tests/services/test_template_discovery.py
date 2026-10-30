@@ -1,4 +1,4 @@
-"""Tests for app/services/template_discovery.py - template discovery service."""
+"""app/services/template_discovery.py 模板发现服务测试。"""
 
 from pathlib import Path
 
@@ -34,16 +34,16 @@ def _create_template(dir_path: Path, name: str, meta_tags: str = "") -> Path:
 
 
 class TestTemplateDiscovery:
-    """Tests for TemplateDiscovery class."""
+    """TemplateDiscovery 类测试。"""
 
     @pytest.fixture
     def discovery(self) -> TemplateDiscovery:
-        """Create a TemplateDiscovery instance."""
+        """创建 TemplateDiscovery 实例。"""
         return TemplateDiscovery()
 
     @pytest.fixture
     def global_config(self) -> TemplateRenderConfig:
-        """Create a global render config."""
+        """创建全局渲染配置。"""
         return TemplateRenderConfig(
             device_scale_factor=3,
             jpeg_quality=100,
@@ -167,7 +167,7 @@ class TestTemplateDiscovery:
     def test_discover_skips_meta_without_attribute_values(
         self, discovery: TemplateDiscovery, global_config: TemplateRenderConfig, tmp_path: Path
     ) -> None:
-        """Malformed meta tags are ignored while valid tags still take effect."""
+        """格式错误的 meta 标签被忽略，有效标签仍然生效。"""
         _create_template(
             tmp_path,
             "partial",

@@ -1,4 +1,4 @@
-"""Gold price service module."""
+"""金价服务模块。"""
 
 import logging
 from collections.abc import AsyncIterator
@@ -15,7 +15,7 @@ from app.services.instances import InstanceRouter
 
 
 class GoldPriceService:
-    """Service for fetching gold price data."""
+    """获取金价数据的服务。"""
 
     def __init__(
         self,
@@ -48,7 +48,7 @@ class GoldPriceService:
 
     @asynccontextmanager
     async def _get_client(self) -> AsyncIterator[httpx.AsyncClient]:
-        """Yield an HTTP client, reusing injected one or creating temporary."""
+        """优先复用注入的 HTTP 客户端，否则临时创建。"""
         if self._http_client is not None:
             yield self._http_client
         else:
@@ -58,10 +58,10 @@ class GoldPriceService:
                 yield client
 
     def _parse_response(self, data: Any) -> dict[str, Any] | None:
-        """Parse gold price API response.
+        """解析金价 API 响应。
 
         Returns:
-            Dictionary with today_price, sell_price, unit if found, None otherwise.
+            解析成功返回含 today_price、sell_price、unit 的字典，否则 None。
         """
         if not isinstance(data, dict):
             self._logger.warning(
@@ -90,12 +90,12 @@ class GoldPriceService:
         return None
 
     async def fetch_gold_price(self) -> dict[str, Any] | None:
-        """Fetch today's gold price from API.
+        """从 API 获取今日金价。
 
         主源不可用时按健康度切换到 60s 公共实例。
 
         Returns:
-            Dictionary with today_price, sell_price, unit if successful, None otherwise.
+            成功返回含 today_price、sell_price、unit 的字典，否则 None。
         """
         try:
             async with self._get_client() as client:

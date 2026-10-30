@@ -1,4 +1,4 @@
-"""HTTP freshness responses using local metadata without application lifespan."""
+"""HTTP 新鲜度响应测试：使用本地元数据，不启动应用 lifespan。"""
 
 from datetime import date
 from pathlib import Path
@@ -29,7 +29,7 @@ async def test_detail_api_returns_stored_freshness(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Expose freshness fields over HTTP and preserve legacy default values."""
+    """通过 HTTP 暴露新鲜度字段，并保留旧版默认值。"""
     app = FastAPI()
     app.include_router(moyuren_module.router)
     app.state.config = SimpleNamespace(

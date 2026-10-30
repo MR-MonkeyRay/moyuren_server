@@ -1,4 +1,4 @@
-"""Focused rendering tests for template layout context branches."""
+"""针对模板布局上下文分支的渲染测试。"""
 
 import re
 from pathlib import Path
@@ -13,8 +13,8 @@ TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 
 
 def _render(template_name: str, *, legacy: bool = False, **overrides: object) -> str:
-    """Render a production template from a complete fallback-safe context."""
-    # Only the environment cache is needed for Jinja rendering; no browser or I/O.
+    """使用完整且支持回退的上下文渲染正式模板。"""
+    # Jinja 渲染只需环境缓存，不需要浏览器或 I/O。
     renderer = ImageRenderer.__new__(ImageRenderer)
     renderer._env_cache = {}
     env = renderer._get_jinja_env(str(TEMPLATES_DIR / template_name))
@@ -28,7 +28,7 @@ def _render(template_name: str, *, legacy: bool = False, **overrides: object) ->
 
 @pytest.mark.parametrize("lunar_year", ["丙午", "丙午年"])
 def test_cute_lunar_year_has_exactly_one_suffix(lunar_year: str) -> None:
-    """Accept lunar-year values with or without their Chinese year suffix."""
+    """接受带或不带中文“年”后缀的农历年份。"""
     data = DataComputer().compute({})
     date = {**data["date"], "lunar_year": lunar_year}
 
@@ -45,7 +45,7 @@ def test_cute_lunar_year_has_exactly_one_suffix(lunar_year: str) -> None:
 def test_templates_prefer_next_rest_day_and_show_off_work(
     template_name: str, countdown: str
 ) -> None:
-    """Use the rest-day-aware context and render the workday countdown."""
+    """优先使用休息日上下文，并显示工作日的下班倒计时。"""
     html = _render(
         template_name,
         weekend={"is_weekend": True, "days_left": 0},
@@ -69,7 +69,7 @@ def test_templates_prefer_next_rest_day_and_show_off_work(
 def test_templates_show_named_rest_day_and_completed_workday(
     template_name: str,
 ) -> None:
-    """Show today's statutory name and the completed-work badge when supplied."""
+    """提供相应数据时，显示当天法定节假日名称和已下班标记。"""
     html = _render(
         template_name,
         next_rest_day={
@@ -88,7 +88,7 @@ def test_templates_show_named_rest_day_and_completed_workday(
 
 @pytest.mark.parametrize("template_name", ["moyuren.html", "moyuren_cute.html"])
 def test_templates_keep_legacy_weekend_context(template_name: str) -> None:
-    """Custom contexts without new countdown keys still render the old branch."""
+    """缺少新倒计时键的自定义上下文仍渲染旧分支。"""
     html = _render(template_name, legacy=True, weekend={"is_weekend": False, "days_left": 2})
 
     assert "距周末" in html
@@ -97,7 +97,7 @@ def test_templates_keep_legacy_weekend_context(template_name: str) -> None:
 
 @pytest.mark.parametrize("template_name", ["moyuren.html", "moyuren_cute.html"])
 def test_templates_hide_work_end_on_rest_days(template_name: str) -> None:
-    """An actual off-day context hides both work-end states."""
+    """实际休息日的上下文隐藏两种下班状态。"""
     html = _render(
         template_name,
         next_rest_day={"is_today_off": True, "today_name": "国庆节"},
@@ -133,7 +133,7 @@ def test_off_work_text_uses_chinese_units(
     off_work: dict[str, object] | None,
     expected: str | None,
 ) -> None:
-    """Render each countdown branch with Chinese units and the existing classes."""
+    """使用中文单位和现有 CSS 类渲染各个倒计时分支。"""
     html = _render(template_name, off_work=off_work)
     badge = re.search(rf'<div class="{badge_class}">(.*?)</div>', html, re.DOTALL)
 

@@ -1,4 +1,4 @@
-"""Cache cleanup service module."""
+"""缓存清理服务模块。"""
 
 import json
 import logging
@@ -19,7 +19,7 @@ _VARIANT_IMAGE_PATTERN = re.compile(
 
 
 class CacheCleaner:
-    """Cache cleaner for removing expired data, image, and render resource files."""
+    """清理过期数据、图片和渲染资源文件。"""
 
     def __init__(
         self,
@@ -28,13 +28,13 @@ class CacheCleaner:
         logger: logging.Logger,
         max_images_per_template_per_day: int = 3,
     ) -> None:
-        """Initialize the cache cleaner.
+        """初始化缓存清理器。
 
         Args:
-            cache_dir: Root cache directory containing data/, images/, and render_resources/ subdirectories.
-            retain_days: Number of days to retain cached files.
-            logger: Logger instance for logging cleanup status.
-            max_images_per_template_per_day: Maximum images to keep per template and day.
+            cache_dir: 缓存根目录，包含 data/、images/ 和 render_resources/ 子目录。
+            retain_days: 缓存文件保留天数。
+            logger: 记录清理状态的日志实例。
+            max_images_per_template_per_day: 每个模板每天最多保留的图片数。
         """
         self.cache_dir = Path(cache_dir)
         self.data_dir = self.cache_dir / "data"
@@ -44,28 +44,28 @@ class CacheCleaner:
         self.logger = logger
         self.max_images_per_template_per_day = max_images_per_template_per_day
 
-        # Ensure directories exist
+        # 确保目录存在
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.images_dir.mkdir(parents=True, exist_ok=True)
         self.render_resources_dir.mkdir(parents=True, exist_ok=True)
 
     def cleanup(self, retain_days: int | None = None) -> dict[str, int | str]:
-        """Clean up expired files and superseded same-day images.
+        """清理过期文件和同日被更新版本替代的图片。
 
-        Scans cache/data/, cache/images/, and cache/render_resources/ directories and removes files
-        older than retain_days. Within retention, keep up to the configured image
-        limit per template and day, always preserving images referenced by data files.
+        扫描 cache/data/、cache/images/ 和 cache/render_resources/ 目录，删除
+        超过 retain_days 的文件。每个模板每天按配置上限保留图片；
+        数据文件引用的图片始终保留，即使因此超出上限。
 
-        Data files format: YYYY-MM-DD.json
-        Image files format: {template}_{YYYYMMDD}_{HHMMSS}.jpg
-        Render resources: sha256-keyed .body/.meta pairs with JSON metadata
+        数据文件格式：YYYY-MM-DD.json
+        图片文件格式：{template}_{YYYYMMDD}_{HHMMSS}.jpg
+        渲染资源：以 sha256 为键的 .body/.meta 文件对，元数据为 JSON
 
         Returns:
-            Dictionary with cleanup statistics:
-            - deleted_files: Number of files deleted
-            - freed_bytes: Total bytes freed
-            - oldest_kept: Date string of oldest kept file (YYYY-MM-DD)
-            - pruned_images: Number of superseded images deleted within retention
+            包含清理统计的字典：
+            - deleted_files: 已删除文件数
+            - freed_bytes: 释放的总字节数
+            - oldest_kept: 保留文件中最早的日期字符串（YYYY-MM-DD）
+            - pruned_images: 保留期内被更新版本替代而删除的图片数
         """
         effective_retain = retain_days if retain_days is not None else self.retain_days
         today = today_business()
@@ -76,7 +76,7 @@ class CacheCleaner:
         pruned_images = 0
         oldest_kept_date = today
 
-        # Read every data file before deleting expired files to protect all image references
+        # 删除过期文件前先读取所有数据文件，保护全部图片引用
         referenced_images: set[str] = set()
         unsafe_dates: set[date] = set()
         skip_pruning = False
@@ -99,7 +99,7 @@ class CacheCleaner:
                     e,
                 )
 
-        # Clean data files
+        # 清理数据文件
         data_pattern = re.compile(r"^(\d{4}-\d{2}-\d{2})\.json$")
         for file_path in self.data_dir.glob("*.json"):
             match = data_pattern.match(file_path.name)
@@ -121,7 +121,7 @@ class CacheCleaner:
             except Exception as e:
                 self.logger.warning("Failed to process data file %s: %s", file_path.name, e)
 
-        # Clean base images. Variants are managed as members of the base image family.
+        # 清理原图；变体作为同一原图的配套文件管理
         image_groups: dict[tuple[str, date], list[tuple[str, Path]]] = {}
         for file_path in self.images_dir.glob("*.jpg"):
             match = _BASE_IMAGE_PATTERN.match(file_path.name)
@@ -150,7 +150,7 @@ class CacheCleaner:
             except Exception as e:
                 self.logger.warning("Failed to process image file %s: %s", file_path.name, e)
 
-        # Referenced images count toward the limit, even when they are older
+        # 被引用的图片即使较旧，也计入保留上限
         for (_, file_date), images_in_group in image_groups.items():
             if skip_pruning or file_date in unsafe_dates:
                 continue
@@ -173,7 +173,7 @@ class CacheCleaner:
                 except OSError as e:
                     self.logger.warning("Failed to prune image file %s: %s", image_path.name, e)
 
-        # Remove variants left behind after their base JPEG was deleted or lost.
+        # 删除原始 JPEG 被删除或丢失后遗留的变体
         for file_path in self.images_dir.iterdir():
             if not file_path.is_file():
                 continue
@@ -192,7 +192,7 @@ class CacheCleaner:
             except OSError as e:
                 self.logger.warning("Failed to delete orphan image variant %s: %s", file_path.name, e)
 
-        # Clean render resource cache files
+        # 清理渲染资源缓存文件
         cutoff_timestamp = datetime.combine(
             cutoff_date, datetime.min.time(), tzinfo=get_business_timezone()
         ).timestamp()
@@ -232,7 +232,7 @@ class CacheCleaner:
                 deleted_files += 1
                 freed_bytes += freed
 
-        # Clean orphan body files (no matching meta)
+        # 清理没有对应元数据的孤立内容文件
         for body_path in self.render_resources_dir.glob("*.body"):
             cache_key = body_path.stem
             meta_path = self.render_resources_dir / f"{cache_key}.meta"
@@ -243,7 +243,7 @@ class CacheCleaner:
                 deleted_files += 1
                 freed_bytes += freed
 
-        # Clean stale temporary files from interrupted atomic writes
+        # 清理原子写入中断后遗留的临时文件
         for tmp_path in self.render_resources_dir.glob("*.tmp"):
             self.logger.info("Deleting stale temporary file: %s", tmp_path.name)
             freed = tmp_path.stat().st_size
@@ -266,7 +266,7 @@ class CacheCleaner:
         }
 
     def _delete_image_family(self, base_path: Path) -> tuple[int, int]:
-        """Delete a base JPEG and every recognized sibling variant."""
+        """删除原始 JPEG 及所有可识别的配套变体。"""
         stem = base_path.stem
         candidates = [base_path, self.images_dir / f"{stem}.webp"]
         candidates.extend(self.images_dir.glob(f"{stem}_w*.jpg"))

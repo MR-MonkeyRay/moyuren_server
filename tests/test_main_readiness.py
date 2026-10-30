@@ -1,4 +1,4 @@
-"""Tests for the application readiness endpoint."""
+"""应用就绪检查端点测试。"""
 
 from datetime import date
 from pathlib import Path
@@ -13,19 +13,19 @@ import app.main as main_module
 
 @pytest.fixture
 def anyio_backend() -> str:
-    """Run these endpoint tests on the project's asyncio backend."""
+    """使用项目的 asyncio 后端运行端点测试。"""
     return "asyncio"
 
 
 class _BrowserManager:
-    """Minimal browser manager stub exposing readiness state."""
+    """仅提供就绪状态的最简浏览器管理器桩。"""
 
     def __init__(self, is_ready: bool) -> None:
         self.is_ready = is_ready
 
 
 def _build_app(cache_dir: Path | None, startup_state: str = "ready") -> FastAPI:
-    """Create an isolated app exposing the production readiness handler."""
+    """创建使用生产就绪检查处理器的独立应用。"""
     app = FastAPI()
     app.add_api_route("/readyz", main_module.readyz, methods=["GET", "HEAD"])
     if cache_dir is not None:
@@ -37,7 +37,7 @@ def _build_app(cache_dir: Path | None, startup_state: str = "ready") -> FastAPI:
 
 
 async def _get_readyz(app: FastAPI, method: str = "GET") -> Response:
-    """Request readiness without running the production lifespan."""
+    """不运行生产生命周期，直接请求就绪检查。"""
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -46,7 +46,7 @@ async def _get_readyz(app: FastAPI, method: str = "GET") -> Response:
 
 @pytest.mark.anyio
 async def test_readyz_starting_returns_503(tmp_path: Path) -> None:
-    """Startup work in progress should keep the service unready."""
+    """启动任务进行中时，服务应保持未就绪。"""
     cache_dir = tmp_path / "cache"
     (cache_dir / "data").mkdir(parents=True)
     app = _build_app(cache_dir, startup_state="starting")
@@ -84,7 +84,7 @@ async def test_readyz_ready_or_degraded(
     browser_ready: bool,
     expected_status: str,
 ) -> None:
-    """Completed startup should report dependency readiness or degradation."""
+    """启动完成后，应根据依赖是否就绪报告就绪或降级状态。"""
     business_date = date(2026, 2, 10)
     cache_dir = tmp_path / "cache"
     data_dir = cache_dir / "data"
@@ -113,7 +113,7 @@ async def test_readyz_ready_or_degraded(
 
 @pytest.mark.anyio
 async def test_readyz_failed_startup_is_degraded(tmp_path: Path) -> None:
-    """An unexpected startup-task failure should allow degraded traffic."""
+    """启动任务意外失败时，应允许以降级状态接收请求。"""
     cache_dir = tmp_path / "cache"
     (cache_dir / "data").mkdir(parents=True)
     app = _build_app(cache_dir, startup_state="failed")
@@ -130,7 +130,7 @@ async def test_readyz_failed_startup_is_degraded(tmp_path: Path) -> None:
 async def test_readyz_defaults_to_starting_without_startup_state(
     tmp_path: Path,
 ) -> None:
-    """Missing startup and browser state should use safe defaults."""
+    """缺少启动和浏览器状态时，应使用安全默认值。"""
     cache_dir = tmp_path / "cache"
     (cache_dir / "data").mkdir(parents=True)
     app = _build_app(cache_dir)
@@ -148,7 +148,7 @@ async def test_readyz_defaults_to_starting_without_startup_state(
 async def test_readyz_missing_cache_path_returns_503(
     tmp_path: Path, missing_path: str
 ) -> None:
-    """The cache root and data directory are both required for readiness."""
+    """缓存根目录和数据目录均存在时，服务才能就绪。"""
     cache_dir = tmp_path / "cache"
     if missing_path == "data":
         cache_dir.mkdir()
@@ -163,7 +163,7 @@ async def test_readyz_missing_cache_path_returns_503(
 
 @pytest.mark.anyio
 async def test_readyz_missing_config_returns_503(tmp_path: Path) -> None:
-    """Missing configuration should make every cache check unready."""
+    """缺少配置时，所有缓存检查都应显示未就绪。"""
     app = _build_app(cache_dir=None)
 
     response = await _get_readyz(app)
@@ -175,7 +175,7 @@ async def test_readyz_missing_config_returns_503(tmp_path: Path) -> None:
 
 @pytest.mark.anyio
 async def test_readyz_supports_head(tmp_path: Path) -> None:
-    """HEAD should expose readiness status without a response body."""
+    """HEAD 应返回就绪状态，但不返回响应体。"""
     cache_dir = tmp_path / "cache"
     (cache_dir / "data").mkdir(parents=True)
     app = _build_app(cache_dir)

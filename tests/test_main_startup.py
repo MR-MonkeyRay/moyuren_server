@@ -1,4 +1,4 @@
-"""Tests for non-blocking startup and initial cache generation."""
+"""测试非阻塞启动与初始缓存生成。"""
 
 import asyncio
 import json
@@ -20,7 +20,7 @@ from app.core.services import AppServices
 def startup_app(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mock_services: AppServices
 ) -> FastAPI:
-    """Create an app with local configuration and mocked startup dependencies."""
+    """使用本地配置和 mock 启动依赖创建应用。"""
     config = SimpleNamespace(
         paths=SimpleNamespace(cache_dir=str(tmp_path / "cache")),
         logging=SimpleNamespace(file=str(tmp_path / "logs" / "app.log")),
@@ -60,7 +60,7 @@ def startup_app(
 
 @pytest.mark.asyncio
 async def test_lifespan_yields_before_warmup_and_cancels_startup(startup_app: FastAPI) -> None:
-    """Startup yields while cache warmup is pending and shutdown cancels it."""
+    """缓存预热未完成时启动流程即让出控制权，关闭时取消预热。"""
     warmup_started = asyncio.Event()
     allow_warmup = asyncio.Event()
 
@@ -90,7 +90,7 @@ async def test_lifespan_yields_before_warmup_and_cancels_startup(startup_app: Fa
 
 @pytest.mark.asyncio
 async def test_startup_warms_cache_before_generating_missing_data(startup_app: FastAPI) -> None:
-    """Initial generation starts only after daily cache warmup completes."""
+    """日级缓存预热完成后才开始初始生成。"""
     warmup_started = asyncio.Event()
     allow_warmup = asyncio.Event()
     generation_started = asyncio.Event()
@@ -127,7 +127,7 @@ async def test_startup_warms_cache_before_generating_missing_data(startup_app: F
 async def test_startup_source_failure_still_finishes_ready(
     startup_app: FastAPI, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """A source warmup error is logged without failing the startup task."""
+    """记录数据源预热错误，但不使启动任务失败。"""
     startup_app.state.services.holiday_service.get.side_effect = RuntimeError("source unavailable")
     async with asyncio.timeout(1), main_module.lifespan(startup_app):
         await asyncio.wait_for(startup_app.state.startup_task, timeout=1)
@@ -142,7 +142,7 @@ async def test_startup_source_failure_still_finishes_ready(
 async def test_unexpected_startup_failure_is_logged(
     startup_app: FastAPI, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Unexpected task errors mark startup failed without escaping lifespan."""
+    """意外任务错误将启动标记为失败，不向 lifespan 外传播。"""
     monkeypatch.setattr(
         main_module, "ensure_today_data", AsyncMock(side_effect=RuntimeError("unexpected failure"))
     )
@@ -166,7 +166,7 @@ async def test_unexpected_startup_failure_is_logged(
 async def test_initial_generation_removes_invalid_data(
     startup_app: FastAPI, invalid_data: str
 ) -> None:
-    """Invalid cache files and directories are removed before regeneration."""
+    """重新生成前删除无效缓存文件和目录。"""
     data_dir = Path(startup_app.state.config.paths.cache_dir) / "data"
     data_dir.mkdir(parents=True)
     data_file = data_dir / "2026-02-04.json"
@@ -196,7 +196,7 @@ async def test_initial_generation_removes_invalid_data(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cached_date", ["2026-02-04", "2026-02-03"])
 async def test_startup_preserves_valid_cache(startup_app: FastAPI, cached_date: str) -> None:
-    """Valid caches are preserved and expired data is refreshed in the startup task."""
+    """保留有效缓存，并在启动任务中刷新过期数据。"""
     data_dir = Path(startup_app.state.config.paths.cache_dir) / "data"
     data_dir.mkdir(parents=True)
     data_file = data_dir / "2026-02-04.json"
@@ -227,7 +227,7 @@ async def test_startup_preserves_valid_cache(startup_app: FastAPI, cached_date: 
 async def test_initial_generation_failure_still_finishes_ready(
     startup_app: FastAPI, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Expected generation errors retain on-demand fallback without failing startup."""
+    """预期的生成错误不影响启动，并保留按需生成的兜底机制。"""
     startup_app.state.services.generator.generate.side_effect = RuntimeError(
         "render unavailable"
     )
@@ -241,7 +241,7 @@ async def test_initial_generation_failure_still_finishes_ready(
 async def test_expired_cache_refresh_failure_preserves_stale_data(
     startup_app: FastAPI, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """A failed expired-cache refresh preserves stale data and clears single-flight state."""
+    """过期缓存刷新失败时保留旧数据，并清除 single-flight 状态。"""
     data_dir = Path(startup_app.state.config.paths.cache_dir) / "data"
     data_dir.mkdir(parents=True)
     data_file = data_dir / "2026-02-04.json"
@@ -271,7 +271,7 @@ async def test_expired_cache_refresh_failure_preserves_stale_data(
 async def test_shutdown_cancels_initial_generation(
     startup_app: FastAPI, expired_cache: bool
 ) -> None:
-    """Shutdown cancels either generation branch before scheduler dependencies stop."""
+    """关闭时先取消任一生成分支，再停止调度器依赖。"""
     generation_started = asyncio.Event()
     allow_generation = asyncio.Event()
     if expired_cache:
