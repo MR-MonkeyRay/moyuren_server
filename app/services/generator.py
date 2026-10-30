@@ -5,7 +5,7 @@ import logging
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI
 
@@ -130,23 +130,32 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
             logger.warning("Failed to fetch API data: %s", safe_exception_for_log(e))
             return {}
 
-    async def fetch_holidays() -> list[Any]:
+    async def fetch_holidays() -> tuple[list[Any], list[str]]:
         """获取节假日数据。
 
         Returns:
-            节假日列表；服务不存在、获取失败或返回空值时返回空列表。
+            节假日列表和补班日期列表；服务不存在、获取失败或返回空值时返回空列表。
 
         Side Effects:
             捕获异常并写入警告日志。
         """
         if not holiday_service:
-            return []
+            return [], []
         try:
-            holidays = await get_cached_data(holiday_service)
-            return holidays if holidays is not None else []
+            payload = await get_cached_data(holiday_service)
+            if isinstance(payload, dict):
+                holidays = payload.get("holidays", [])
+                make_up_workdays = payload.get("make_up_workdays", [])
+                return (
+                    holidays if isinstance(holidays, list) else [],
+                    make_up_workdays if isinstance(make_up_workdays, list) else [],
+                )
+            if isinstance(payload, list):
+                return payload, []
+            return [], []
         except Exception as e:
             logger.warning("Failed to fetch holidays: %s", safe_exception_for_log(e))
-            return []
+            return [], []
 
     async def fetch_fun_content() -> dict[str, Any] | None:
         """获取趣味内容。
@@ -240,7 +249,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
     # Execute all fetches in parallel
     (
         api_data_result,
-        holidays_result,
+        holiday_payload_result,
         fun_content_result,
         kfc_result,
         stock_indices_result,
@@ -265,7 +274,11 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
         raw_data = {}
     else:
         raw_data = dict(api_data_result)
+    holidays_result, make_up_workdays_result = cast(
+        tuple[list[Any], list[str]], holiday_payload_result
+    )
     raw_data["holidays"] = holidays_result
+    raw_data["make_up_workdays"] = make_up_workdays_result
     raw_data["fun_content"] = fun_content_result
     raw_data["kfc_copy"] = kfc_result
     raw_data["stock_indices"] = stock_indices_result
@@ -274,7 +287,7 @@ async def _fetch_all_data_parallel(app: FastAPI, logger: logging.Logger) -> dict
     raw_data["stale_sources"] = sorted(set(stale_sources))
 
     # Log fetch results (count actual API data keys, excluding merged fields)
-    api_keys = [k for k in raw_data if k not in ("holidays", "fun_content", "kfc_copy", "stock_indices", "gold_price", "daily_english", "stale_sources")]
+    api_keys = [k for k in raw_data if k not in ("holidays", "make_up_workdays", "fun_content", "kfc_copy", "stock_indices", "gold_price", "daily_english", "stale_sources")]
     logger.info("Fetched data: %d API endpoints, parallel fetch completed", len(api_keys))
     if holidays_result:
         logger.info("Fetched %d holidays", len(holidays_result))

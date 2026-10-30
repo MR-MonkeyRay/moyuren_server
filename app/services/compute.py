@@ -566,6 +566,12 @@ class DomainDataAggregator:
     ) -> dict[str, Any]:
         """按法定假期与补班安排寻找今天之后的下一个休息日。"""
         raw_holidays = raw_data.get("holidays")
+        raw_workdays = raw_data.get("make_up_workdays")
+        make_up_workdays = (
+            {value for value in raw_workdays if isinstance(value, str)}
+            if isinstance(raw_workdays, list)
+            else set()
+        )
         ranges: list[tuple[date, date, bool, str | None]] = []
         if isinstance(raw_holidays, list):
             for holiday in raw_holidays:
@@ -586,11 +592,13 @@ class DomainDataAggregator:
                 ranges.append((start, end, is_off, name if isinstance(name, str) else None))
 
         def day_status(target: date) -> tuple[bool, str | None]:
-            """优先采用 holiday-cn 休假区间，再复用日历服务的补班规则。"""
+            """依次采用 holiday-cn 休假、补班日期，再复用日历服务规则。"""
             matching = [entry for entry in ranges if entry[0] <= target <= entry[1]]
             for _, _, is_off, name in matching:
                 if is_off:
                     return True, self._truncate_holiday_name(name)
+            if target.isoformat() in make_up_workdays:
+                return False, None
             if isinstance(raw_holidays, list):
                 is_off, name = CalendarService.get_day_off_status(target)
                 return is_off, self._truncate_holiday_name(name)

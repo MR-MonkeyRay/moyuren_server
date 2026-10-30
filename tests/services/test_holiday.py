@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import time
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -57,9 +58,14 @@ class TestHolidayService:
 
     @pytest.fixture
     def cached_service(
-        self, tmp_path: Path, cache_dir: Path, logger: logging.Logger
+        self, tmp_path: Path, cache_dir: Path, logger: logging.Logger,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> CachedHolidayService:
         """Create a holiday service with a daily aggregate cache."""
+        async def inline_io(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+            return func(*args, **kwargs)
+
+        monkeypatch.setattr("app.services.daily_cache.asyncio.to_thread", inline_io)
         return CachedHolidayService(
             logger=logger,
             cache_dir=tmp_path / "daily",
@@ -229,7 +235,7 @@ class TestHolidayService:
             assert await cached_service.fetch_fresh() is None
             result = await cached_service.get()
 
-        assert result == stale_data
+        assert result == {"holidays": stale_data, "make_up_workdays": []}
         assert cache_file.read_text(encoding="utf-8") == original
         assert list(cache_dir.iterdir()) == []
 
@@ -265,12 +271,14 @@ class TestHolidayService:
         ):
             result = await cached_service.get()
 
-        assert isinstance(result, list)
+        assert isinstance(result, dict)
+        assert result["make_up_workdays"] == []
+        holidays = result["holidays"]
         if holiday_date == "2026-02-15":
-            assert len(result) == 1
-            assert result[0]["start_date"] == holiday_date
+            assert len(holidays) == 1
+            assert holidays[0]["start_date"] == holiday_date
         else:
-            assert result == []
+            assert holidays == []
         cached_data = json.loads(
             (cached_service.cache_dir / "holidays.json").read_text(encoding="utf-8")
         )
@@ -359,6 +367,67 @@ class TestHolidayService:
         # Should not make any HTTP requests (cache is valid)
         assert respx.calls.call_count == 0
         assert isinstance(result, list)
+
+    @pytest.mark.parametrize("today", [date(2026, 2, 4), date(2026, 2, 14), date(2026, 2, 15)])
+    def test_make_up_workdays_do_not_change_display_list(
+        self, service: HolidayService, sample_holiday_data: dict[str, Any], today: date
+    ) -> None:
+        """Keep future workdays separately, preserving groups and today's makeup row."""
+        sample_holiday_data["days"].extend([
+            {"name": "元旦", "date": "2026-01-04", "isOffDay": False},
+            {"name": "元旦", "date": "2027-01-03", "isOffDay": False},
+            {"name": "元旦", "date": "2027-01-02", "isOffDay": False},
+            {"name": "元旦", "date": "2027-01-02", "isOffDay": False},
+            {"date": "invalid", "isOffDay": False},
+            {"date": None, "isOffDay": False},
+        ])
+        with patch.object(service, "_get_today", return_value=today):
+            result = service._merge_and_process([sample_holiday_data])
+
+        expected = [{
+            "name": "春节", "start_date": "2026-02-15", "end_date": "2026-02-21",
+            "duration": 7, "days_left": max(0, (date(2026, 2, 15) - today).days),
+            "color": None, "is_off_day": True,
+        }]
+        if today == date(2026, 2, 14):
+            expected.insert(0, {
+                "name": "春节（补班）", "start_date": "2026-02-14", "end_date": "2026-02-14",
+                "duration": 1, "days_left": 0, "color": None, "is_off_day": False,
+            })
+        assert result == expected
+        assert service.make_up_workdays == (
+            (["2026-02-14"] if today <= date(2026, 2, 14) else [])
+            + ["2027-01-02", "2027-01-03"]
+        )
+
+    @pytest.mark.asyncio
+    async def test_make_up_workdays_survive_daily_cache_round_trip(
+        self, cached_service: CachedHolidayService, sample_holiday_data: dict[str, Any]
+    ) -> None:
+        """Fresh and cached payloads carry the same future workdays alongside the list."""
+        with (
+            patch.object(HolidayService, "_get_today", return_value=date(2026, 2, 4)),
+            patch("app.services.daily_cache.today_business", return_value=date(2026, 2, 4)),
+            patch.object(cached_service._service, "_fetch_year_data",
+                         new=AsyncMock(side_effect=[None, sample_holiday_data, None])),
+        ):
+            result = await cached_service.get()
+            assert result is not None
+            assert result["make_up_workdays"] == ["2026-02-14"]
+            assert cached_service.load_cache() == result
+
+    @pytest.mark.asyncio
+    async def test_valid_legacy_daily_cache_loads_without_fetch(
+        self, cached_service: CachedHolidayService
+    ) -> None:
+        """Previous versions stored only a list in the daily cache's data field."""
+        holidays = [{"name": "春节", "start_date": "2026-02-15"}]
+        (cached_service.cache_dir / "holidays.json").write_text(json.dumps({
+            "date": cached_service.cache_key(), "data": holidays,
+        }), encoding="utf-8")
+        with patch.object(cached_service, "fetch_fresh", new=AsyncMock()) as fetch:
+            assert await cached_service.get() == {"holidays": holidays, "make_up_workdays": []}
+        fetch.assert_not_awaited()
 
     @respx.mock
     @pytest.mark.asyncio

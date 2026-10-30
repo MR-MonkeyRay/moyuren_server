@@ -163,10 +163,12 @@ async def main() -> None:
 
         # 1.1 Fetch holiday data
         raw_data["holidays"] = []
+        raw_data["make_up_workdays"] = []
         if holiday_service:
             try:
                 holidays = await holiday_service.fetch_holidays()
                 raw_data["holidays"] = holidays if holidays is not None else []
+                raw_data["make_up_workdays"] = holiday_service.make_up_workdays
                 if holidays is None:
                     logger.warning("Failed to fetch holidays, using default")
                 else:

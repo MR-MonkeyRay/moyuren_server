@@ -341,10 +341,12 @@ async def get_base_template_data(
         已经经过 ``DataComputer`` 计算的模板上下文字典。
     """
     raw_data = await data_fetcher.fetch_all()
+    raw_data["make_up_workdays"] = []
 
     try:
         holidays = await holiday_service.fetch_holidays()
         raw_data["holidays"] = holidays if holidays is not None else []
+        raw_data["make_up_workdays"] = holiday_service.make_up_workdays
         if holidays is None:
             logger.warning("获取节假日失败，使用默认空列表")
     except Exception as e:

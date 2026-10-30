@@ -757,6 +757,7 @@ class TestFetchAllDataParallel:
 
         assert result == {
             "holidays": [],
+            "make_up_workdays": [],
             "fun_content": None,
             "kfc_copy": None,
             "stock_indices": None,
@@ -771,7 +772,10 @@ class TestFetchAllDataParallel:
 
         services = _build_services(
             data_fetcher=SimpleNamespace(get=AsyncMock(return_value={"headline": "ok"})),
-            holiday_service=SimpleNamespace(get=AsyncMock(return_value=[{"name": "春节"}])),
+            holiday_service=SimpleNamespace(get=AsyncMock(return_value={
+                "holidays": [{"name": "春节"}],
+                "make_up_workdays": ["2027-02-06"],
+            })),
             fun_content_service=SimpleNamespace(get=AsyncMock(return_value={"title": "摸鱼文案"})),
             kfc_service=SimpleNamespace(get=AsyncMock(return_value={"content": "疯狂星期四"})),
             stock_index_service=SimpleNamespace(fetch_indices=AsyncMock(return_value={"items": [1, 2]})),
@@ -786,6 +790,7 @@ class TestFetchAllDataParallel:
 
         assert result["headline"] == "ok"
         assert result["holidays"] == [{"name": "春节"}]
+        assert result["make_up_workdays"] == ["2027-02-06"]
         assert result["fun_content"] == {"title": "摸鱼文案"}
         assert result["kfc_copy"] == {"content": "疯狂星期四"}
         assert result["stock_indices"] == {"items": [1, 2]}
@@ -810,7 +815,7 @@ class TestFetchAllDataParallel:
 
         result = await _fetch_all_data_parallel(app, logger)
 
-        assert result == {"holidays": [], "fun_content": None, "kfc_copy": None, "stock_indices": None, "gold_price": None, "daily_english": None, "stale_sources": []}
+        assert result == {"holidays": [], "make_up_workdays": [], "fun_content": None, "kfc_copy": None, "stock_indices": None, "gold_price": None, "daily_english": None, "stale_sources": []}
         warning_messages = [call.args[0] for call in logger.warning.call_args_list]
         assert any("raw_data is not dict" in msg for msg in warning_messages)
 
@@ -833,7 +838,7 @@ class TestFetchAllDataParallel:
 
         result = await _fetch_all_data_parallel(app, logger)
 
-        assert result == {"holidays": [], "fun_content": None, "kfc_copy": None, "stock_indices": None, "gold_price": None, "daily_english": None, "stale_sources": []}
+        assert result == {"holidays": [], "make_up_workdays": [], "fun_content": None, "kfc_copy": None, "stock_indices": None, "gold_price": None, "daily_english": None, "stale_sources": []}
 
 
 class TestScheduleCacheCleanup:

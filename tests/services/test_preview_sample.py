@@ -33,6 +33,7 @@ def test_sample_raw_data_is_deterministic_and_complete() -> None:
     assert set(first) == {
         "news",
         "holidays",
+        "make_up_workdays",
         "fun_content",
         "kfc_copy",
         "stock_indices",
@@ -58,7 +59,10 @@ def test_cached_raw_data_reads_only_disk_caches_and_falls_back_per_key(
     })
     news_service.get = MagicMock(side_effect=AssertionError("network path called"))
     mock_services.data_fetcher = cast(Any, news_service)
-    mock_services.holiday_service = cast(Any, _cache([{"name": "缓存假期"}]))
+    mock_services.holiday_service = cast(Any, _cache({
+        "holidays": [{"name": "缓存假期"}],
+        "make_up_workdays": ["2026-04-11"],
+    }))
     mock_services.fun_content_service = cast(Any, _cache("wrong top type"))
     mock_services.kfc_service = cast(Any, _cache("缓存疯狂星期四"))
     mock_services.gold_price_service = cast(Any, _cache(None))
@@ -73,6 +77,7 @@ def test_cached_raw_data_reads_only_disk_caches_and_falls_back_per_key(
     assert result["weather"] == {"temperature": 24}
     assert "broken" not in result
     assert result["holidays"] == [{"name": "缓存假期"}]
+    assert result["make_up_workdays"] == ["2026-04-11"]
     assert result["fun_content"]["title"] == "🐟 摸鱼小贴士"
     assert result["kfc_copy"] == "缓存疯狂星期四"
     assert result["gold_price"]["today_price"] == 786.50

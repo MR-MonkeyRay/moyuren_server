@@ -50,6 +50,7 @@ def test_rest_days_follow_2026_adjustments(
 def test_raw_off_day_range_wins_over_calendar_makeup_day() -> None:
     """The fresher raw source overrides tyme on any day inside its off-day range."""
     raw = {
+        "make_up_workdays": ["2026-05-08", "2026-05-09"],
         "holidays": [
             {
                 "name": "特别假期",
@@ -69,6 +70,52 @@ def test_raw_off_day_range_wins_over_calendar_makeup_day() -> None:
         "name": "特别假期",
         "today_name": "特别假期",
     }
+
+
+@pytest.mark.parametrize(
+    ("today", "days_left"), [("2027-01-08T10:00", 2), ("2027-01-09T10:00", 1)]
+)
+def test_holiday_cn_makeup_weekend_overrides_outdated_calendar(
+    today: str, days_left: int
+) -> None:
+    """An unpublished-in-tyme makeup Saturday is skipped and shows work-end time."""
+    raw = {"holidays": [], "make_up_workdays": ["2027-01-09"]}
+    with patch.object(CalendarService, "get_day_off_status",
+                      side_effect=lambda target: (target.weekday() >= 5, None)):
+        result = DataComputer().compute(raw, now=_snapshot(today))
+
+    assert result["next_rest_day"] == {
+        "date": "2027-01-10", "days_left": days_left,
+        "is_today_off": False, "name": None, "today_name": None,
+    }
+    assert result["off_work"] == {"hours": 8, "minutes": 0, "end_time": "18:00"}
+
+
+@pytest.mark.parametrize("make_up_workdays", [None, [], "2027-01-09", [None, {}]])
+def test_missing_or_invalid_makeup_data_preserves_weekend(
+    make_up_workdays: Any,
+) -> None:
+    """Legacy and malformed supplemental data retain existing weekend behavior."""
+    with patch.object(CalendarService, "get_day_off_status",
+                      side_effect=lambda target: (target.weekday() >= 5, None)):
+        result = DataComputer().compute(
+            {"holidays": [], "make_up_workdays": make_up_workdays},
+            now=_snapshot("2027-01-09T10:00"),
+        )
+    assert result["next_rest_day"]["is_today_off"] is True
+    assert result["off_work"] is None
+
+
+def test_raw_off_day_range_keeps_off_work_hidden_despite_makeup_data() -> None:
+    """The same off-range precedence controls today's badge and work-end countdown."""
+    with patch.object(CalendarService, "get_day_off_status", return_value=(False, None)):
+        result = DataComputer().compute({
+            "holidays": [{"name": "特别假期", "start_date": "2027-01-09", "is_off_day": True}],
+            "make_up_workdays": ["2027-01-09"],
+        }, now=_snapshot("2027-01-09T10:00"))
+    assert result["next_rest_day"]["is_today_off"] is True
+    assert result["next_rest_day"]["today_name"] == "特别假期"
+    assert result["off_work"] is None
 
 
 def test_raw_non_off_entry_defers_to_calendar() -> None:

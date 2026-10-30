@@ -549,7 +549,7 @@ Webhook 子字段均经 `MOYUREN_NOTIFY_WEBHOOKS` JSON 列表设置：
 
 模板上下文包含 `theme: {"name": str, "source": str | null, "kind": "festival" | "season" | "default"}`；默认值为 `{"name": "default", "source": null, "kind": "default"}`。`enabled: false` 总是返回默认值。自定义合法主题名原样传入 `theme-<name>` 类；模板未定义对应 CSS 时使用默认外观，也兼容缺少 `theme` 的旧上下文。内置春节、中秋、国庆和四季配色，市场涨跌保持红涨绿跌。
 
-两套模板显示调休感知的休息日与下班倒计时。`next_rest_day` 包含 `date`（今天之后下一个休息日的 ISO 日期）、`days_left`、`is_today_off`、`name`（下一个休息日的法定假日名或 null）及 `today_name`（今天的法定假日名或 null）；原有 `weekend.days_left` / `weekend.is_weekend` 保持兼容。holiday-cn 的休假区间优先，其余日期复用日历服务判断补班、法定假日和普通周末；缺少节假日数据时退回普通周末规则，最多搜索 31 天。假期列表将区间内的节日合并为如“劳动节 · 青年节”，合并后再取前 10 项。
+两套模板显示调休感知的休息日与下班倒计时。`next_rest_day` 包含 `date`（今天之后下一个休息日的 ISO 日期）、`days_left`、`is_today_off`、`name`（下一个休息日的法定假日名或 null）及 `today_name`（今天的法定假日名或 null）；原有 `weekend.days_left` / `weekend.is_weekend` 保持兼容。holiday-cn 的休假区间优先，其次采用 holiday-cn 的补班日期（含尚未收录进日历库的次年安排），其余日期复用日历服务判断补班、法定假日和普通周末；缺少节假日数据时退回普通周末规则，最多搜索 31 天。假期列表将区间内的节日合并为如“劳动节 · 青年节”，合并后再取前 10 项。
 
 `off_work` 在休息日为 null，工作日下班前为 `{hours, minutes, end_time}`，到达或超过下班时间为 `{done: true}`。倒计时使用同一次生成的业务时间快照，图片按配置的调度时间生成，不会实时跳动。渲染器按内容实际高度收缩或扩展截图，视口最高 4000 CSS 像素，输出像素还受设备缩放因子影响。
 

@@ -47,6 +47,7 @@ def sample_raw_data(now: datetime) -> dict[str, Any]:
             },
         },
         "holidays": holidays,
+        "make_up_workdays": [],
         "fun_content": {
             "title": "🐟 摸鱼小贴士",
             "content": "每工作一段时间就起身活动一下，给眼睛和肩颈放个短假。",
@@ -129,7 +130,14 @@ def cached_raw_data(
                 result[key] = value
 
     cached_holidays = _load_cache(services.holiday_service, "holidays", logger)
-    if isinstance(cached_holidays, list):
+    if isinstance(cached_holidays, dict):
+        holidays = cached_holidays.get("holidays")
+        make_up_workdays = cached_holidays.get("make_up_workdays")
+        if isinstance(holidays, list):
+            result["holidays"] = holidays
+        if isinstance(make_up_workdays, list):
+            result["make_up_workdays"] = make_up_workdays
+    elif isinstance(cached_holidays, list):
         result["holidays"] = cached_holidays
 
     cached_fun = _load_cache(services.fun_content_service, "fun_content", logger)

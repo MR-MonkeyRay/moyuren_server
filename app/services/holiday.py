@@ -23,6 +23,23 @@ GITHUB_RAW_URL = (
 )
 
 
+def _future_make_up_workdays(values: Any, today: date) -> list[str]:
+    """规范化补班日期，过滤无效与过往日期并排序去重。"""
+    if not isinstance(values, list):
+        return []
+    workdays: set[str] = set()
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        try:
+            workday = date.fromisoformat(value)
+        except ValueError:
+            continue
+        if workday >= today:
+            workdays.add(workday.isoformat())
+    return sorted(workdays)
+
+
 class HolidayService:
     """节假日数据服务，获取并处理中国法定节假日信息"""
 
@@ -59,6 +76,7 @@ class HolidayService:
         self._timeout_sec = timeout_sec
         self._proxy_url = proxy_url
         self._http_client = http_client
+        self.make_up_workdays: list[str] = []
 
     @asynccontextmanager
     async def _get_client(self) -> AsyncIterator[httpx.AsyncClient]:
@@ -141,6 +159,7 @@ class HolidayService:
             至少一年获取成功时返回合并列表（可为空），全部失败时返回 None。
         """
         today = self._get_today()
+        self.make_up_workdays = []
         current_year = today.year
         prev_year = current_year - 1
         next_year = current_year + 1
@@ -290,6 +309,9 @@ class HolidayService:
         today = self._get_today()
         today_str = today.isoformat()
         workdays = [d for d in all_days if d.get("isOffDay") is False]
+        self.make_up_workdays = _future_make_up_workdays(
+            [day.get("date") for day in workdays], today
+        )
         today_workday = next((d for d in workdays if d.get("date") == today_str), None)
 
         # 按 date 升序排序
@@ -407,11 +429,11 @@ class HolidayService:
         }
 
 
-class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
+class CachedHolidayService(DailyCache[dict[str, Any]]):
     """带日级缓存的节假日服务。
 
     原始年度数据仍保留在 cache/holidays/ 目录，
-    聚合后的节假日列表缓存在 cache/holidays.json。
+    聚合后的节假日列表与补班日期缓存在 cache/holidays.json。
 
     继承 DailyCache，为 HolidayService 提供日级缓存能力。
     缓存在每日零点自动过期，网络获取失败时返回过期缓存。
@@ -448,14 +470,34 @@ class CachedHolidayService(DailyCache[list[dict[str, Any]]]):
             http_client=http_client,
         )
 
-    async def fetch_fresh(self) -> list[dict[str, Any]] | None:
+    def load_cache(self) -> dict[str, Any] | None:
+        """读取日缓存，兼容旧版仅保存节假日列表的 payload。"""
+        data = super().load_cache()
+        if isinstance(data, list):
+            return {"holidays": data, "make_up_workdays": []}
+        if not isinstance(data, dict) or not isinstance(data.get("holidays"), list):
+            return None
+        return {
+            "holidays": data["holidays"],
+            "make_up_workdays": _future_make_up_workdays(
+                data.get("make_up_workdays"), self._service._get_today()
+            ),
+        }
+
+    async def fetch_fresh(self) -> dict[str, Any] | None:
         """从网络获取新鲜数据。
 
         Returns:
-            聚合后的节假日列表，如果获取失败返回 None
+            节假日列表与补班日期，如果获取失败返回 None
         """
         try:
-            return await self._service.fetch_holidays()
+            holidays = await self._service.fetch_holidays()
+            if holidays is None:
+                return None
+            return {
+                "holidays": holidays,
+                "make_up_workdays": self._service.make_up_workdays,
+            }
         except Exception as e:
             self.logger.error("Failed to fetch holidays: %s", safe_exception_for_log(e))
             return None
