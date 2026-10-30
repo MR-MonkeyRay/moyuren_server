@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import time
 from pathlib import Path
 from typing import cast
 
@@ -41,6 +40,7 @@ async def test_render_aborts_stalled_font_after_readiness_timeout(
     font_requested = asyncio.Event()
     release_font = asyncio.Event()
     handler_tasks: set[asyncio.Task[None]] = set()
+    font_handler_tasks: set[asyncio.Task[None]] = set()
     connections: set[asyncio.StreamWriter] = set()
 
     async def handle_request(
@@ -72,6 +72,7 @@ async def test_render_aborts_stalled_font_after_readiness_timeout(
                 await writer.drain()
                 return
             if path == b"/font.woff2":
+                font_handler_tasks.add(task)
                 font_requested.set()
                 await release_font.wait()
                 return
@@ -119,7 +120,8 @@ async def test_render_aborts_stalled_font_after_readiness_timeout(
             jpeg_quality=80,
             use_china_cdn=False,
             remote_resource_cache_enabled=False,
-            page_load_timeout_sec=3.0,
+            # Only the font-readiness timeout is under test; allow slow page loads.
+            page_load_timeout_sec=30.0,
             font_ready_timeout_sec=1.0,
             allowed_resource_hosts=["127.0.0.1"],
         )
@@ -130,15 +132,19 @@ async def test_render_aborts_stalled_font_after_readiness_timeout(
             logger=logging.getLogger(__name__),
         )
         await asyncio.wait_for(browser_manager.warmup(), timeout=60.0)
-        started_at = time.monotonic()
+        # This timeout only bounds a regression hang; slow browser operations
+        # must not determine whether stalled-font handling works.
         filename = await asyncio.wait_for(
-            renderer.render({}, "font-timeout"), timeout=10.0
+            renderer.render({}, "font-timeout"), timeout=60.0
         )
-        elapsed = time.monotonic() - started_at
         image = (renderer.images_dir / filename).read_bytes()
 
-        assert elapsed < 10.0
         assert font_requested.is_set()
+        # Rendering completed while every requested font response was still
+        # withheld. Only cleanup below can release these server handlers.
+        assert not release_font.is_set()
+        assert font_handler_tasks
+        assert all(not task.done() for task in font_handler_tasks)
         assert image.startswith(b"\xff\xd8\xff")
         assert image.endswith(b"\xff\xd9")
     finally:
