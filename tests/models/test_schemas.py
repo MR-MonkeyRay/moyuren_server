@@ -55,6 +55,29 @@ class TestDailyDataFile:
         model = DailyDataFile.load(target)
         assert model.schema_version == 1
         assert json.loads(model.dump_json()) == {**payload, "schema_version": 1}
+        assert model.image_variants is None
+
+    def test_variant_round_trip(self, tmp_path: Path, payload: dict[str, object]) -> None:
+        """Persist typed variants while retaining the original base image mapping."""
+        payload["image_variants"] = {"moyuren": [
+            {"filename": "moyuren.webp", "format": "webp", "width": 120},
+            {"filename": "moyuren_w60.jpg", "format": "jpeg", "width": 60},
+        ]}
+        path = tmp_path / "2026-02-04.json"
+        DailyDataFile.model_validate(payload).save_atomic(path)
+        loaded = DailyDataFile.load(path)
+        assert loaded.image_variants is not None
+        assert loaded.image_variants["moyuren"][0].width == 120
+        assert json.loads(loaded.dump_json()) == {**payload, "schema_version": 1}
+
+    @pytest.mark.parametrize("filename", ["", " ", "../bad.webp", "bad/file.webp", "bad\\file.webp", "a..webp", "\x00.webp"])
+    def test_invalid_variant_filename(self, payload: dict[str, object], filename: str) -> None:
+        """Variants share the base mapping's filename validation rules."""
+        payload["image_variants"] = {"moyuren": [
+            {"filename": filename, "format": "webp", "width": 60},
+        ]}
+        with pytest.raises(ValidationError):
+            DailyDataFile.model_validate(payload)
 
     def test_legacy_optional_shapes(self, payload: dict[str, object]) -> None:
         """Accept historical optional payload shapes instead of failing the whole file."""

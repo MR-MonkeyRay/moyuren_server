@@ -212,21 +212,30 @@ pytest -m "not e2e"
 | 参数 | 类型 | 默认值 | 说明 |
 | ---- | ---- | ------ | ---- |
 | `date` | string | 今天 | 目标日期 (YYYY-MM-DD) |
-| `encode` | string | `json` | 输出格式：`json`、`text`、`markdown`、`image` |
+| `encode` | string | `json` | 输出格式：`json`、`url`、`text`、`markdown`、`image` |
 | `template` | string | 首个可用 | 模板名称 |
 | `detail` | boolean | `false` | 是否返回详细字段（仅 encode=json） |
+| `format` | `jpeg` / `webp` | `jpeg` | `encode=image/url` 的图片格式；须在 `output_formats` 中启用 |
+| `width` | 正整数 | 原图宽度 | `encode=image/url` 的目标绝对像素宽度 |
 
 **输出格式**：
 
 - `encode=json`：JSON 元数据（精简或详细）
 - `encode=text`：纯文本格式
 - `encode=markdown`：Markdown 格式
-- `encode=image`：直接返回 JPEG 图片文件
+- `encode=image`：直接返回 JPEG 或 WebP 图片文件，使用对应的 `image/jpeg` / `image/webp`
+- `encode=url`：返回所选图片的绝对 URL（纯文本）
+
+图片选择使用指定格式；不指定 `width` 时返回完整尺寸。指定宽度时，从该格式的原图及已配置缩小尺寸中选择大于等于请求值的最小宽度，全部不足时选择最大宽度。宽度是最终图片的绝对像素，与 `device_scale_factor` 无关，不放大图片。禁用格式返回 `400 API_7003`。已配置变体缺失时，从原始 JPEG 在线程中原子补建，GET 不修改数据 JSON；原始 JPEG 缺失时沿用按需生成和 `503 Retry-After` 恢复机制。JSON 精简及详情响应均增加 `variants: [{image: "绝对 URL", format: "jpeg|webp", width: 600}]`，旧文件默认为空列表。
+
+每次 JPEG 渲染成功后生成变体，单个变体失败仅记录警告；数据文件仅记录成功存在的文件。命名为 `<stem>.webp`、`<stem>_w<width>.jpg` 和 `<stem>_w<width>.webp`。Pillow 使用 LANCZOS 缩小、保留宽高比、移除派生文件元数据，以临时文件和 `os.replace` 原子写入；缩小 JPEG 使用 `jpeg_quality`，WebP 使用 `webp_quality`。
 
 **HTTP 缓存**：
 
 - 历史日期（< 今天）：`Cache-Control: public, max-age=31536000, immutable`
 - 当天数据：`ETag` + `Last-Modified`，支持 `304 Not Modified`。`If-None-Match` 支持逗号分隔列表、`*` 和弱验证器比较；该请求头存在时优先处理并忽略 `If-Modified-Since`。`Last-Modified` 按秒精度比较，回传服务端返回值可正确命中缓存
+
+图片变体的 ETag 包含格式、最终宽度和文件名身份；图片及 URL 响应的 `If-Modified-Since` 单独出现时保守返回 200，请使用 ETag 进行 304 校验，避免不同变体共享生成时间导致误命中。参数显式选择格式，不使用 `Accept` 内容协商。
 
 **精简响应示例**（`encode=json`）：
 
@@ -235,7 +244,10 @@ pytest -m "not e2e"
   "date": "2026-02-06",
   "updated": "2026/02/06 18:53:17",
   "updated_at": 1770375197567,
-  "image": "https://api.monkeyray.net/static/moyuren_20260206_185317.jpg"
+  "image": "https://api.monkeyray.net/static/moyuren_20260206_185317.jpg",
+  "variants": [
+    {"image": "https://api.monkeyray.net/static/moyuren_20260206_185317.jpg", "format": "jpeg", "width": 2382}
+  ]
 }
 ```
 
@@ -365,6 +377,9 @@ pytest -m "not e2e"
 | `scheduler.minute_of_hour` | `MOYUREN_SCHEDULER_MINUTE_OF_HOUR` | 每小时模式下的触发分钟（0-59） |
 | `templates.config.device_scale_factor` | - | 缩放因子（默认 3） |
 | `templates.config.jpeg_quality` | - | JPEG 质量（1-100，默认 100） |
+| `templates.config.output_formats` | - | 默认 `["jpeg"]`；允许 `jpeg`、`webp`，必须包含 `jpeg` 且不可重复 |
+| `templates.config.output_widths` | - | 默认 `[]`；额外最终像素宽度，须为唯一正整数；大于等于原图宽度时跳过并记录 debug 日志 |
+| `templates.config.webp_quality` | - | WebP 质量（整数 1–100，默认 85） |
 | `templates.config.use_china_cdn` | - | 字体 CDN 开关（true: 大陆 CDN, false: 国际 CDN） |
 | `templates.config.local_fonts_dir` | - | 本地 WOFF2 字体目录，默认 `templates/fonts`；与 `templates.dir` 一样，相对路径基于进程工作目录解析（通常为项目根目录） |
 | `templates.config.remote_font_fallback` | - | 是否加载 Google Fonts 作为本地子集的缺字回退，默认 `true`；离线部署可设为 `false` |
@@ -461,9 +476,13 @@ cache/
 
 `data/YYYY-MM-DD.json` 由 `DailyDataFile` 统一读写并通过临时文件原子替换。必需字段为 `date`（有效的 `YYYY-MM-DD`）、`updated`（显示时区的时间字符串）、`updated_at`（非负整数毫秒时间戳，不接受布尔值）和 `images`（模板名到纯文件名的映射，禁止路径分隔符和 `..`）。`schema_version` 当前为 `1`，旧文件缺少该字段时按版本 1 读取；未知字段会保留。
 
-可选字段包括 `weekday`、`lunar_date`、`is_crazy_thursday`、`date_info`、`weekend`、`solar_term`、`guide`、`holidays`、`news_list`、`news_meta`、`fun_content`、`kfc_content`、`kfc_content_full`、`stock_indices`、`gold_price`、`daily_english`、`is_stale`、`source_date` 和 `stale_sources`。`stale_sources` 记录降级源的缓存命名空间，详情 API 仅公开新鲜度标志和新闻日期。`fun_content.type` 使用数据源端点名称，默认内容为 `default`；缺少类型的旧缓存仍兼容。`schema_version` 仅用于文件格式，不出现在公共 API 的简单或详情 JSON 响应中。
+可选字段包括 `image_variants`、`weekday`、`lunar_date`、`is_crazy_thursday`、`date_info`、`weekend`、`solar_term`、`guide`、`holidays`、`news_list`、`news_meta`、`fun_content`、`kfc_content`、`kfc_content_full`、`stock_indices`、`gold_price`、`daily_english`、`is_stale`、`source_date` 和 `stale_sources`。`stale_sources` 记录降级源的缓存命名空间，详情 API 仅公开新鲜度标志和新闻日期。`fun_content.type` 使用数据源端点名称，默认内容为 `default`；缺少类型的旧缓存仍兼容。`schema_version` 仅用于文件格式，不出现在公共 API 的简单或详情 JSON 响应中。
 
 保留期内的图片按模板和日期清理，`cache.max_images_per_template_per_day` 默认为 3（最小为 1），按文件名时间保留最新图片。所有数据 JSON 引用的图片优先保留并计入数量，即使引用数超过上限也不会裁剪；数据 JSON 无法读取或格式无效时，跳过对应日期的图片裁剪。
+
+可选字段 `image_variants` 为模板名到变体数组的映射，例如 `{"moyuren": [{"filename": "moyuren_20261029_060000.webp", "format": "webp", "width": 2382}]}`；列表包含原始 JPEG 和成功的派生图片，`width` 为正整数，文件名校验与 `images` 相同。旧文件缺少此字段或为 `null` 时仍可加载，`schema_version` 保持 1。
+
+变体随其原始 JPEG 一同清理并计入释放字节数，每日数量上限仅统计原始 JPEG。数据 JSON 引用的原图及所有派生图片受到保护（包括 GET 补建但未记录的变体）；原图已不存在且无数据引用的孤立变体会删除。静态发布复制已存在的变体，并在发布 JSON 的 `image_variants` 中列出：日期目录的 `data.json` 引用 `moyuren.*`，根目录 `latest.json` 引用 `latest.*`；`render_once.py` 同样生成变体。
 
 ### 配置示例
 

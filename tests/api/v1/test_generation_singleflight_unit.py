@@ -42,9 +42,11 @@ async def _generate_response(request: Request, endpoint: str) -> Response:
     """Call the selected generation endpoint with concrete query defaults."""
     if endpoint == "ops":
         return await ops_generate(request)
-    return await get_moyuren(
-        request, date=None, encode="json", template="moyuren", detail=False
-    )
+    with patch("app.api.v1.moyuren.image_width", return_value=1000):
+        return await get_moyuren(
+            request, date=None, encode="json", template="moyuren", detail=False,
+            format=None, width=None,
+        )
 
 
 @pytest.mark.parametrize("endpoint", ["moyuren", "ops"])

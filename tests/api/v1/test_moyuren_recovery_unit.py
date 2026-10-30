@@ -2,8 +2,10 @@
 
 import json
 import logging
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -49,9 +51,17 @@ async def _get_response(
     target_date: str | None = None,
 ) -> Response:
     """Call the route directly with concrete query defaults."""
-    return await get_moyuren(
-        api_request, date=target_date, encode=encode, template=template, detail=False,
-    )
+    async def inline(function: Callable[..., Any], *args: object) -> Any:
+        return function(*args)
+
+    with (
+        patch("app.api.v1.moyuren.image_width", return_value=1000),
+        patch("app.api.v1.moyuren.asyncio.to_thread", side_effect=inline),
+    ):
+        return await get_moyuren(
+            api_request, date=target_date, encode=encode, template=template, detail=False,
+            format=None, width=None,
+        )
 
 
 @pytest.mark.parametrize("encode", ["json", "text", "markdown", "image"])

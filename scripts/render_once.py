@@ -35,6 +35,7 @@ from app.services.kfc import KfcService
 from app.services.renderer import ImageRenderer
 from app.services.stock_index import StockIndexService
 from app.services.daily_english import DailyEnglishService, build_dict_backend
+from app.services.variants import generate_variants
 
 
 def _build_timestamp_fields(now: datetime) -> dict[str, str | int | bool]:
@@ -252,12 +253,26 @@ async def main() -> None:
 
         # 3. Render all templates
         all_filenames: dict[str, str] = {}
+        all_variants: dict[str, list[dict[str, str | int]]] = {}
         for template_item in templates_config.items:
             tname = template_item.name
             filename = await image_renderer.render(
                 template_data, template_name=tname, now=now
             )
             all_filenames[tname] = filename
+            try:
+                variants = await asyncio.to_thread(
+                    generate_variants,
+                    cache_dir / "images" / filename,
+                    config.templates.config,
+                    logger,
+                )
+            except Exception as e:
+                logger.warning("Failed to generate image variants for %s: %s", filename, e)
+                variants = []
+            all_variants[tname] = [
+                variant.model_dump(mode="json") for variant in variants
+            ]
             logger.info("Image rendered for '%s': %s", tname, filename)
 
         # 4. Update data file
@@ -300,6 +315,7 @@ async def main() -> None:
         data = {
             **timestamp_fields,
             "images": all_filenames,
+            "image_variants": all_variants,
             # New content fields
             "weekday": date_info.get("week_cn", ""),
             "lunar_date": date_info.get("lunar_date", ""),

@@ -53,4 +53,4 @@ async def test_detail_api_returns_stored_freshness(
     assert detail.json()["source_date"] == expected_date
     assert detail.json()["image"] == "https://example.com/static/moyuren.jpg"
     assert simple.status_code == 200
-    assert set(simple.json()) == {"date", "updated", "updated_at", "image"}
+    assert set(simple.json()) == {"date", "updated", "updated_at", "image", "variants"}

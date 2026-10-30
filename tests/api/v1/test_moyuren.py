@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from PIL import Image
 from starlette.requests import Request
 
 from app.api.v1.moyuren import _build_cache_headers, _check_not_modified, router
@@ -64,7 +65,7 @@ class TestMoyurenAPI:
 
         # Create mock image file
         image_path = images_dir / "moyuren_20260210_072232.jpg"
-        image_path.write_bytes(b"fake image content")
+        Image.new("RGB", (1000, 500), "white").save(image_path, "JPEG")
 
         # Mock config
         mock_config = MagicMock()
@@ -149,7 +150,7 @@ class TestMoyurenAPI:
 
         assert response.status_code == 200
         assert response.headers["content-type"] == "image/jpeg"
-        assert response.content == b"fake image content"
+        assert response.content.startswith(b"\xff\xd8")
 
     def test_get_moyuren_with_date_parameter(
         self, tmp_path: Path, mock_today: MagicMock, mock_services: AppServices
@@ -220,7 +221,7 @@ class TestMoyurenAPI:
         """Test OpenAPI lists output formats without changing runtime validation."""
         parameters = app.openapi()["paths"]["/api/v1/moyuren"]["get"]["parameters"]
         encode = next(parameter for parameter in parameters if parameter["name"] == "encode")
-        assert encode["schema"]["enum"] == ["json", "text", "markdown", "image"]
+        assert encode["schema"]["enum"] == ["json", "text", "markdown", "image", "url"]
 
     def test_get_moyuren_date_not_found(self, client: TestClient, mock_today: MagicMock) -> None:
         """Test GET /api/v1/moyuren?date=2025-01-01 returns 404 when data doesn't exist."""
@@ -450,7 +451,9 @@ class TestMoyurenAPI:
             application: FastAPI, template_name: str | None = None,
         ) -> dict[str, str]:
             filename = "moyuren_regenerated.jpg"
-            (cache_dir / "images" / filename).write_bytes(b"regenerated image")
+            Image.new("RGB", (1000, 500), "white").save(
+                cache_dir / "images" / filename, "JPEG"
+            )
             data_file = cache_dir / "data" / "2026-02-10.json"
             data = json.loads(data_file.read_text())
             data["images"] = {"moyuren": filename}
@@ -463,7 +466,7 @@ class TestMoyurenAPI:
         generate.assert_awaited_once_with(app, template_name="moyuren")
         assert response.status_code == 200
         if encode == "image":
-            assert response.content == b"regenerated image"
+            assert response.content.startswith(b"\xff\xd8")
         else:
             assert "moyuren_regenerated.jpg" in response.text
 

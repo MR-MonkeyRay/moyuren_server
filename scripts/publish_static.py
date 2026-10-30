@@ -4,6 +4,7 @@
 import argparse
 import asyncio
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -24,6 +25,7 @@ from app.core.config import (
     StockIndexSource,
     load_config,
 )
+from app.core.errors import RenderError
 from app.core.logging import setup_logging
 from app.core.network import safe_exception_for_log
 from app.models.schemas import DailyDataFile
@@ -38,6 +40,102 @@ from app.services.kfc import KfcService
 from app.services.renderer import ImageRenderer
 from app.services.stock_index import StockIndexService
 from app.services.daily_english import DailyEnglishService, build_dict_backend
+from app.services.variants import generate_variants, image_width
+
+_CACHE_VARIANT_PATTERN = re.compile(r"^(?:_w(?P<width>\d+))?\.(?P<extension>jpg|webp)$")
+
+
+def _published_variant_name(source_stem: str, filename: str, prefix: str) -> str:
+    """Map a cache variant filename to its stable published artifact name."""
+    suffix = filename.removeprefix(source_stem)
+    if suffix == ".jpg":
+        return f"{prefix}.jpg"
+    if suffix == ".webp":
+        return f"{prefix}.webp"
+    return f"{prefix}{suffix}"
+
+
+def _existing_variant_files(source: Path) -> list[Path]:
+    """Discover every valid sibling representation, including lazy-generated files."""
+    candidates = [source, source.with_suffix(".webp")]
+    candidates.extend(source.parent.glob(f"{source.stem}_w*.jpg"))
+    candidates.extend(source.parent.glob(f"{source.stem}_w*.webp"))
+    valid_paths: list[Path] = []
+    for path in candidates:
+        if not path.is_file():
+            continue
+        match = _CACHE_VARIANT_PATTERN.fullmatch(path.name.removeprefix(source.stem))
+        if match is None:
+            continue
+        width = match.group("width")
+        if width is not None and int(width) <= 0:
+            continue
+        valid_paths.append(path)
+    return sorted(valid_paths)
+
+
+def _published_variant_metadata(source: Path) -> list[dict[str, str | int]]:
+    """Build static data metadata from all image representations on disk."""
+    try:
+        source_width = image_width(source)
+    except RenderError:
+        # 基础图无法读取时不发布派生图元数据；生成阶段已记录告警
+        return []
+    variants: list[dict[str, str | int]] = []
+    for path in _existing_variant_files(source):
+        match = _CACHE_VARIANT_PATTERN.fullmatch(path.name.removeprefix(source.stem))
+        if match is None:
+            continue
+        configured_width = match.group("width")
+        width = source_width if configured_width is None else int(configured_width)
+        variants.append(
+            {
+                "filename": _published_variant_name(source.stem, path.name, "moyuren"),
+                "format": "jpeg" if match.group("extension") == "jpg" else "webp",
+                "width": width,
+            }
+        )
+    return variants
+
+
+def _latest_manifest(data: DailyDataFile) -> DailyDataFile:
+    """Build root-manifest metadata that names the root image artifacts."""
+    payload = data.model_dump(mode="json", exclude_unset=True)
+    payload["images"] = {
+        template: _rename_published_prefix(filename, "moyuren", "latest")
+        for template, filename in data.images.items()
+    }
+    if data.image_variants is not None:
+        payload["image_variants"] = {
+            template: [
+                {
+                    **variant.model_dump(mode="json"),
+                    "filename": _rename_published_prefix(
+                        variant.filename, "moyuren", "latest"
+                    ),
+                }
+                for variant in variants
+            ]
+            for template, variants in data.image_variants.items()
+        }
+    return DailyDataFile.model_validate(payload)
+
+
+def _rename_published_prefix(filename: str, source: str, target: str) -> str:
+    """Rename one stable published image-family prefix."""
+    return f"{target}{filename.removeprefix(source)}" if filename.startswith(source) else filename
+
+
+def _publish_image_family(source: Path, date_dir: Path, output_dir: Path) -> int:
+    """Copy a source family to dated and latest artifact names."""
+    copied = 0
+    for source_file in _existing_variant_files(source):
+        dated_name = _published_variant_name(source.stem, source_file.name, "moyuren")
+        latest_name = _published_variant_name(source.stem, source_file.name, "latest")
+        copy_atomic(source_file, date_dir / dated_name)
+        copy_atomic(source_file, output_dir / latest_name)
+        copied += 2
+    return copied
 
 
 def _build_timestamp_fields(now: datetime) -> dict[str, str | int | bool]:
@@ -474,6 +572,14 @@ async def main() -> None:
             filename = await image_renderer.render(template_data, now=now)
             logger.info("Image rendered: %s", filename)
 
+            src_image = cache_dir / "images" / filename
+            try:
+                await asyncio.to_thread(
+                    generate_variants, src_image, config.templates.config, logger
+                )
+            except Exception as e:
+                logger.warning("Failed to generate image variants for %s: %s", filename, e)
+
         except Exception as e:
             logger.error(
                 "Rendering failed: %s",
@@ -520,6 +626,7 @@ async def main() -> None:
         data_payload: dict[str, Any] = {
             **timestamp_fields,
             "images": {"moyuren": "moyuren.jpg"},
+            "image_variants": {"moyuren": _published_variant_metadata(src_image)},
             # New content fields
             "weekday": date_info.get("week_cn", ""),
             "lunar_date": date_info.get("lunar_date", ""),
@@ -556,26 +663,24 @@ async def main() -> None:
             date_dir.mkdir(parents=True, exist_ok=True)
 
             # JSON artifacts
-            json_content = data_file.dump_json()
-            write_atomic(json_content, date_dir / "data.json")
-            write_atomic(json_content, output_dir / "latest.json")
+            write_atomic(data_file.dump_json(), date_dir / "data.json")
+            write_atomic(_latest_manifest(data_file).dump_json(), output_dir / "latest.json")
             logger.info(
                 "JSON artifacts written: %s, %s", date_dir / "data.json", output_dir / "latest.json"
             )
 
             # Image artifacts (copy from cache)
-            src_image = cache_dir / "images" / filename
             if not src_image.exists():
                 logger.error("Source image not found: %s", src_image)
                 sys.exit(11)
 
-            copy_atomic(src_image, date_dir / "moyuren.jpg")
-            copy_atomic(src_image, output_dir / "latest.jpg")
+            published_images = _publish_image_family(src_image, date_dir, output_dir)
             logger.info(
                 "Image artifacts copied: %s, %s",
                 date_dir / "moyuren.jpg",
                 output_dir / "latest.jpg",
             )
+            logger.info("Published %s image artifact(s)", published_images)
 
             # TXT artifacts
             dated_image_path = f"{today_str}/moyuren.jpg"

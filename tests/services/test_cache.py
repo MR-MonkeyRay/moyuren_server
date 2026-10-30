@@ -22,6 +22,32 @@ def _daily_data(date_value: str, images: dict[str, str]) -> dict[str, object]:
     }
 
 
+def test_partial_family_deletion_counts_successful_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failed sibling deletion retains successful counts and continues the family."""
+    cleaner = CacheCleaner(str(tmp_path), retain_days=30, logger=logging.getLogger("test"))
+    base = cleaner.images_dir / "moyuren_20261029_060000.jpg"
+    failed = base.with_suffix(".webp")
+    resized = base.with_name(f"{base.stem}_w60.jpg")
+    base.write_bytes(b"base")
+    failed.write_bytes(b"failed")
+    resized.write_bytes(b"resized")
+    unlink = Path.unlink
+
+    def fail_one(path: Path, missing_ok: bool = False) -> None:
+        if path == failed:
+            raise OSError("busy variant")
+        unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", fail_one)
+    assert cleaner._delete_image_family(base) == (2, len(b"base") + len(b"resized"))
+    assert failed.exists()
+    assert not base.exists()
+    assert not resized.exists()
+    assert "Failed to delete image family member" in caplog.text
+
+
 class TestCacheCleaner:
     """Tests for CacheCleaner class."""
 
@@ -105,6 +131,118 @@ class TestCacheCleaner:
         assert result["deleted_files"] == 5
         assert result["freed_bytes"] == 4 * len(b"image") + len(b"expired")
         assert result["oldest_kept"] == "2026-02-09"
+
+    def test_cleanup_deletes_variants_with_pruned_base(self, tmp_path: Path) -> None:
+        """Pruning a base image should remove all of its variants and count their bytes."""
+        cleaner = CacheCleaner(
+            str(tmp_path), 30, logging.getLogger("test"), max_images_per_template_per_day=1
+        )
+        old_stem = "moyuren_20260210_010000"
+        new_stem = "moyuren_20260210_020000"
+        files = {
+            f"{old_stem}.jpg": b"base",
+            f"{old_stem}.webp": b"webp",
+            f"{old_stem}_w320.jpg": b"small-jpeg",
+            f"{old_stem}_w320.webp": b"small-webp",
+            f"{new_stem}.jpg": b"new",
+        }
+        for filename, contents in files.items():
+            (cleaner.images_dir / filename).write_bytes(contents)
+
+        with patch("app.services.cache.today_business", return_value=date(2026, 2, 10)):
+            result = cleaner.cleanup()
+
+        assert {path.name for path in cleaner.images_dir.iterdir()} == {f"{new_stem}.jpg"}
+        assert result["pruned_images"] == 1
+        assert result["deleted_files"] == 4
+        assert result["freed_bytes"] == sum(
+            len(contents) for filename, contents in files.items() if filename.startswith(old_stem)
+        )
+
+    def test_cleanup_preserves_variants_of_referenced_base(self, tmp_path: Path) -> None:
+        """A data-file base reference should protect every existing variant."""
+        cleaner = CacheCleaner(
+            str(tmp_path), 30, logging.getLogger("test"), max_images_per_template_per_day=1
+        )
+        referenced_stem = "moyuren_20260210_010000"
+        newer_stem = "moyuren_20260210_020000"
+        referenced_files = {
+            f"{referenced_stem}.jpg",
+            f"{referenced_stem}.webp",
+            f"{referenced_stem}_w320.jpg",
+            f"{referenced_stem}_w320.webp",
+        }
+        for filename in referenced_files | {f"{newer_stem}.jpg", f"{newer_stem}.webp"}:
+            (cleaner.images_dir / filename).write_bytes(b"image")
+        data_path = cleaner.data_dir / "2026-02-10.json"
+        data_path.write_text(
+            json.dumps(_daily_data("2026-02-10", {"moyuren": f"{referenced_stem}.jpg"}))
+        )
+
+        with patch("app.services.cache.today_business", return_value=date(2026, 2, 10)):
+            result = cleaner.cleanup()
+
+        assert {path.name for path in cleaner.images_dir.iterdir()} == referenced_files
+        assert result["pruned_images"] == 1
+        assert result["deleted_files"] == 2
+
+    def test_cleanup_removes_orphan_variants(self, tmp_path: Path) -> None:
+        """Variants without their base JPEG should be removed as orphans."""
+        cleaner = CacheCleaner(str(tmp_path), 30, logging.getLogger("test"))
+        orphan_files = {
+            "moyuren_20260210_010000.webp": b"full",
+            "moyuren_20260210_010000_w320.jpg": b"jpeg",
+            "moyuren_20260210_010000_w320.webp": b"webp",
+        }
+        for filename, contents in orphan_files.items():
+            (cleaner.images_dir / filename).write_bytes(contents)
+
+        with patch("app.services.cache.today_business", return_value=date(2026, 2, 10)):
+            result = cleaner.cleanup()
+
+        assert not list(cleaner.images_dir.iterdir())
+        assert result["deleted_files"] == 3
+        assert result["freed_bytes"] == sum(map(len, orphan_files.values()))
+
+    def test_cleanup_preserves_variants_when_referenced_base_is_missing(
+        self, tmp_path: Path
+    ) -> None:
+        """A reference protects its image family even while the base needs self-healing."""
+        cleaner = CacheCleaner(str(tmp_path), 30, logging.getLogger("test"))
+        stem = "moyuren_20260210_010000"
+        variant = cleaner.images_dir / f"{stem}.webp"
+        variant.write_bytes(b"webp")
+        data_path = cleaner.data_dir / "2026-02-10.json"
+        data_path.write_text(
+            json.dumps(_daily_data("2026-02-10", {"moyuren": f"{stem}.jpg"}))
+        )
+
+        with patch("app.services.cache.today_business", return_value=date(2026, 2, 10)):
+            result = cleaner.cleanup()
+
+        assert variant.exists()
+        assert result["deleted_files"] == 0
+
+    def test_cleanup_cap_counts_only_base_images(self, tmp_path: Path) -> None:
+        """Multiple variants should not consume per-day base-image retention slots."""
+        cleaner = CacheCleaner(
+            str(tmp_path), 30, logging.getLogger("test"), max_images_per_template_per_day=2
+        )
+        for hour in range(3):
+            stem = f"moyuren_20260210_{hour:02d}0000"
+            for suffix in (".jpg", ".webp", "_w320.jpg", "_w320.webp"):
+                (cleaner.images_dir / f"{stem}{suffix}").write_bytes(b"image")
+
+        with patch("app.services.cache.today_business", return_value=date(2026, 2, 10)):
+            result = cleaner.cleanup()
+
+        assert {path.name for path in cleaner.images_dir.iterdir()} == {
+            f"moyuren_20260210_{hour:02d}0000{suffix}"
+            for hour in (1, 2)
+            for suffix in (".jpg", ".webp", "_w320.jpg", "_w320.webp")
+        }
+        assert result["pruned_images"] == 1
+        assert result["deleted_files"] == 4
 
     @pytest.mark.parametrize("reference_count", [1, 4])
     def test_cleanup_preserves_references_from_any_data_file(

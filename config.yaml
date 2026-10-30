@@ -48,6 +48,9 @@ templates:
   config:
     device_scale_factor: 3
     jpeg_quality: 100
+    # output_formats: ["jpeg"]  # 必须包含 jpeg；可额外启用 webp
+    # output_widths: []  # 最终图片的绝对像素宽度；仅生成小于原图的宽度
+    # webp_quality: 85  # WebP 质量（1–100）
     use_china_cdn: true
     local_fonts_dir: "templates/fonts"  # 本地 WOFF2 字体及 fonts.css 目录；相对路径基于进程工作目录（通常为项目根目录）
     remote_font_fallback: true  # 本地子集缺字时加载 Google Fonts；离线部署可设为 false

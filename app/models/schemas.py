@@ -5,13 +5,42 @@ import os
 import tempfile
 from datetime import date as calendar_date
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
 
 from app.core.errors import ErrorCode, StorageError
 
 DAILY_DATA_SCHEMA_VERSION = 1
+
+
+def _validate_image_filename(filename: str) -> str:
+    """Require filenames confined to the images directory."""
+    if not filename.strip() or any(part in filename for part in ("/", "\\", "..", "\x00")):
+        raise ValueError("images must contain non-empty filenames without path separators or '..'")
+    return filename
+
+
+class ImageVariant(BaseModel):
+    """Image representation stored alongside the rendered JPEG."""
+
+    filename: str
+    format: Literal["jpeg", "webp"]
+    width: int = Field(gt=0, strict=True)
+
+    @field_validator("filename")
+    @classmethod
+    def validate_filename(cls, value: str) -> str:
+        """Apply the same filename contract as the base image mapping."""
+        return _validate_image_filename(value)
+
+
+class ImageVariantResponse(BaseModel):
+    """Public variant metadata with an absolute image URL."""
+
+    image: str
+    format: Literal["jpeg", "webp"]
+    width: int
 
 
 class MoyurenImageResponse(BaseModel):
@@ -21,6 +50,7 @@ class MoyurenImageResponse(BaseModel):
     updated: str = Field(..., description="Generation time (e.g., 2025/01/13 07:22:32)")
     updated_at: int = Field(..., description="Generation timestamp in milliseconds (13 digits)")
     image: str = Field(..., description="Full URL to the image file")
+    variants: list[ImageVariantResponse] = Field(default_factory=list)
 
 
 class FunContentSchema(BaseModel):
@@ -41,6 +71,7 @@ class DailyDataFile(BaseModel):
     updated: str
     updated_at: int = Field(ge=0, strict=True)
     images: dict[str, str]
+    image_variants: dict[str, list[ImageVariant]] | None = None
     # Optional payloads stay as raw JSON: historical files may use older shapes.
     weekday: JsonValue = None
     lunar_date: JsonValue = None
@@ -75,8 +106,7 @@ class DailyDataFile(BaseModel):
     def validate_images(cls, value: dict[str, str]) -> dict[str, str]:
         """Require image filenames that stay within the images directory."""
         for filename in value.values():
-            if not filename.strip() or any(part in filename for part in ("/", "\\", "..", "\x00")):
-                raise ValueError("images must contain non-empty filenames without path separators or '..'")
+            _validate_image_filename(filename)
         return value
 
     @classmethod
@@ -215,6 +245,7 @@ class MoyurenDetailResponse(BaseModel):
     updated: str = Field(..., description="Generation time (e.g., 2025/01/13 07:22:32)")
     updated_at: int = Field(..., description="Generation timestamp in milliseconds (13 digits)")
     image: str = Field(..., description="Full URL to the image file")
+    variants: list[ImageVariantResponse] = Field(default_factory=list)
     weekday: str = Field(..., description="Weekday in Chinese (e.g., 星期日)")
     lunar_date: str = Field(..., description="Lunar calendar date")
     fun_content: FunContentSchema | None = Field(None, description="Fun content (joke, quote, etc.)")

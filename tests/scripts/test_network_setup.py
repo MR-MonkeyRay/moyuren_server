@@ -328,6 +328,8 @@ class _PassthroughDailyDataFile:
 
     def __init__(self, payload: dict[str, Any]) -> None:
         self.payload = payload
+        self.images: dict[str, str] = payload.get("images", {})
+        self.image_variants: dict[str, Any] | None = None
 
     @classmethod
     def model_validate(
@@ -335,8 +337,8 @@ class _PassthroughDailyDataFile:
     ) -> "_PassthroughDailyDataFile":
         return cls(payload)
 
-    def model_dump(self, *, mode: str) -> dict[str, Any]:
-        return self.payload
+    def model_dump(self, *, mode: str, exclude_unset: bool = False) -> dict[str, Any]:
+        return dict(self.payload)
 
     def dump_json(self) -> str:
         return "{}"

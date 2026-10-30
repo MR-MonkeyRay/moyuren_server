@@ -18,10 +18,11 @@ from app.core.metrics import (
 )
 from app.core.network import safe_exception_for_log
 from app.core.services import AppServices
-from app.models.schemas import DailyDataFile
+from app.models.schemas import DailyDataFile, ImageVariant
 from app.services.cache import CacheCleaner
 from app.services.calendar import get_display_timezone, now_business
 from app.services.daily_cache import DailyCache
+from app.services.variants import generate_variants
 
 INFLIGHT_WAIT_TIMEOUT_SEC = 90
 
@@ -497,6 +498,14 @@ class ImageGenerator:
                         t_elapsed = time.monotonic() - t_start
                         logger.info("Image rendered for '%s': %s (%.1fs)", tname, filename, t_elapsed)
 
+                        image_variants: list[ImageVariant] = []
+                        try:
+                            image_variants = await asyncio.to_thread(
+                                generate_variants, images_dir / filename, templates_config.config, logger,
+                            )
+                        except Exception as exc:
+                            logger.warning("Image variants failed for '%s': %s", tname, exc)
+
                         await _update_data_file(
                             data_dir=str(data_dir),
                             filename=filename,
@@ -505,6 +514,7 @@ class ImageGenerator:
                             config=config,
                             template_name=tname,
                             now=now,
+                            image_variants=image_variants,
                         )
                         results[tname] = filename
                     except Exception:
@@ -546,6 +556,7 @@ async def _update_data_file(
     config: Any,
     template_name: str,
     now: datetime | None = None,
+    image_variants: list[ImageVariant] | None = None,
 ) -> None:
     """Atomically update the daily data file with latest image information.
 
@@ -614,14 +625,19 @@ async def _update_data_file(
 
         # Read existing data file to merge images mapping
         existing_images: dict[str, str] = {}
+        existing_variants: dict[str, list[ImageVariant]] = {}
         if data_file.exists():
             try:
-                existing_images.update(DailyDataFile.load(data_file).images)
+                existing_data = DailyDataFile.load(data_file)
+                existing_images.update(existing_data.images)
+                existing_variants.update(existing_data.image_variants or {})
             except StorageError:
                 pass
 
         # Update images mapping
         existing_images[template_name] = filename
+        # Replacing a base image also replaces its old variant references.
+        existing_variants[template_name] = image_variants or []
 
         # Build data file content
         data = {
@@ -629,6 +645,7 @@ async def _update_data_file(
             "updated": updated_str,
             "updated_at": updated_at_ms,
             "images": existing_images,
+            "image_variants": existing_variants,
             "weekday": date_info.get("week_cn", ""),
             "lunar_date": date_info.get("lunar_date", ""),
             "is_crazy_thursday": now.weekday() == 3,

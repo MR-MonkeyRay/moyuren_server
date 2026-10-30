@@ -894,6 +894,9 @@ class TemplateRenderConfig(BaseModel):
 
     device_scale_factor: int = 3
     jpeg_quality: int = 100
+    output_formats: list[Literal["jpeg", "webp"]] = ["jpeg"]
+    output_widths: list[int] = Field(default_factory=list)
+    webp_quality: int = Field(default=85, ge=1, le=100, strict=True)
     use_china_cdn: bool = True
     local_fonts_dir: str = "templates/fonts"
     remote_font_fallback: bool = True
@@ -913,6 +916,24 @@ class TemplateRenderConfig(BaseModel):
     ])
     text_limits: TextLimitsConfig = Field(default_factory=TextLimitsConfig)
     themes: ThemesConfig = Field(default_factory=ThemesConfig)
+
+    @field_validator("output_formats")
+    @classmethod
+    def validate_output_formats(cls, value: list[Literal["jpeg", "webp"]]) -> list[Literal["jpeg", "webp"]]:
+        """保留渲染原图 JPEG，禁止重复格式。"""
+        if "jpeg" not in value or len(value) != len(set(value)):
+            raise ValueError("output_formats must include jpeg and contain no duplicates")
+        return value
+
+    @field_validator("output_widths", mode="before")
+    @classmethod
+    def validate_output_widths(cls, value: object) -> object:
+        """额外宽度使用最终图片的绝对像素，禁止重复和非正整数。"""
+        if not isinstance(value, list) or any(type(width) is not int or width <= 0 for width in value):
+            raise ValueError("output_widths must contain positive integers")
+        if len(value) != len(set(value)):
+            raise ValueError("output_widths must contain no duplicates")
+        return value
 
     @field_validator("work_end_time")
     @classmethod

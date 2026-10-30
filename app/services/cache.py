@@ -10,6 +10,13 @@ from app.core.errors import StorageError
 from app.models.schemas import DailyDataFile
 from app.services.calendar import get_business_timezone, today_business
 
+_BASE_IMAGE_PATTERN = re.compile(
+    r"^(?P<template>[A-Za-z0-9_-]+)_(?P<date>\d{8})_(?P<time>\d{6})\.jpg$"
+)
+_VARIANT_IMAGE_PATTERN = re.compile(
+    r"^(?P<stem>[A-Za-z0-9_-]+_\d{8}_\d{6})(?:_w(?P<width>\d+))?\.(?P<format>jpg|webp)$"
+)
+
 
 class CacheCleaner:
     """Cache cleaner for removing expired data, image, and render resource files."""
@@ -114,27 +121,29 @@ class CacheCleaner:
             except Exception as e:
                 self.logger.warning("Failed to process data file %s: %s", file_path.name, e)
 
-        # Clean image files
-        image_pattern = re.compile(r"^([A-Za-z0-9_-]+)_(\d{8})_(\d{6})\.jpg$")
+        # Clean base images. Variants are managed as members of the base image family.
         image_groups: dict[tuple[str, date], list[tuple[str, Path]]] = {}
         for file_path in self.images_dir.glob("*.jpg"):
-            match = image_pattern.match(file_path.name)
+            match = _BASE_IMAGE_PATTERN.match(file_path.name)
             if not match:
-                self.logger.warning("Skipping file with invalid name format: %s", file_path.name)
+                if not _VARIANT_IMAGE_PATTERN.match(file_path.name):
+                    self.logger.warning(
+                        "Skipping file with invalid name format: %s", file_path.name
+                    )
                 continue
 
             try:
-                date_str = match.group(2)
+                date_str = match.group("date")
                 file_date = datetime.strptime(date_str, "%Y%m%d").date()
-                if file_date < cutoff_date:
-                    file_size = file_path.stat().st_size
-                    file_path.unlink()
-                    deleted_files += 1
-                    freed_bytes += file_size
-                    self.logger.info("Deleted expired image file: %s", file_path.name)
+                if file_date < cutoff_date and file_path.name not in referenced_images:
+                    family_deleted, family_freed = self._delete_image_family(file_path)
+                    deleted_files += family_deleted
+                    freed_bytes += family_freed
+                    if not file_path.exists():
+                        self.logger.info("Deleted expired image file: %s", file_path.name)
                 else:
-                    image_groups.setdefault((match.group(1), file_date), []).append(
-                        (match.group(3), file_path)
+                    image_groups.setdefault((match.group("template"), file_date), []).append(
+                        (match.group("time"), file_path)
                     )
                     if file_date < oldest_kept_date:
                         oldest_kept_date = file_date
@@ -155,14 +164,33 @@ class CacheCleaner:
                     kept_names.add(image_path.name)
                     continue
                 try:
-                    file_size = image_path.stat().st_size
-                    image_path.unlink()
-                    deleted_files += 1
-                    freed_bytes += file_size
-                    pruned_images += 1
-                    self.logger.info("Pruned superseded image file: %s", image_path.name)
+                    family_deleted, family_freed = self._delete_image_family(image_path)
+                    deleted_files += family_deleted
+                    freed_bytes += family_freed
+                    if not image_path.exists():
+                        pruned_images += 1
+                        self.logger.info("Pruned superseded image file: %s", image_path.name)
                 except OSError as e:
                     self.logger.warning("Failed to prune image file %s: %s", image_path.name, e)
+
+        # Remove variants left behind after their base JPEG was deleted or lost.
+        for file_path in self.images_dir.iterdir():
+            if not file_path.is_file():
+                continue
+            match = _VARIANT_IMAGE_PATTERN.match(file_path.name)
+            if match is None or _BASE_IMAGE_PATTERN.match(file_path.name):
+                continue
+            base_path = self.images_dir / f"{match.group('stem')}.jpg"
+            if base_path.exists() or base_path.name in referenced_images:
+                continue
+            try:
+                file_size = file_path.stat().st_size
+                file_path.unlink()
+                deleted_files += 1
+                freed_bytes += file_size
+                self.logger.info("Deleted orphan image variant: %s", file_path.name)
+            except OSError as e:
+                self.logger.warning("Failed to delete orphan image variant %s: %s", file_path.name, e)
 
         # Clean render resource cache files
         cutoff_timestamp = datetime.combine(
@@ -236,3 +264,26 @@ class CacheCleaner:
             "oldest_kept": oldest_kept_date.isoformat(),
             "pruned_images": pruned_images,
         }
+
+    def _delete_image_family(self, base_path: Path) -> tuple[int, int]:
+        """Delete a base JPEG and every recognized sibling variant."""
+        stem = base_path.stem
+        candidates = [base_path, self.images_dir / f"{stem}.webp"]
+        candidates.extend(self.images_dir.glob(f"{stem}_w*.jpg"))
+        candidates.extend(self.images_dir.glob(f"{stem}_w*.webp"))
+
+        deleted_files = 0
+        freed_bytes = 0
+        for file_path in candidates:
+            match = _VARIANT_IMAGE_PATTERN.match(file_path.name)
+            if match is None or match.group("stem") != stem or not file_path.exists():
+                continue
+            try:
+                file_size = file_path.stat().st_size
+                file_path.unlink()
+            except OSError as exc:
+                self.logger.warning("Failed to delete image family member %s: %s", file_path.name, exc)
+            else:
+                freed_bytes += file_size
+                deleted_files += 1
+        return deleted_files, freed_bytes

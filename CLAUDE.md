@@ -35,6 +35,7 @@
 | 浏览器 | `app/services/browser.py` | Playwright 浏览器生命周期管理 |
 | 模板发现 | `app/services/template_discovery.py` | 自动扫描模板目录，解析 meta 标签 |
 | 图片生成 | `app/services/generator.py` | 图片生成流水线（文件锁防并发、缓存管理） |
+| 图片变体 | `app/services/variants.py` | Pillow 在线程中从 JPEG 原子生成 WebP/缩小图片，失败隔离；API 可按需补建 |
 | 调度 | `app/core/scheduler.py` | APScheduler 定时任务 |
 | 配置 | `app/core/config.py` | YAML + 环境变量 |
 
@@ -72,6 +73,9 @@ Docker：`docker-compose up -d`
 - `templates.dir`：模板目录路径（默认 `templates`，自动扫描 `*.html`）
 - `templates.config.local_fonts_dir`：本地 WOFF2 字体目录（默认 `templates/fonts`；与 `templates.dir` 一样，相对路径基于进程工作目录，通常为项目根目录）
 - `templates.config.remote_font_fallback`：是否启用 Google Fonts 缺字回退（默认 true，离线部署可关闭）
+- `templates.config.output_formats`：默认 `["jpeg"]`，可启用 `webp`；必须包含 `jpeg` 且不可重复
+- `templates.config.output_widths`：默认 `[]`，唯一正整数的最终绝对像素宽度；大于等于原图宽度时跳过
+- `templates.config.webp_quality`：默认 85，整数 1–100；缩小 JPEG 沿用 `jpeg_quality`
 - `templates.config.themes`：自动主题配置，`enabled=true`、`season_themes=true`；`festival_themes` 默认将除夕/春节/元宵节映射到 `spring_festival`、中秋节到 `mid_autumn`、国庆节到 `national_day`，主题名须匹配 `^[a-z][a-z0-9_]*$`
 - `logging.*`：日志配置
 - `network.ghproxy_urls`：GitHub 代理 URL 列表（加速节假日数据/ECDICT 下载）
@@ -105,6 +109,8 @@ Docker：`docker-compose up -d`
 - 提交代码后根据内容更新系统版本号
 
 ## 数据服务
+
+图片变体：`<stem>.webp`、`<stem>_w<width>.jpg/.webp`；LANCZOS 保留宽高比，移除派生文件元数据，临时文件 + `os.replace` 原子写入。每日 JSON 可选 `image_variants: {模板: [{filename, format: "jpeg|webp", width: 正整数}]}`，含原始 JPEG 和成功变体；旧文件兼容，schema_version 保持 1。GET `/api/v1/moyuren?encode=image|url&format=webp&width=600` 按精确格式和最小不低于目标的宽度选择，无匹配则用最大宽度，省略宽度用完整尺寸；禁用格式返回 400/API_7003。缺失变体在线程中补建而不改 JSON，缺失原图沿用自动恢复；ETag 包含变体身份，JSON/详情公开带绝对 `image` URL 的 `variants`。缓存上限只统计原始 JPEG，删除时连带变体和字节数，保护数据引用原图的所有变体并清理孤立变体。静态发布及 render_once 同步支持变体。
 
 - **节假日服务**：数据源 [holiday-cn](https://github.com/NateScarlet/holiday-cn)，缓存目录 `cache/holidays/`
 - **金价服务**：数据源外部金价 API，日级缓存自动过期
